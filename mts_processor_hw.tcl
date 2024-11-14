@@ -20,7 +20,7 @@ package require -exact qsys 16.1
 # 
 set_module_property DESCRIPTION "Decode the hits from MuTRiG "
 set_module_property NAME mts_preprocessor
-set_module_property VERSION 2.0.17
+set_module_property VERSION 24.0.1111
 set_module_property INTERNAL false
 set_module_property OPAQUE_ADDRESS_MAP true
 set_module_property GROUP "Mu3e Data Plane/Modules"

@@ -423,6 +423,7 @@ architecture rtl of mts_processor is
 	signal counter_ov_cnt_reg		: unsigned(31 downto 0);
 	signal fpga_overflow_happened			: std_logic;
 	signal fpga_overflow_lookback_cnt		: unsigned(31 downto 0);
+    signal lpm_multi_valid_cnt              : unsigned(15 downto 0);
 	-- counter gts 
 	signal counter_gts_8n					: unsigned(47 downto 0); -- can be tuned
 	
@@ -740,6 +741,7 @@ begin
 				counter_mts_1n6		<= (others => '0');
 				counter_ov_cnt		<= (others => '0');
 				fpga_overflow_lookback_cnt		<= (others => '0');
+                lpm_multi_valid_cnt     <= (others => '0');
 			else
 				-- begin counter
 				case counter_mts_1n6 is -- overflow at (32766 - 0 - 1 - 2 - 3 - 4)
@@ -766,13 +768,18 @@ begin
 				counter_ov_cnt_reg	<= counter_ov_cnt;
 				if (fpga_overflow_happened = '1') then -- set counter
 					fpga_overflow_lookback_cnt		<= to_unsigned(to_integer(unsigned(csr.expected_latency))*5 , fpga_overflow_lookback_cnt'length);
-				elsif (to_integer(fpga_overflow_lookback_cnt) < to_integer(unsigned(csr.expected_latency))*5 and to_integer(fpga_overflow_lookback_cnt) /= 0) then
+                    
+				elsif (to_integer(fpga_overflow_lookback_cnt) <= to_integer(unsigned(csr.expected_latency))*5 and to_integer(fpga_overflow_lookback_cnt) /= 0) then
 					fpga_overflow_lookback_cnt		<= fpga_overflow_lookback_cnt - 5; -- with underflow protection
 				else
 					fpga_overflow_lookback_cnt		<= (others => '0');
 				end if;
 				
-					
+				if (fpga_overflow_happened = '1') then 
+                    lpm_multi_valid_cnt             <= to_unsigned(LPM_MULT_PIPELINE-1,lpm_multi_valid_cnt'length);
+                elsif (lpm_multi_valid_cnt /= to_unsigned(0,lpm_multi_valid_cnt'length)) then 
+                    lpm_multi_valid_cnt             <= lpm_multi_valid_cnt - 1;
+                end if;
 				
 			end if;
 		end if;
@@ -817,7 +824,8 @@ begin
 		-- For large incoming hits, the fpga counter might already overflowed, so we subtract 1 in overflow counter during this calculation.
 		-- We set a fpga local time window. Only within this window, the subtraction is needed.
 		
-		if (to_integer(padding_logic_gray_ts) > UPPER and to_integer(fpga_overflow_lookback_cnt) /= 0) then -- fpga overflow, but mutrig hits didn't
+        -- fpga overflow, but mutrig hits didn't, and multiplier is updated 
+		if (to_integer(padding_logic_gray_ts) > UPPER and to_integer(fpga_overflow_lookback_cnt) /= 0 and to_integer(lpm_multi_valid_cnt) = 0) then 
 			--cc_gts_1n6		:= to_unsigned(cc_mts_1n6 + (to_integer(counter_ov_cnt)-1) * OVERFLOW_1N6, cc_gts_1n6'length);
 			padding_logic_white_ts		<= padding_logic_gray_ts	+ unsigned(padding_logic_gts_product) - to_unsigned(OVERFLOW_1N6, 15);
 		else 
