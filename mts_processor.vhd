@@ -80,15 +80,15 @@ USE lpm.lpm_components.all;
 
 entity mts_processor is 
 generic (
-	FRAME_CORRPT_BIT_LOC	: natural := 2;
+	FRAME_CORRPT_BIT_LOC	: natural := 2; -- error channel descriptor bit locations of sink streaming interface
 	CRCERR_BIT_LOC			: natural := 1;
 	HITERR_BIT_LOC			: natural := 0;
-	BANK					: string := "UP"; 
+	BANK					: string := "UP"; -- not used, output asic id is set by input asic id
 	ENABLED_CHANNEL_HI		: natural := 3; -- must be within 0-15, used for generate eop for enabled channels
 	ENABLED_CHANNEL_LO		: natural := 0;
-	PADDING_EOP_WAIT_CYCLE	: natural := 512; -- backpressure fifo depth (128) x enabled_channel (4)
+	PADDING_EOP_WAIT_CYCLE	: natural := 512; -- set the wait grace period to generating eop of each link at end of run. note: backpressure fifo depth (128) x enabled_channel (4)
 	LPM_DIV_PIPELINE		: natural := 4;
-	MUTRIG_BUFFER_EXPECTED_LATENCY_8N		: natural := 2000;
+	MUTRIG_BUFFER_EXPECTED_LATENCY_8N		: natural := 2000; -- affects the error signal on <hit_type1>
 	DEBUG					: natural := 1
 );
 port (
@@ -120,16 +120,17 @@ port (
 	aso_hit_type1_channel			: out  std_logic_vector(3 downto 0); -- for asic 0-15 (4 bit)
 	aso_hit_type1_startofpacket		: out  std_logic; -- marks the start and end of run
 	aso_hit_type1_endofpacket		: out  std_logic;
-	aso_hit_type1_data				: out std_logic_vector(38 downto 0);
-	aso_hit_type1_valid				: out std_logic; 
-	aso_hit_type1_ready				: in  std_logic; 
-	aso_hit_type1_empty				: out std_logic_vector(0 downto 0);
+	aso_hit_type1_data				: out  std_logic_vector(38 downto 0);
+	aso_hit_type1_valid				: out  std_logic; 
+	aso_hit_type1_ready				: in   std_logic; 
+	aso_hit_type1_empty				: out  std_logic_vector(0 downto 0); -- TODO: marks the eor of this mutrig link (avst-channel), if theeor cycle does not contain hit.
 	-- add an individual fifo for each channel, give an option to release last packet when next sop is seen
 	-- the cache stack will not deassert ready, since it has input fifo (with 1 pop head, write is always possible, only when really full, overwrite takes 2 cycle and pop takes 1 cycle, ov can happen), 
 	-- in case of overflow, such information should be collected by upstream, such as this mts processor
+    aso_hit_type1_error             : out std_logic_vector(0 downto 0); -- { tserr : possible wrong timestamp }
+                                                                        -- tserr is asserted to indicate this hit timestamp is not within the range of (0-2000 cycles delay)
+                                                                        -- the upstream (ring-buffer cam) should ignore this hit as it is not meaningful. 
 	
-	-- debug port
-	--i_issp_ready					: in  std_logic;
 
 	-- input stream of control signal (enable)
 	-- this signal is time critical and must be synchronzed for all datapath modules
@@ -431,8 +432,15 @@ architecture rtl of mts_processor is
 	constant EOP_DELAY_CYCLE		: natural := 3;
 	constant N_ENABLED_CHANNEL		: natural := ENABLED_CHANNEL_HI - ENABLED_CHANNEL_LO + 1;
 	signal packet_in_transaction	: std_logic_vector(N_ENABLED_CHANNEL-1 downto 0);
-	
+    
+    
+    -- debug_ts 
+    signal int_aso_debug_ts_data    : std_logic_vector(aso_debug_ts_data'high downto 0); -- for read internally. note: you could also use "buffer" instead of "out" of this port, but its support is poor across platform.
+    
+    
+	-- ----------------------------
 	-- data flow chart
+    -- ----------------------------
 	-- Legend:
 	--		Dark TS: non yet decoded, the lfsr output raw symbol of MuTRiG
 	--		Gray TS: decoded, the lfsr cycle of MuTRiG, so called MuTRiG timestamp (mts)
@@ -441,6 +449,8 @@ architecture rtl of mts_processor is
 	
 	-- mts -> gts mapping: 
 	--		1) Padding 2) Divide by 5
+    
+    
 
 begin
 
@@ -1033,7 +1043,7 @@ begin
 			elsif (processor_state = FLUSHING) then -- generate eop for all channels, do a round-robin arbitration if all channel wants to generate eop at the same cycle
 				aso_hit_type1_valid											<= '0'; -- fixed 
 				aso_hit_type1_data											<= (others => '0');
-				aso_hit_type1_empty(0)										<= '1'; -- downstream must ignore this beat
+				aso_hit_type1_empty(0)										<= '1'; -- debug: downstream must ignore this beat
 			else 
 				aso_hit_type1_data		<= (others => '0');
 				aso_hit_type1_valid		<= '0';
@@ -1114,17 +1124,36 @@ begin
 			
 		end if;
 	end process;
-	
+    
+    proc_debug_ts_comb : process (all)
+    begin
+        aso_debug_ts_data           <= int_aso_debug_ts_data;
+	end process;
+    
 	proc_debug_ts : process (i_clk)
 	begin
 		if (rising_edge(i_clk)) then
 			if (hit_div(LPM_DIV_PIPELINE).valid = '1') then
-				aso_debug_ts_data		<= std_logic_vector(to_signed( to_integer(counter_gts_8n) - to_integer(unsigned(lpm_div_quo_out)),aso_debug_ts_data'length));
+				int_aso_debug_ts_data	<= std_logic_vector(to_signed( to_integer(counter_gts_8n) - to_integer(unsigned(lpm_div_quo_out)),aso_debug_ts_data'length));
 				aso_debug_ts_valid		<= '1';
 			else 
 				aso_debug_ts_valid		<= '0';
 			end if;
-		
+            
+            -- --------------------------------------------
+            -- derive the error signals of the datapath
+            -- --------------------------------------------
+            -- default 
+            aso_hit_type1_error(0)           <= '0'; -- timing aligned with <hit_type1> valid
+            if (aso_debug_ts_valid = '1') then 
+                -- ok: ts within range of (0,2000)
+                if (to_integer(signed(int_aso_debug_ts_data)) > 0 and to_integer(signed(int_aso_debug_ts_data)) < MUTRIG_BUFFER_EXPECTED_LATENCY_8N) then 
+                    aso_hit_type1_error(0)      <= '0';
+                -- error: ts out of range of (0,2000). possible pll unlocked or cml logic recv side is too low (generate a bit of side noise)
+                else 
+                    aso_hit_type1_error(0)      <= '1';
+                end if;
+            end if;
 		
 		end if;
 	

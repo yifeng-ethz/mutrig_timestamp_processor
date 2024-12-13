@@ -250,7 +250,7 @@ add_interface hit_type1_out avalon_streaming start
 set_interface_property hit_type1_out associatedClock clock_interface
 set_interface_property hit_type1_out associatedReset reset_interface
 set_interface_property hit_type1_out dataBitsPerSymbol 39
-set_interface_property hit_type1_out errorDescriptor ""
+set_interface_property hit_type1_out errorDescriptor {"tserr"}
 set_interface_property hit_type1_out firstSymbolInHighOrderBits true
 set_interface_property hit_type1_out maxChannel 15
 set_interface_property hit_type1_out readyLatency 0
@@ -267,6 +267,7 @@ add_interface_port hit_type1_out aso_hit_type1_channel channel Output 4
 add_interface_port hit_type1_out aso_hit_type1_endofpacket endofpacket Output 1
 add_interface_port hit_type1_out aso_hit_type1_startofpacket startofpacket Output 1
 add_interface_port hit_type1_out aso_hit_type1_empty empty Output 1
+add_interface_port hit_type1_out aso_hit_type1_error error Output 1
 
 
 # 
