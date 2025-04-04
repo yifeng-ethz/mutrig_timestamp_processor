@@ -172,9 +172,14 @@ port (
 	asi_ctrl_valid			: in  std_logic;
 	asi_ctrl_ready			: out std_logic;
 	
-	-- debug port (showing the time difference of gts - mts)
+	-- AVST <debug_ts> 
+    -- debug port (showing the time difference of gts - mts)
 	aso_debug_ts_valid		: out std_logic;
 	aso_debug_ts_data		: out std_logic_vector(15 downto 0);
+    
+    -- AVST <debug_burst> 
+    aso_debug_burst_valid		: out std_logic;
+	aso_debug_burst_data		: out std_logic_vector(15 downto 0);
 
 	-- clock and reset interface
     i_rst                   : in std_logic; -- async reset assertion, sync reset release
@@ -437,6 +442,22 @@ architecture rtl of mts_processor is
     -- debug_ts 
     signal int_aso_debug_ts_data    : std_logic_vector(aso_debug_ts_data'high downto 0); -- for read internally. note: you could also use "buffer" instead of "out" of this port, but its support is poor across platform.
     
+    -- ///////////////////////////////////////////////////////////////////////////////
+    -- debug_burst
+    -- ///////////////////////////////////////////////////////////////////////////////
+    signal egress_valid             : std_logic;
+    signal delta_valid              : std_logic;
+    
+    type egress_regs_t is array(0 to 1) of std_logic_vector(47 downto 0);
+    signal egress_timestamp         : egress_regs_t;
+    signal egress_arrival           : egress_regs_t;
+    
+    constant DELTA_TIMESTAMP_WIDTH            : natural := 12; -- ex: 10 bit, range is -512 to 511, triming 2 bits yields -> -128 to 127
+    constant DELTA_ARRIVAL_WIDTH              : natural := 12; -- ex: 10 bit, range is 0 to 1023, triming 2 bits yields -> 0 to 255
+    signal delta_timestamp          : std_logic_vector(DELTA_TIMESTAMP_WIDTH-1 downto 0);
+    signal delta_arrival            : std_logic_vector(DELTA_ARRIVAL_WIDTH-1 downto 0);
+    
+    
     
 	-- ----------------------------
 	-- data flow chart
@@ -555,17 +576,17 @@ begin
 	-- address map:
 	-- 		0: control and status 
 	--		1: discard hits count
-	--		2: expected mutrig buffering latency in 1.6ns 
+	--		2: expected mutrig buffering latency in 8ns 
 	--		3: total hits count (H) (incl. errors)
 	--		4: total hits count (L)
 	begin
 		if (i_rst = '1') then 
-			csr.go			<= '1'; -- NOTE: default is go. If go is low, cmd from run_state_controller cannot send processor to run state.
-			csr.force_stop	<= '0';
-			csr.soft_reset	<= '0';
-			csr.set_hit_mode	<= SHORT;
+			csr.go			            <= '1'; -- NOTE: default is go. If go is low, cmd from run_state_controller cannot send processor to run state.
+			csr.force_stop	            <= '0';
+			csr.soft_reset	            <= '0'; -- only reset counters for now
+			csr.set_hit_mode    	    <= SHORT;
 			csr.expected_latency		<= std_logic_vector(to_unsigned(MUTRIG_BUFFER_EXPECTED_LATENCY_8N, csr.expected_latency'length));
-			csr.discard_hiterr		<= '1'; -- NOTE: default is discard hiterr
+			csr.discard_hiterr		    <= '1'; -- NOTE: default is discard hiterr
 		elsif (rising_edge(i_clk)) then
 			-- default
 			avs_csr_waitrequest		<= '1'; 
@@ -636,7 +657,10 @@ begin
 				end case;
 			-- contention with other state machines
 			else 
-				
+                -- release reset by csr
+                if (csr.soft_reset = '1') then 
+                    csr.soft_reset          <= '0';
+                end if;
 			
 			end if;
 		end if;
@@ -657,6 +681,7 @@ begin
 		
 		elsif (rising_edge(i_clk)) then
 			processor_allow_input		<= '0';
+            
 			case processor_state is 
 				when IDLE => -- do not read fifo
 					if (csr.go = '1' and run_state_cmd = RUNNING) then -- !not standard run sequence, but allowed
@@ -706,10 +731,13 @@ begin
 					end if;
 				when others => 
 			end case;
+            
+            -- manual force stop by csr control 
+            if (csr.force_stop = '1') then 
+                processor_allow_input       <= '0';
+            end if;
 		
 		end if;
-	
-	
 	end process;
 	
 	proc_in_ready : process (i_rst, i_clk)
@@ -869,23 +897,23 @@ begin
 	begin
 		if (i_rst = '1') then 
 			debug_msg.discard_hit_cnt		<= (others => '0');
-		
-		elsif (rising_edge(i_clk)) then
+            debug_msg.total_hit_cnt			<= (others => '0');
+		elsif (rising_edge(i_clk)) then 
+            
 			if (asi_hit_type0_valid = '1' and hit_in_ok = '0') then -- capture invalid error
 				debug_msg.discard_hit_cnt		<= debug_msg.discard_hit_cnt + 1;
-			elsif (reset_flow = SYNC) then
+			elsif (reset_flow = SYNC or csr.soft_reset = '1') then -- soft reset by csr
 				debug_msg.discard_hit_cnt		<= (others => '0'); -- sclr the counter
 			end if;
 			
 			if (asi_hit_type0_valid = '1') then -- including errors
 				debug_msg.total_hit_cnt			<= debug_msg.total_hit_cnt + 1;
-			elsif (reset_flow = SYNC) then
+			elsif (reset_flow = SYNC or csr.soft_reset = '1') then -- soft reset by csr
 				debug_msg.total_hit_cnt			<= (others => '0');
 			end if;
-		
+            
+
 		end if;
-	
-	
 	end process;
 	
 	proc_datapath_comb : process (all)
@@ -961,11 +989,7 @@ begin
 					if (hit_in.valid = '1') then 
 						hit_padding.asic		<= hit_in.asic;
 						hit_padding.channel		<= hit_in.channel;
-						if (csr.bypass_lapse = '0') then  -- mts -> gts transformation enable
-							hit_padding.cc_out		<= cc_out;
-						else -- mts -> gts transformation disable
-							hit_padding.cc_out		<= cc_out;
-						end if;
+						hit_padding.cc_out		<= cc_out; -- decode
 						hit_padding.t_fine		<= hit_in.t_fine;
 						hit_padding.valid		<= '1';
 						hit_padding.hiterr		<= hit_in.hiterr;
@@ -975,9 +999,9 @@ begin
 					if (hit_padding.valid = '1') then 
 						hit_div(0).asic			<= hit_padding.asic;
 						hit_div(0).channel		<= hit_padding.channel;
-						if (csr.bypass_lapse = '0') then  -- mts -> gts transformation enable
+						if (csr.bypass_lapse = '0') then  -- mts -> gts transformation enable 
 							lpm_div_num_in											<= cc_gts_1n6_slv50;
-						else -- mts -> gts transformation disable
+						else -- mts -> gts transformation disable (this would result in random dist., which is simply for sanity check.) 
 							lpm_div_num_in(hit_padding.cc_out'high downto 0)		<= hit_padding.cc_out;
 						end if;
 						hit_div(0).t_fine		<= hit_padding.t_fine;
@@ -1006,8 +1030,6 @@ begin
 	proc_div_pipeline : process (i_clk)
 	begin
 		if (rising_edge(i_clk)) then
-			
-		
 			for i in 0 to LPM_DIV_PIPELINE-1 loop 
 				hit_div(i+1)	<= hit_div(i);
 			end loop;
@@ -1133,7 +1155,7 @@ begin
 	proc_debug_ts : process (i_clk)
 	begin
 		if (rising_edge(i_clk)) then
-			if (hit_div(LPM_DIV_PIPELINE).valid = '1') then
+			if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- 48 bit - 48 bit (no of/df)
 				int_aso_debug_ts_data	<= std_logic_vector(to_signed( to_integer(counter_gts_8n) - to_integer(unsigned(lpm_div_quo_out)),aso_debug_ts_data'length));
 				aso_debug_ts_valid		<= '1';
 			else 
@@ -1154,11 +1176,85 @@ begin
                     aso_hit_type1_error(0)      <= '1';
                 end if;
             end if;
-		
 		end if;
-	
-	
 	end process;
+    
+    
+    -- ///////////////////////////////////////////////////////////////////////////////
+    -- @name            debug_burst
+    -- @brief           calculate the delta of timestamp and inter-arrival time
+    --                  of adjacent hits. 
+    --
+    -- ///////////////////////////////////////////////////////////////////////////////
+    proc_debug_burst : process (i_clk)
+    -- 3 pipeline stages
+    begin
+        if (rising_edge(i_clk)) then 
+            if (processor_state = RUNNING and i_rst = '0') then 
+                -- default
+                egress_valid                <= '0';
+                delta_valid                 <= '0';
+                aso_debug_burst_valid       <= '0';
+                -- --------------
+                -- latch new 
+                -- --------------
+                if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- 48 bit - 48 bit
+                    -- timestamp
+                    egress_timestamp(0)         <= lpm_div_quo_out(egress_timestamp(0)'high downto 0);
+                    egress_timestamp(1)         <= egress_timestamp(0);
+                    -- arrival
+                    egress_arrival(0)           <= std_logic_vector(counter_gts_8n);
+                    egress_arrival(1)           <= egress_arrival(0);
+                    --
+                    egress_valid                <= '1';
+                end if;
+             
+                -- -------------------
+                -- calculate deltas
+                -- -------------------
+                if (egress_valid = '1') then 
+                    -- signed magnitude substraction (take care of underflow)
+                    if (egress_timestamp(0) >= egress_timestamp(1)) then 
+                        -- sorted
+                        delta_timestamp(delta_timestamp'high)               <= '0';
+                        delta_timestamp(delta_timestamp'high-1 downto 0)    <= std_logic_vector(unsigned(egress_timestamp(0)) - unsigned(egress_timestamp(1)))(delta_timestamp'high-1 downto 0); -- delta_timestamp = Hit_{t+1} - Hit_{t}
+                    else 
+                        -- unsorted
+                        delta_timestamp(delta_timestamp'high)               <= '1';
+                        delta_timestamp(delta_timestamp'high-1 downto 0)    <= std_logic_vector(unsigned(egress_timestamp(1)) - unsigned(egress_timestamp(0)))(delta_timestamp'high-1 downto 0);
+                    end if;
+                    -- unsigned sub.
+                    delta_arrival               <= std_logic_vector(unsigned(egress_arrival(0)) - unsigned(egress_arrival(1)))(delta_arrival'high downto 0); -- delta_arrival = Hit_{t+1} - Hit_{t}
+                    --
+                    delta_valid                 <= '1';
+                end if;
+                
+                -- -------
+                -- trim
+                -- -------
+                if (delta_valid = '1') then 
+                    -- [XX] [YY]
+                    -- XX := timestamp (higher 8 bit). ex: 10 bit, range is -512 to 511, triming 2 bits yields -> -128 to 127
+                    -- YY := interarrival time (higher 8 bit). ex 10 bit, range is 0 to 1023, triming 2 bits yields -> 0 to 255
+                    aso_debug_burst_data(15 downto 8)           <= delta_timestamp(delta_timestamp'high downto delta_timestamp'high-7);
+                    aso_debug_burst_data(7 downto 0)            <= delta_arrival(delta_arrival'high downto delta_arrival'high-7);
+                    --
+                    aso_debug_burst_valid                       <= '1';
+                end if;
+            else -- reset
+                -- default
+                egress_valid                <= '0';
+                delta_valid                 <= '0';
+                aso_debug_burst_valid       <= '0';
+                egress_timestamp            <= (others => (others => '0'));
+                egress_arrival              <= (others => (others => '0'));
+                delta_timestamp             <= (others => '0');
+                delta_arrival               <= (others => '0');
+            end if;
+        end if;
+    
+    
+    end process;
 	
 	
 
