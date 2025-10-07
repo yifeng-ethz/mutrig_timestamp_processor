@@ -10,6 +10,8 @@
 --		Date: Jun 26, 2024
 -- Revision: 4.0 (Re-write)
 --		Date: Jul 2, 2024
+-- Revision: 5.0 (Support new hit type0b with same throughput as type0a)
+--      Date: Sep 24, 2025 
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
 	-- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -49,7 +51,7 @@
 	--
 	-- Throughput: (f_clk=125 MHz)
 	--		Hit type 0a (short) (4 links in / 1 ROM port)			 1 * f_clk   		< 4 * f_clk / 3.5 	(expected)
-	--		Hit type 0b (long)  (4 links in / 1 ROM port)		     0.5 * f_clk   		< 4 * f_clk / 6 	(expected)
+	--		Hit type 0b (long)  (4 links in / 2 ROM port)		     1 * f_clk   		> 4 * f_clk / 6 	(expected)
 	-- 
 	-- Comments: 
 	--		1) Use Simple-DP ROM, with pre-calculated LUT, rather than True-DP RAM, with on-the-fly LUT calculation,
@@ -238,6 +240,7 @@ architecture rtl of mts_processor is
         asic            : std_logic_vector(3 downto 0);  --ASIC ID
         channel         : std_logic_vector(4 downto 0);  --Channel number
         cc_out          : std_logic_vector(14 downto 0); --###Decoded from LUT RAM###
+		ecc_out			: std_logic_vector(14 downto 0); --###Decoded from LUT RAM###
         t_fine          : std_logic_vector(4 downto 0);  --T-Trigger fine time value
         e_cc            : std_logic_vector(14 downto 0); --Energy coarse time value (in units of 1.6ns)
         e_flag          : std_logic;                     --E-Flag valid flag
@@ -252,6 +255,7 @@ architecture rtl of mts_processor is
         --t_cc            : std_logic_vector(14 downto 0); --T-Trigger coarse time value (1.6ns) -- this part is seperated pipelined by lpm_div
         t_fine          : std_logic_vector(4 downto 0);  --T-Trigger fine time value
         e_cc            : std_logic_vector(14 downto 0); --Energy coarse time value (in units of 1.6ns)
+		et_1n6			: std_logic_vector(8 downto 0); -- E-T part (calculated with 50 bits)
         e_flag          : std_logic;                     --E-Flag valid flag
 		valid           : std_logic;                     --data word valid flag
 		hiterr			: std_logic;
@@ -322,6 +326,7 @@ architecture rtl of mts_processor is
 	);
 	end component dual_port_rom;
 	signal cc_in,cc_out			: std_logic_vector(14 downto 0);
+	signal ecc_in,ecc_out		: std_logic_vector(14 downto 0);
 	
 	
 	
@@ -388,8 +393,11 @@ architecture rtl of mts_processor is
 	--		 when count up, we use OVERFLOW_1N6.
 	constant UPPER						: integer := OVERFLOW_1N6 - MUTRIG_BUFFER_EXPECTED_LATENCY_8N*5; -- 2000
 	signal padding_logic_gray_ts		: unsigned(14 downto 0);
+	signal padding_logic_gray_ts_e		: unsigned(14 downto 0);
 	signal padding_logic_white_ts		: unsigned(49 downto 0);
+	signal padding_logic_white_ts_e		: unsigned(49 downto 0);
 	signal cc_gts_1n6_slv50				: std_logic_vector(49 downto 0);
+	signal ecc_gts_1n6_slv50			: std_logic_vector(49 downto 0);
 	signal padding_logic_gts_product	: std_logic_vector(49 downto 0);
 	
 	-- divider 
@@ -484,8 +492,8 @@ begin
 	port map(
 		addr_a		=> cc_in,
 		q_a			=> cc_out,
-		addr_b		=> (others => '0'),
-		q_b			=> open,
+		addr_b		=> ecc_in,
+		q_b			=> ecc_out,
 		clk			=> i_clk
 	);
 	
@@ -855,6 +863,7 @@ begin
 		
 		-- input
 		padding_logic_gray_ts				<= unsigned(hit_padding.cc_out); -- padding the gray (decoded) ts to white ts
+		padding_logic_gray_ts_e				<= unsigned(hit_padding.ecc_out); -- padding the gray (decoded) ts_e to white ts_e
 	
 		-- mts_1n6 (FPGA) will be faster/larger than receiving cc_mts_1n6 (MuTRiG), because of buffering, which is maximum two frame length (short=910 cycle, long = 1550 cycle; cycle=8ns)
 		-- plus, a bit of cycles inside FPGA. 
@@ -870,11 +879,19 @@ begin
 			--cc_gts_1n6		:= to_unsigned(cc_mts_1n6 + to_integer(counter_ov_cnt) * OVERFLOW_1N6, cc_gts_1n6'length);
 			padding_logic_white_ts		<= padding_logic_gray_ts	+ unsigned(padding_logic_gts_product);
 		end if;
+
+		if (to_integer(padding_logic_gray_ts_e) > UPPER and to_integer(fpga_overflow_lookback_cnt) /= 0 and to_integer(lpm_multi_valid_cnt) = 0) then 
+			padding_logic_white_ts_e	<= padding_logic_gray_ts_e	+ unsigned(padding_logic_gts_product) - to_unsigned(OVERFLOW_1N6, 15);
+		else 
+			padding_logic_white_ts_e	<= padding_logic_gray_ts_e	+ unsigned(padding_logic_gts_product);
+		end if;
+
 	
 		-- connect i/o
 		
 		-- output
 		cc_gts_1n6_slv50		<= std_logic_vector(padding_logic_white_ts);
+		ecc_gts_1n6_slv50		<= std_logic_vector(padding_logic_white_ts_e);
 	
 	end process;
 	
@@ -919,6 +936,7 @@ begin
 	proc_datapath_comb : process (all)
 	begin
 		cc_in			<= asi_hit_type0_data(I_TCC_HI downto I_TCC_LO); -- decode tcc
+		ecc_in			<= asi_hit_type0_data(I_ECC_HI downto I_ECC_LO); -- decode ecc
 	end process;
 	
 	proc_datapath : process (i_rst, i_clk) 
@@ -981,6 +999,7 @@ begin
 						hit_in.t_cc		<= asi_hit_type0_data(I_TCC_HI downto I_TCC_LO);
 						--cc_in			<= asi_hit_type0_data(I_TCC_HI downto I_TCC_LO); -- decode tcc
 						hit_in.t_fine	<= asi_hit_type0_data(I_TFINE_HI downto I_TFINE_LO);
+						hit_in.e_flag   <= asi_hit_type0_data(I_EFLAG_BIT_LOC);
 						hit_in.valid	<= '1';
 						hit_in.hiterr	<= asi_hit_type0_error(HITERR_BIT_LOC);
 					end if;
@@ -990,6 +1009,8 @@ begin
 						hit_padding.asic		<= hit_in.asic;
 						hit_padding.channel		<= hit_in.channel;
 						hit_padding.cc_out		<= cc_out; -- decode
+						hit_padding.ecc_out		<= ecc_out; -- decode
+						hit_padding.e_flag		<= hit_in.e_flag;
 						hit_padding.t_fine		<= hit_in.t_fine;
 						hit_padding.valid		<= '1';
 						hit_padding.hiterr		<= hit_in.hiterr;
@@ -1004,6 +1025,16 @@ begin
 						else -- mts -> gts transformation disable (this would result in random dist., which is simply for sanity check.) 
 							lpm_div_num_in(hit_padding.cc_out'high downto 0)		<= hit_padding.cc_out;
 						end if;
+
+						-- e-flag : as a signed number, if negative, means wrong
+						-- ecc not valid. note : seems flag=1 is bad, which is inverted?
+						hit_div(0).et_1n6 		<= std_logic_vector(resize(unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50), hit_div(0).et_1n6'length)); -- msb for flag
+						hit_div(0).et_1n6(hit_div(0).et_1n6'high)		<= not hit_padding.e_flag; -- flag_n overwrite the msb, '1' means no E-Flag, which means ECC is not valid
+																								   -- note: this is used as et_1n6 are limited to lower bits, range from [23,128].
+																								   -- range [129,511] is generally free of events, so [256,511] is used for invalid hits.
+																								   -- note2: we could also use 5 bits of et_50p to extend the resolution of this TOT dist.
+																								   -- this will require sacrifising a lot of the range, which will need add adjustable offset
+																								   -- for E-T. 
 						hit_div(0).t_fine		<= hit_padding.t_fine;
 						hit_div(0).valid		<= '1';
 						hit_div(0).hiterr		<= hit_padding.hiterr;
@@ -1016,7 +1047,7 @@ begin
 						hit_out.tcc_8n		<= lpm_div_quo_out(hit_out.tcc_8n'high downto 0); -- latch div result (quotient)
 						hit_out.tcc_1n6		<= lpm_div_rem_out(hit_out.tcc_1n6'high downto 0); -- latch div result (remainder)
 						hit_out.tfine		<= hit_div(LPM_DIV_PIPELINE).t_fine;
-						hit_out.et_1n6		<= (others => '0');
+						hit_out.et_1n6		<= hit_div(LPM_DIV_PIPELINE).et_1n6;
 						hit_out.valid		<= '1';
 						hit_out.hiterr		<= hit_div(LPM_DIV_PIPELINE).hiterr;
 					end if;
