@@ -192,8 +192,8 @@ end entity mts_processor;
 architecture rtl of mts_processor is
     
     -- constants
-    constant HIT_MODE_HI			: natural := 30;
-    constant HIT_MODE_LO			: natural := 28;
+    constant OP_MODE_HI             : natural := 30;
+    constant OP_MODE_LO             : natural := 28;
     constant I_ASIC_HI				: natural := 44;
     constant I_ASIC_LO				: natural := 41;
     constant I_CHANNEL_HI			: natural := 40;
@@ -220,8 +220,8 @@ architecture rtl of mts_processor is
     
 
     -- global control signals 
-    type mutrig_hit_mode_t is (SHORT, LONG, PRBS);
-    signal mutrig_hit_mode			: mutrig_hit_mode_t := SHORT;
+    -- type mutrig_hit_mode_t is (SHORT, LONG, PRBS);
+    -- signal mutrig_hit_mode			: mutrig_hit_mode_t := SHORT;
     
     -- hit record types
     type hit_type0_t is record -- total 45 bits + etc
@@ -276,8 +276,8 @@ architecture rtl of mts_processor is
     signal hit_out		: hit_type1_t;
 
     -- run state signals
-    type running_hit_mode_t is (SHORT,LONG,PRBS,UNKNOWN);
-    signal running_hit_mode			: running_hit_mode_t;
+    -- type running_hit_mode_t is (SHORT,LONG,PRBS,UNKNOWN);
+    -- signal running_hit_mode			: running_hit_mode_t;
     
     type processor_state_t is (RUNNING, RESET, IDLE, FLUSHING, ERROR);
     signal processor_state		: processor_state_t;
@@ -298,7 +298,8 @@ architecture rtl of mts_processor is
         go					: std_logic;
         force_stop			: std_logic;
         soft_reset			: std_logic;
-        set_hit_mode		: running_hit_mode_t;
+        decode_ets		    : std_logic;
+        delay_ts_field_use_t    : std_logic;
         bypass_lapse		: std_logic;
         discard_hiterr		: std_logic;
         expected_latency	: std_logic_vector(31 downto 0);
@@ -391,7 +392,8 @@ architecture rtl of mts_processor is
     -- NOTE: mutrig overflow at 2^15-2=32766 (counting from 0), but takes 2^15-1=32767 * 1.6ns. So we plus 1 here.
     --		 when calculating the time, we use OVERFLOW_TIME_1N6.
     --		 when count up, we use OVERFLOW_1N6.
-    constant UPPER						: integer := OVERFLOW_1N6 - MUTRIG_BUFFER_EXPECTED_LATENCY_8N*5; -- 2000
+    constant UPPER						: integer := OVERFLOW_1N6 - MUTRIG_BUFFER_EXPECTED_LATENCY_8N*5; -- 2000 (deprecated)
+    signal padding_upper                : unsigned(31 downto 0); -- new : adjustable by csr 
     signal padding_logic_gray_ts		: unsigned(14 downto 0);
     signal padding_logic_gray_ts_e		: unsigned(14 downto 0);
     signal padding_logic_white_ts		: unsigned(49 downto 0);
@@ -423,11 +425,13 @@ architecture rtl of mts_processor is
         REMAIN 			: out std_logic_vector(LPM_WIDTHD-1 downto 0)
     );
     end component LPM_DIVIDE; 
-    constant LPM_DIV_WIDTHN	: natural := 50;
-    signal lpm_div_num_in	: std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
-    signal lpm_div_quo_out	: std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
-    signal lpm_div_rem_out	: std_logic_vector(2 downto 0);
-
+    constant LPM_DIV_WIDTHN : natural := 50;
+    signal tcc_div_numer    : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
+    signal ecc_div_numer    : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0); 
+    signal tcc_div_quotient : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
+    signal ecc_div_quotient : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
+    signal tcc_div_remain   : std_logic_vector(2 downto 0);
+    signal ecc_div_remain   : std_logic_vector(2 downto 0);
     
 
     
@@ -448,6 +452,7 @@ architecture rtl of mts_processor is
     
     
     -- debug_ts 
+    signal int_aso_debug_ts_valid   : std_logic; -- delay 1 cycle for valid signal 
     signal int_aso_debug_ts_data    : std_logic_vector(aso_debug_ts_data'high downto 0); -- for read internally. note: you could also use "buffer" instead of "out" of this port, but its support is poor across platform.
     
     -- ///////////////////////////////////////////////////////////////////////////////
@@ -497,9 +502,9 @@ begin
         clk			=> i_clk
     );
     
-    cc_div : LPM_DIVIDE
-    -- input: white ts 
-    -- output: white ts 8n
+    tcc_div : LPM_DIVIDE
+    -- input: white tts 
+    -- output: white tts 8n
     generic map (
         LPM_WIDTHN				=> LPM_DIV_WIDTHN,
         LPM_WIDTHD				=> 3,
@@ -512,10 +517,31 @@ begin
     )
     port map (
         CLOCK 				=> i_clk,
-        NUMER				=> lpm_div_num_in,
+        NUMER				=> tcc_div_numer,
         DENOM				=> std_logic_vector(to_unsigned(5,3)),
-        QUOTIENT			=> lpm_div_quo_out,
-        REMAIN				=> lpm_div_rem_out
+        QUOTIENT			=> tcc_div_quotient,
+        REMAIN				=> tcc_div_remain
+    );
+
+    ecc_div : LPM_DIVIDE
+    -- input: white ets 
+    -- output: white ets 8n
+    generic map (
+        LPM_WIDTHN				=> LPM_DIV_WIDTHN,
+        LPM_WIDTHD				=> 3,
+        LPM_NREPRESENTATION		=> "UNSIGNED",
+        LPM_DREPRESENTATION		=> "UNSIGNED",
+        MAXIMIZE_SPEED			=> 9,
+        LPM_PIPELINE			=> LPM_DIV_PIPELINE,
+        INTENDED_DEVICE_FAMILY	=> "Arria V",
+        LPM_TYPE				=> "L_DIVIDE"
+    )
+    port map (
+        CLOCK 				=> i_clk,
+        NUMER				=> ecc_div_numer,
+        DENOM				=> std_logic_vector(to_unsigned(5,3)),
+        QUOTIENT			=> ecc_div_quotient, -- used for delay calculation only if csr.delay_ts_field_use_t=0
+        REMAIN				=> ecc_div_remain
     );
     
     of2gts_mult : LPM_MULT
@@ -589,38 +615,42 @@ begin
     --		4: total hits count (L)
     begin
         if (i_rst = '1') then 
-            csr.go			            <= '1'; -- NOTE: default is go. If go is low, cmd from run_state_controller cannot send processor to run state.
-            csr.force_stop	            <= '0';
-            csr.soft_reset	            <= '0'; -- only reset counters for now
-            csr.set_hit_mode    	    <= SHORT;
-            csr.expected_latency		<= std_logic_vector(to_unsigned(MUTRIG_BUFFER_EXPECTED_LATENCY_8N, csr.expected_latency'length));
-            csr.discard_hiterr		    <= '1'; -- NOTE: default is discard hiterr
+            csr.go                      <= '1'; -- NOTE: default is go. If go is low, cmd from run_state_controller cannot send processor to run state.
+            csr.force_stop              <= '0';
+            csr.soft_reset              <= '0'; -- only reset counters for now
+            csr.decode_ets              <= '1';
+            csr.delay_ts_field_use_t    <= '1';
+            csr.expected_latency        <= std_logic_vector(to_unsigned(MUTRIG_BUFFER_EXPECTED_LATENCY_8N, csr.expected_latency'length));
+            csr.discard_hiterr          <= '1'; -- NOTE: default is discard hiterr
         elsif (rising_edge(i_clk)) then
             -- default
-            avs_csr_waitrequest		<= '1'; 
-            avs_csr_readdata		<= (others => '0');
+            avs_csr_waitrequest         <= '1'; 
+            avs_csr_readdata            <= (others => '0');
             -- write logic
             if (avs_csr_write = '1') then 
-                avs_csr_waitrequest		<= '0'; -- ack 
+                avs_csr_waitrequest             <= '0'; -- ack 
                 case to_integer(unsigned(avs_csr_address)) is -- addr map
                     when 0 =>
-                        csr.go				<= 	avs_csr_writedata(0);
-                        csr.force_stop		<=  avs_csr_writedata(1);
-                        csr.soft_reset		<=	avs_csr_writedata(2);
-                        csr.bypass_lapse	<=  avs_csr_writedata(3);
-                        csr.discard_hiterr	<= 	avs_csr_writedata(4);
-                        case avs_csr_writedata(HIT_MODE_HI downto HIT_MODE_LO) is -- MSB
-                            when "100" =>
-                                csr.set_hit_mode 	<= SHORT;
-                            when "000" =>
-                                csr.set_hit_mode	<= LONG;
-                            when "010" =>
-                                csr.set_hit_mode	<= PRBS; -- full-frame
-                            when "001" =>
-                                csr.set_hit_mode	<= PRBS; -- single
-                            when others =>
-                                csr.set_hit_mode	<= UNKNOWN;
-                        end case;
+                        csr.go                  <= 	avs_csr_writedata(0);
+                        csr.force_stop          <=  avs_csr_writedata(1);
+                        csr.soft_reset          <=	avs_csr_writedata(2);
+                        csr.bypass_lapse        <=  avs_csr_writedata(3);
+                        csr.discard_hiterr      <= 	avs_csr_writedata(4);
+                        -- 3-bit of op mode 
+                        -- [2] decode ets : 1=long, 0=short (def). Decode E branch and validate E-BadHit. Output format go to type1b.
+                        csr.decode_ets        <= avs_csr_writedata(OP_MODE_LO + 2);
+                        -- [1] delay ts field : 1=use T (def), 0=use E. Calc delay using T or E timestamp. Used when hit tuple has different meanings. 
+                        --                      ref to https://bitbucket.org/mu3e/online/wiki/mutrig_hitTx
+                        --
+                        -- Note : mutrig hit format and e-branch on this setting
+                        -- Using TDC injection: 
+                        --      In short mode and recv_all=1, use T. 
+                        --      In long mode and recv_all=1, use E (hit will be tuple of last crossing, as no e branch, hit[i].ets is hit[i].injt and hit[i].tts is hit[i-1].injt, so you should use hit[i].ets).       
+                        -- Using analog FE: 
+                        --      In short mode and recv_all=1, use T. 
+                        --      In long mode and recv_all=0, use T (with energy branch).
+                        csr.delay_ts_field_use_t        <= avs_csr_writedata(OP_MODE_LO + 1);
+                        -- ... [0] : not used 
                     when 1 => 
                         
                     when 2 =>
@@ -630,36 +660,28 @@ begin
                 end case;
             -- read logic
             elsif (avs_csr_read = '1') then 
-                avs_csr_waitrequest		<= '0'; -- ack
+                avs_csr_waitrequest     <= '0'; -- ack
                 case to_integer(unsigned(avs_csr_address)) is -- addr map
                     when 0 =>
                         if (processor_state = RUNNING) then -- show current state 
-                            avs_csr_readdata(0)		<= '1' ; 
+                            avs_csr_readdata(0)     <= '1' ; 
                         else
-                            avs_csr_readdata(0)		<= '0';
+                            avs_csr_readdata(0)     <= '0';
                         end if;
-                        avs_csr_readdata(1) 	<= csr.force_stop;
-                        avs_csr_readdata(2)		<= csr.soft_reset;
-                        avs_csr_readdata(3)		<= csr.bypass_lapse;
-                        avs_csr_readdata(4)		<= csr.discard_hiterr;
-                        case running_hit_mode is 
-                            when SHORT =>
-                                avs_csr_readdata(HIT_MODE_HI downto HIT_MODE_LO) <= "100";
-                            when LONG =>
-                                avs_csr_readdata(HIT_MODE_HI downto HIT_MODE_LO) <= "000";
-                            when PRBS =>
-                                avs_csr_readdata(HIT_MODE_HI downto HIT_MODE_LO) <= "001";
-                            when others =>
-                                avs_csr_readdata(HIT_MODE_HI downto HIT_MODE_LO) <= "110";
-                        end case;
+                        avs_csr_readdata(1)     <= csr.force_stop;
+                        avs_csr_readdata(2)     <= csr.soft_reset;
+                        avs_csr_readdata(3)     <= csr.bypass_lapse;
+                        avs_csr_readdata(4)     <= csr.discard_hiterr;
+                        avs_csr_readdata(OP_MODE_LO + 2)                <= csr.decode_ets;
+                        avs_csr_readdata(OP_MODE_LO + 1)                <= csr.delay_ts_field_use_t;
                     when 1 => 
-                        avs_csr_readdata		<= std_logic_vector(debug_msg.discard_hit_cnt);
+                        avs_csr_readdata        <= std_logic_vector(debug_msg.discard_hit_cnt);
                     when 2 =>
-                        avs_csr_readdata		<= csr.expected_latency;
+                        avs_csr_readdata        <= csr.expected_latency;
                     when 3 =>
-                        avs_csr_readdata(15 downto 0)		<= std_logic_vector(debug_msg.total_hit_cnt(47 downto 32));
+                        avs_csr_readdata(15 downto 0)       <= std_logic_vector(debug_msg.total_hit_cnt(47 downto 32));
                     when 4 =>
-                        avs_csr_readdata				<= std_logic_vector(debug_msg.total_hit_cnt(31 downto 0));
+                        avs_csr_readdata                    <= std_logic_vector(debug_msg.total_hit_cnt(31 downto 0));
                     when others => 
                         null;
                 end case;
@@ -814,7 +836,6 @@ begin
                 counter_ov_cnt_reg	<= counter_ov_cnt;
                 if (fpga_overflow_happened = '1') then -- set counter
                     fpga_overflow_lookback_cnt		<= to_unsigned(to_integer(unsigned(csr.expected_latency))*5 , fpga_overflow_lookback_cnt'length);
-                    
                 elsif (to_integer(fpga_overflow_lookback_cnt) <= to_integer(unsigned(csr.expected_latency))*5 and to_integer(fpga_overflow_lookback_cnt) /= 0) then
                     fpga_overflow_lookback_cnt		<= fpga_overflow_lookback_cnt - 5; -- with underflow protection
                 else
@@ -855,6 +876,9 @@ begin
         --variable cc_gts_1n6			: unsigned(49 downto 0); -- padded to 50 bit
         
     begin
+
+        padding_upper       <= to_unsigned(OVERFLOW_1N6, 32) - to_unsigned(to_integer(unsigned(csr.expected_latency))*5, 32); -- (padding_upper,overflow] is the region where fpga can overflow and incoming hits mts large, meaning we overcount one fpga ov cycle, so minus ov 
+
         if (counter_ov_cnt_reg /= counter_ov_cnt) then -- generate a pulse when overflow happened on fpga
             fpga_overflow_happened 	<= '1'; -- after reset it should be ok 
         else
@@ -872,7 +896,7 @@ begin
         -- We set a fpga local time window. Only within this window, the subtraction is needed.
         
         -- fpga overflow, but mutrig hits didn't, and multiplier is updated 
-        if (to_integer(padding_logic_gray_ts) > UPPER and to_integer(fpga_overflow_lookback_cnt) /= 0 and to_integer(lpm_multi_valid_cnt) = 0) then 
+        if (padding_logic_gray_ts > padding_upper and to_integer(fpga_overflow_lookback_cnt) /= 0 and to_integer(lpm_multi_valid_cnt) = 0) then 
             --cc_gts_1n6		:= to_unsigned(cc_mts_1n6 + (to_integer(counter_ov_cnt)-1) * OVERFLOW_1N6, cc_gts_1n6'length);
             padding_logic_white_ts		<= padding_logic_gray_ts	+ unsigned(padding_logic_gts_product) - to_unsigned(OVERFLOW_1N6, 15);
         else 
@@ -880,7 +904,7 @@ begin
             padding_logic_white_ts		<= padding_logic_gray_ts	+ unsigned(padding_logic_gts_product);
         end if;
 
-        if (to_integer(padding_logic_gray_ts_e) > UPPER and to_integer(fpga_overflow_lookback_cnt) /= 0 and to_integer(lpm_multi_valid_cnt) = 0) then 
+        if (padding_logic_gray_ts_e > padding_upper and to_integer(fpga_overflow_lookback_cnt) /= 0 and to_integer(lpm_multi_valid_cnt) = 0) then 
             padding_logic_white_ts_e	<= padding_logic_gray_ts_e	+ unsigned(padding_logic_gts_product) - to_unsigned(OVERFLOW_1N6, 15);
         else 
             padding_logic_white_ts_e	<= padding_logic_gray_ts_e	+ unsigned(padding_logic_gts_product);
@@ -955,8 +979,6 @@ begin
             hit_in.e_flag	<= '0';
             hit_in.valid	<= '0';
             hit_in.hiterr	<= '0';
-            --cc_in			<= (others => '0');
-            
             
             hit_padding.asic	<= (others => '0');
             hit_padding.channel	<= (others => '0');
@@ -967,7 +989,8 @@ begin
             hit_padding.valid	<= '0';
             hit_padding.hiterr	<= '0';
             
-            lpm_div_num_in		<= (others => '0');
+            tcc_div_numer		<= (others => '0');
+            ecc_div_numer       <= (others => '0');
             -- clr the input stage for debug purpose
             for i in 0 to 0 loop
                 hit_div(i).asic			<= (others => '0');
@@ -992,8 +1015,6 @@ begin
             if (asi_hit_type0_valid = '1' and hit_in_ok = '1') then 
                 hit_in.asic		<= asi_hit_type0_data(I_ASIC_HI downto I_ASIC_LO);
                 hit_in.channel	<= asi_hit_type0_data(I_CHANNEL_HI downto I_CHANNEL_LO);
-                hit_in.t_cc		<= asi_hit_type0_data(I_TCC_HI downto I_TCC_LO);
-                --cc_in			<= asi_hit_type0_data(I_TCC_HI downto I_TCC_LO); -- decode tcc
                 hit_in.t_fine	<= asi_hit_type0_data(I_TFINE_HI downto I_TFINE_LO);
                 hit_in.e_flag   <= asi_hit_type0_data(I_EFLAG_BIT_LOC);
                 hit_in.valid	<= '1';
@@ -1004,8 +1025,8 @@ begin
             if (hit_in.valid = '1') then 
                 hit_padding.asic		<= hit_in.asic;
                 hit_padding.channel		<= hit_in.channel;
-                hit_padding.cc_out		<= cc_out; -- decode
-                hit_padding.ecc_out		<= ecc_out; -- decode
+                hit_padding.cc_out		<= cc_out; -- decoded
+                hit_padding.ecc_out		<= ecc_out; -- decoded
                 hit_padding.e_flag		<= hit_in.e_flag;
                 hit_padding.t_fine		<= hit_in.t_fine;
                 hit_padding.valid		<= '1';
@@ -1017,14 +1038,16 @@ begin
                 hit_div(0).asic			<= hit_padding.asic;
                 hit_div(0).channel		<= hit_padding.channel;
                 if (csr.bypass_lapse = '0') then  -- mts -> gts transformation enable 
-                    lpm_div_num_in											<= cc_gts_1n6_slv50;
+                    tcc_div_numer                                       <= cc_gts_1n6_slv50;
+                    ecc_div_numer                                       <= ecc_gts_1n6_slv50;
                 else -- mts -> gts transformation disable (this would result in random dist., which is simply for sanity check.) 
-                    lpm_div_num_in(hit_padding.cc_out'high downto 0)		<= hit_padding.cc_out;
+                    tcc_div_numer(hit_padding.cc_out'high downto 0)     <= hit_padding.cc_out;
+                    ecc_div_numer(hit_padding.ecc_out'high downto 0)    <= hit_padding.ecc_out;
                 end if;
 
                 -- eflag[8] + ToT[8:0]
                 -- Q: seems eflag=1 is bad, which is inverted? A: no, flag=1 is good, it was a misunderstanding with BadHit bit
-                if csr.set_hit_mode = LONG then
+                if csr.decode_ets = '1' then
                     hit_div(0).et_1n6 		<= std_logic_vector(resize(unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50), hit_div(0).et_1n6'length)); -- msb for flag
                     if (unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50) < 0) then -- if negative, underflow, mask the ToT to 0 (dec). (not encountered yet)
                         hit_div(0).et_1n6       <= (others => '0');
@@ -1046,8 +1069,8 @@ begin
             if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- assemble the hit_out 
                 hit_out.asic		<= hit_div(LPM_DIV_PIPELINE).asic;
                 hit_out.channel		<= hit_div(LPM_DIV_PIPELINE).channel;
-                hit_out.tcc_8n		<= lpm_div_quo_out(hit_out.tcc_8n'high downto 0); -- latch div result (quotient)
-                hit_out.tcc_1n6		<= lpm_div_rem_out(hit_out.tcc_1n6'high downto 0); -- latch div result (remainder)
+                hit_out.tcc_8n		<= tcc_div_quotient(hit_out.tcc_8n'high downto 0); -- latch div result (quotient)
+                hit_out.tcc_1n6		<= tcc_div_remain(hit_out.tcc_1n6'high downto 0); -- latch div result (remainder)
                 hit_out.tfine		<= hit_div(LPM_DIV_PIPELINE).t_fine;
                 hit_out.et_1n6		<= hit_div(LPM_DIV_PIPELINE).et_1n6;
                 hit_out.valid		<= '1';
@@ -1178,19 +1201,26 @@ begin
         end if;
     end process;
     
-    proc_debug_ts_comb : process (all)
+    proc_debug_ts_comb : process (all) -- need to delay 1 cycle to match with normal hit data
     begin
-        aso_debug_ts_data           <= int_aso_debug_ts_data;
+        if (rising_edge(i_clk)) then
+            aso_debug_ts_data           <= int_aso_debug_ts_data;
+            aso_debug_ts_valid          <= int_aso_debug_ts_valid;
+        end if;
     end process;
     
     proc_debug_ts : process (i_clk)
     begin
         if (rising_edge(i_clk)) then
             if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- 48 bit - 48 bit (no of/df)
-                int_aso_debug_ts_data	<= std_logic_vector(to_signed( to_integer(counter_gts_8n) - to_integer(unsigned(lpm_div_quo_out)),aso_debug_ts_data'length));
-                aso_debug_ts_valid		<= '1';
+                if (csr.delay_ts_field_use_t = '1') then  
+                    int_aso_debug_ts_data	<= std_logic_vector(to_signed(to_integer(counter_gts_8n) - to_integer(unsigned(tcc_div_quotient)),aso_debug_ts_data'length));
+                else 
+                    int_aso_debug_ts_data	<= std_logic_vector(to_signed(to_integer(counter_gts_8n) - to_integer(unsigned(ecc_div_quotient)),aso_debug_ts_data'length));
+                end if;
+                int_aso_debug_ts_valid  <= '1';
             else 
-                aso_debug_ts_valid		<= '0';
+                int_aso_debug_ts_valid  <= '0';
             end if;
             
             -- --------------------------------------------
@@ -1198,9 +1228,9 @@ begin
             -- --------------------------------------------
             -- default 
             aso_hit_type1_error(0)           <= '0'; -- timing aligned with <hit_type1> valid
-            if (aso_debug_ts_valid = '1') then 
+            if (int_aso_debug_ts_valid = '1') then 
                 -- ok: ts within range of (0,2000)
-                if (to_integer(signed(int_aso_debug_ts_data)) > 0 and to_integer(signed(int_aso_debug_ts_data)) < MUTRIG_BUFFER_EXPECTED_LATENCY_8N) then 
+                if (signed(int_aso_debug_ts_data) > to_signed(0, int_aso_debug_ts_data'length) and unsigned(int_aso_debug_ts_data) < unsigned(csr.expected_latency)) then -- refactor : use csr and better lint 
                     aso_hit_type1_error(0)      <= '0';
                 -- error: ts out of range of (0,2000). possible pll unlocked or cml logic recv side is too low (generate a bit of side noise)
                 else 
@@ -1231,7 +1261,11 @@ begin
                 -- --------------
                 if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- 48 bit - 48 bit
                     -- timestamp
-                    egress_timestamp(0)         <= lpm_div_quo_out(egress_timestamp(0)'high downto 0);
+                    if (csr.delay_ts_field_use_t = '1') then  
+                        egress_timestamp(0)         <= tcc_div_quotient(egress_timestamp(0)'high downto 0);
+                    else 
+                        egress_timestamp(0)         <= ecc_div_quotient(egress_timestamp(0)'high downto 0);
+                    end if;
                     egress_timestamp(1)         <= egress_timestamp(0);
                     -- arrival
                     egress_arrival(0)           <= std_logic_vector(counter_gts_8n);

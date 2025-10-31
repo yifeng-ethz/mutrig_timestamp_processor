@@ -8,8 +8,9 @@
 # 25.0.0306 - add <debug_burst> interface 
 # 25.0.0924 - supports e-flag from mutrig, to indicate if ecc is valid
 # 25.0.1014 - put et1n6 to zero in SHORT hit mode
+# 25.0.1027 - delay debug_ts valid by 1 cycle to match with data
+# 25.0.1031 - add csr op mode of decode_ets to toggle type a or b for output and delay_ts_field_use_t to select tcc or ecc for ts delay calculation
 
-# 
 # request TCL package from ACDS 16.1
 # 
 package require -exact qsys 16.1
@@ -20,7 +21,7 @@ package require -exact qsys 16.1
 # 
 set_module_property DESCRIPTION "Decode the hits from MuTRiG "
 set_module_property NAME mts_preprocessor
-set_module_property VERSION 25.0.1014
+set_module_property VERSION 25.0.1031
 set_module_property INTERNAL false
 set_module_property OPAQUE_ADDRESS_MAP true
 set_module_property GROUP "Mu3e Data Plane/Modules"
