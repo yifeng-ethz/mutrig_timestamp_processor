@@ -295,16 +295,16 @@ architecture rtl of mts_processor is
     
     -- data and control path signals 
     type csr_t is record 
-        go					: std_logic;
-        force_stop			: std_logic;
-        soft_reset			: std_logic;
-        decode_ets		    : std_logic;
+        go                      : std_logic;
+        force_stop              : std_logic;
+        soft_reset              : std_logic;
+        derive_tot              : std_logic;
         delay_ts_field_use_t    : std_logic;
-        bypass_lapse		: std_logic;
-        discard_hiterr		: std_logic;
-        expected_latency	: std_logic_vector(31 downto 0);
+        bypass_lapse            : std_logic;
+        discard_hiterr          : std_logic;
+        expected_latency        : std_logic_vector(31 downto 0);
     end record;
-    signal csr				: csr_t;
+    signal csr                  : csr_t;
     
     type debug_msg_t is record
         discard_hit_cnt		: unsigned(31 downto 0);
@@ -618,7 +618,7 @@ begin
             csr.go                      <= '1'; -- NOTE: default is go. If go is low, cmd from run_state_controller cannot send processor to run state.
             csr.force_stop              <= '0';
             csr.soft_reset              <= '0'; -- only reset counters for now
-            csr.decode_ets              <= '1';
+            csr.derive_tot              <= '0';
             csr.delay_ts_field_use_t    <= '1';
             csr.expected_latency        <= std_logic_vector(to_unsigned(MUTRIG_BUFFER_EXPECTED_LATENCY_8N, csr.expected_latency'length));
             csr.discard_hiterr          <= '1'; -- NOTE: default is discard hiterr
@@ -637,8 +637,8 @@ begin
                         csr.bypass_lapse        <=  avs_csr_writedata(3);
                         csr.discard_hiterr      <= 	avs_csr_writedata(4);
                         -- 3-bit of op mode 
-                        -- [2] decode ets : 1=long, 0=short (def). Decode E branch and validate E-BadHit. Output format go to type1b.
-                        csr.decode_ets        <= avs_csr_writedata(OP_MODE_LO + 2);
+                        -- [2] derive tot : 1=long, 0=short (def). Decode E branch and validate E-BadHit. Output format go to type1b.
+                        csr.derive_tot        <= avs_csr_writedata(OP_MODE_LO + 2);
                         -- [1] delay ts field : 1=use T (def), 0=use E. Calc delay using T or E timestamp. Used when hit tuple has different meanings. 
                         --                      ref to https://bitbucket.org/mu3e/online/wiki/mutrig_hitTx
                         --
@@ -672,7 +672,7 @@ begin
                         avs_csr_readdata(2)     <= csr.soft_reset;
                         avs_csr_readdata(3)     <= csr.bypass_lapse;
                         avs_csr_readdata(4)     <= csr.discard_hiterr;
-                        avs_csr_readdata(OP_MODE_LO + 2)                <= csr.decode_ets;
+                        avs_csr_readdata(OP_MODE_LO + 2)                <= csr.derive_tot;
                         avs_csr_readdata(OP_MODE_LO + 1)                <= csr.delay_ts_field_use_t;
                     when 1 => 
                         avs_csr_readdata        <= std_logic_vector(debug_msg.discard_hit_cnt);
@@ -1047,8 +1047,8 @@ begin
 
                 -- eflag[8] + ToT[8:0]
                 -- Q: seems eflag=1 is bad, which is inverted? A: no, flag=1 is good, it was a misunderstanding with BadHit bit
-                if csr.decode_ets = '1' then
-                    hit_div(0).et_1n6 		<= std_logic_vector(resize(unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50), hit_div(0).et_1n6'length)); -- msb for flag
+                if csr.derive_tot = '1' then
+                    hit_div(0).et_1n6       <= std_logic_vector(resize(unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50), hit_div(0).et_1n6'length)); -- msb for flag
                     if (unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50) < 0) then -- if negative, underflow, mask the ToT to 0 (dec). (not encountered yet)
                         hit_div(0).et_1n6       <= (others => '0');
                     elsif (unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50) > to_unsigned(511, 50)) then -- if too large, overflow, mask the ToT to 511 (dec)
