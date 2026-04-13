@@ -4,7 +4,7 @@
   <vendorID>MU3E</vendorID>
   <name>MU3E_MTS_PROCESSOR</name>
   <series>MU3E_FPGA_IP</series>
-  <version>26.0.402</version>
+  <version>26.0.403</version>
   <description>CMSIS-SVD description of the MuTRiG timestamp processor CSR window. This conservative first-pass schema exposes the 8-word relative aperture as read-only WORD registers until the IP author replaces them with the exact CSR contract.</description>
   <addressUnitBits>8</addressUnitBits>
   <width>32</width>

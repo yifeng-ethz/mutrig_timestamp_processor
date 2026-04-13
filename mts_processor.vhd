@@ -20,6 +20,8 @@
 --      Date: Apr 2, 2026
 -- Revision: 5.4 (Drive hit_type1 sideband channel from ts interleaving for hit-stack routing)
 --      Date: Apr 2, 2026
+-- Revision: 5.5 (Keep shallow divider/EOP delay lines in FFs to close standalone timing)
+--      Date: Apr 13, 2026
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -480,6 +482,12 @@ architecture rtl of mts_processor is
     signal packet_in_transaction	: std_logic_vector(N_ENABLED_CHANNEL-1 downto 0);
     constant TERMINATING_EOP_DELAY_CONST : natural := LPM_DIV_PIPELINE + 4;
     signal terminating_eop_pipe          : std_logic_vector(TERMINATING_EOP_DELAY_CONST - 1 downto 0);
+
+    attribute altera_attribute : string;
+    -- These delay lines are only 5/8 deep. Keeping them in FFs avoids the
+    -- standalone critical path introduced by MLAB-based altshift inference.
+    attribute altera_attribute of hit_div              : signal is "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF";
+    attribute altera_attribute of terminating_eop_pipe : signal is "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF";
     
     
     -- debug_ts 

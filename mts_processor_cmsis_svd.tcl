@@ -8,7 +8,7 @@ namespace eval ::mu3e::cmsis::spec {}
 
 proc ::mu3e::cmsis::spec::build_device {} {
     return [::mu3e::cmsis::svd::device MU3E_MTS_PROCESSOR \
-        -version 26.0.402 \
+        -version 26.0.403 \
         -description "CMSIS-SVD description of the MuTRiG timestamp processor CSR window. This conservative first-pass schema exposes the 8-word relative aperture as read-only WORD registers until the IP author replaces them with the exact CSR contract." \
         -peripherals [list \
             [::mu3e::cmsis::svd::peripheral MTS_PROCESSOR_CSR 0x0 \
