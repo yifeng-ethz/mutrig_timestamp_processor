@@ -34,8 +34,8 @@ architecture sim of mts_processor_tb is
     signal aso_hit_type1_data       : std_logic_vector(38 downto 0);
     signal aso_hit_type1_valid      : std_logic;
     signal aso_hit_type1_ready      : std_logic := '1';
-    signal aso_hit_type1_empty      : std_logic_vector(0 downto 0);
-    signal aso_hit_type1_error      : std_logic_vector(0 downto 0);
+    signal aso_hit_type1_empty      : std_logic;
+    signal aso_hit_type1_error      : std_logic;
     signal asi_ctrl_data            : std_logic_vector(8 downto 0) := (others => '0');
     signal asi_ctrl_valid           : std_logic := '0';
     signal asi_ctrl_ready           : std_logic;
@@ -129,7 +129,11 @@ architecture sim of mts_processor_tb is
             wait until rising_edge(clk);
             if hit_valid = '1' then
                 assert unsigned(hit_data(ET_FIELD_HI_CONST downto ET_FIELD_LO_CONST)) = to_unsigned(expected_et, ET_FIELD_HI_CONST - ET_FIELD_LO_CONST + 1)
-                    report "Unexpected ET_1n6 value" severity failure;
+                    report "Unexpected ET_1n6 value exp=0x"
+                        & to_hstring(std_logic_vector(to_unsigned(expected_et, ET_FIELD_HI_CONST - ET_FIELD_LO_CONST + 1)))
+                        & " got=0x"
+                        & to_hstring(hit_data(ET_FIELD_HI_CONST downto ET_FIELD_LO_CONST))
+                        severity failure;
                 return;
             end if;
         end loop;

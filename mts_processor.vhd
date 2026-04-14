@@ -22,6 +22,8 @@
 --      Date: Apr 2, 2026
 -- Revision: 5.5 (Keep shallow divider/EOP delay lines in FFs to close standalone timing)
 --      Date: Apr 13, 2026
+-- Revision: 5.6 (Stabilize white-timestamp simulation math and clamp negative ToT)
+--      Date: Apr 14, 2026
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -869,14 +871,21 @@ begin
     
     end process;
     
-    proc_mts_counter : process (i_clk)
+    proc_mts_counter : process (i_rst, i_clk)
     -- counter of the mutrig timestamp on the FPGA
     begin
-        if rising_edge(i_clk) then
+        if (i_rst = '1') then
+            counter_mts_1n6              <= (others => '0');
+            counter_ov_cnt               <= (others => '0');
+            counter_ov_cnt_reg           <= (others => '0');
+            fpga_overflow_lookback_cnt   <= (others => '0');
+            lpm_multi_valid_cnt          <= (others => '0');
+        elsif rising_edge(i_clk) then
             if (processor_state = RESET and reset_flow = SYNC) then 
                  -- reset counter
                 counter_mts_1n6		<= (others => '0');
                 counter_ov_cnt		<= (others => '0');
+                counter_ov_cnt_reg  <= (others => '0');
                 fpga_overflow_lookback_cnt		<= (others => '0');
                 lpm_multi_valid_cnt     <= (others => '0');
             else
@@ -921,11 +930,13 @@ begin
         end if;
     end process;
     
-    proc_gts_counter : process (i_clk)
+    proc_gts_counter : process (i_rst, i_clk)
     -- counter of the global timestamp on the FPGA
         -- needs to be 48 bit at 125 MHz
     begin
-        if rising_edge(i_clk) then
+        if (i_rst = '1') then
+            counter_gts_8n <= (others => '0');
+        elsif rising_edge(i_clk) then
             if (processor_state = RESET and reset_flow = SYNC) then 
                  -- reset counter
                 counter_gts_8n		<= (others => '0');
@@ -943,46 +954,52 @@ begin
     -- output: white ts (cc_gts_1n6_slv50), latch at the input stage of lpm div pipeline
         --variable cc_mts_1n6			: unsigned(14 downto 0); -- input 15 bit 
         --variable cc_gts_1n6			: unsigned(49 downto 0); -- padded to 50 bit
-        
+        variable padding_logic_gray_ts_v   : unsigned(14 downto 0);
+        variable padding_logic_gray_ts_e_v : unsigned(14 downto 0);
+        variable padding_logic_white_ts_v  : unsigned(49 downto 0);
+        variable padding_logic_white_ts_e_v: unsigned(49 downto 0);
+        variable padding_logic_gts_product_v : unsigned(49 downto 0);
     begin
         if (counter_ov_cnt_reg /= counter_ov_cnt) then -- generate a pulse when overflow happened on fpga
             fpga_overflow_happened 	<= '1'; -- after reset it should be ok 
         else
             fpga_overflow_happened 	<= '0';
         end if;
-        
-        -- input
-        padding_logic_gray_ts				<= unsigned(hit_padding.cc_out); -- padding the gray (decoded) ts to white ts
-        padding_logic_gray_ts_e				<= unsigned(hit_padding.ecc_out); -- padding the gray (decoded) ts_e to white ts_e
-    
+
+        padding_logic_gray_ts_v      := unsigned(hit_padding.cc_out);
+        padding_logic_gray_ts_e_v    := unsigned(hit_padding.ecc_out);
+        padding_logic_gts_product_v  := unsigned(padding_logic_gts_product);
+
         -- mts_1n6 (FPGA) will be faster/larger than receiving cc_mts_1n6 (MuTRiG), because of buffering, which is maximum two frame length (short=910 cycle, long = 1550 cycle; cycle=8ns)
         -- plus, a bit of cycles inside FPGA. 
         -- As a result, for small incoming hits, it is correct.
         -- For large incoming hits, the fpga counter might already overflowed, so we subtract 1 in overflow counter during this calculation.
         -- We set a fpga local time window. Only within this window, the subtraction is needed.
-        
+
         -- Use the per-hit latched overflow-window decision here so the white
         -- timestamp adder no longer depends on the live lookback counter.
-        if (padding_logic_gray_ts > padding_upper and hit_padding.tot_t_adjust = '1') then 
+        if (padding_logic_gray_ts_v > padding_upper and hit_padding.tot_t_adjust = '1') then 
             --cc_gts_1n6		:= to_unsigned(cc_mts_1n6 + (to_integer(counter_ov_cnt)-1) * OVERFLOW_1N6, cc_gts_1n6'length);
-            padding_logic_white_ts		<= padding_logic_gray_ts	+ unsigned(padding_logic_gts_product) - to_unsigned(OVERFLOW_1N6, 15);
+            padding_logic_white_ts_v := resize(padding_logic_gray_ts_v, padding_logic_white_ts_v'length) + padding_logic_gts_product_v - to_unsigned(OVERFLOW_1N6, padding_logic_white_ts_v'length);
         else 
             --cc_gts_1n6		:= to_unsigned(cc_mts_1n6 + to_integer(counter_ov_cnt) * OVERFLOW_1N6, cc_gts_1n6'length);
-            padding_logic_white_ts		<= padding_logic_gray_ts	+ unsigned(padding_logic_gts_product);
+            padding_logic_white_ts_v := resize(padding_logic_gray_ts_v, padding_logic_white_ts_v'length) + padding_logic_gts_product_v;
         end if;
 
-        if (padding_logic_gray_ts_e > padding_upper and hit_padding.tot_e_adjust = '1') then 
-            padding_logic_white_ts_e	<= padding_logic_gray_ts_e	+ unsigned(padding_logic_gts_product) - to_unsigned(OVERFLOW_1N6, 15);
+        if (padding_logic_gray_ts_e_v > padding_upper and hit_padding.tot_e_adjust = '1') then 
+            padding_logic_white_ts_e_v := resize(padding_logic_gray_ts_e_v, padding_logic_white_ts_e_v'length) + padding_logic_gts_product_v - to_unsigned(OVERFLOW_1N6, padding_logic_white_ts_e_v'length);
         else 
-            padding_logic_white_ts_e	<= padding_logic_gray_ts_e	+ unsigned(padding_logic_gts_product);
+            padding_logic_white_ts_e_v := resize(padding_logic_gray_ts_e_v, padding_logic_white_ts_e_v'length) + padding_logic_gts_product_v;
         end if;
 
-    
-        -- connect i/o
-        
+        padding_logic_gray_ts      <= padding_logic_gray_ts_v;
+        padding_logic_gray_ts_e    <= padding_logic_gray_ts_e_v;
+        padding_logic_white_ts     <= padding_logic_white_ts_v;
+        padding_logic_white_ts_e   <= padding_logic_white_ts_e_v;
+
         -- output
-        cc_gts_1n6_slv50		<= std_logic_vector(padding_logic_white_ts);
-        ecc_gts_1n6_slv50		<= std_logic_vector(padding_logic_white_ts_e);
+        cc_gts_1n6_slv50		<= std_logic_vector(padding_logic_white_ts_v);
+        ecc_gts_1n6_slv50		<= std_logic_vector(padding_logic_white_ts_e_v);
     
     end process;
     
@@ -1032,6 +1049,7 @@ begin
     
     proc_datapath : process (i_rst, i_clk) 
     --	
+        variable et_delta_v : unsigned(49 downto 0);
     begin
         if (i_rst = '1') then 
             hit_in.asic     <= (others => '0');
@@ -1103,6 +1121,7 @@ begin
             hit_padding.asic	<= (others => '0');
             hit_padding.channel	<= (others => '0');
             hit_padding.cc_out	<= (others => '0');
+            hit_padding.ecc_out	<= (others => '0');
             hit_padding.tot_t_adjust <= '0';
             hit_padding.tot_e_adjust <= '0';
             hit_padding.t_fine	<= (others => '0');
@@ -1190,14 +1209,16 @@ begin
                 -- eflag[8] + ToT[8:0]
                 -- Q: seems eflag=1 is bad, which is inverted? A: no, flag=1 is good, it was a misunderstanding with BadHit bit
                 if csr.derive_tot = '1' then
-                    hit_div(0).et_1n6       <= std_logic_vector(resize(unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50), hit_div(0).et_1n6'length)); -- msb for flag
-                    if (unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50) < 0) then -- if negative, underflow, mask the ToT to 0 (dec). (not encountered yet)
-                        hit_div(0).et_1n6       <= (others => '0');
-                    elsif (unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50) > to_unsigned(511, 50)) then -- if too large, overflow, mask the ToT to 511 (dec)
-                        hit_div(0).et_1n6       <= (others => '1');
-                    end if;
                     if (hit_padding.e_flag = '0') then -- if no eflag, mask the ToT value to 0 (dec)
                         hit_div(0).et_1n6       <= (others => '0');
+                    elsif (unsigned(ecc_gts_1n6_slv50) < unsigned(cc_gts_1n6_slv50)) then -- if negative, underflow, mask the ToT to 0 (dec)
+                        hit_div(0).et_1n6       <= (others => '0');
+                    else
+                        et_delta_v := unsigned(ecc_gts_1n6_slv50) - unsigned(cc_gts_1n6_slv50);
+                        hit_div(0).et_1n6       <= std_logic_vector(resize(et_delta_v, hit_div(0).et_1n6'length));
+                        if (et_delta_v > to_unsigned(511, et_delta_v'length)) then -- if too large, overflow, mask the ToT to 511 (dec)
+                            hit_div(0).et_1n6       <= (others => '1');
+                        end if;
                     end if;
                 else
                     hit_div(0).et_1n6       <= (others => '0');

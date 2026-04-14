@@ -12,6 +12,7 @@
 # 25.0.1031 - add csr op mode of decode_ets to toggle type a or b for output and delay_ts_field_use_t to select tcc or ecc for ts delay calculation
 # 26.0.0402 - restore committed divider launch, reset bypass_lapse by default, and keep terminating EOP support
 # 26.0.0403 - keep shallow divider/EOP delay lines in FFs for standalone timing closure
+# 26.0.0404 - reset local timestamp counters on i_rst and harden standalone simulation behavior
 
 # request TCL package from ACDS 16.1
 # 
@@ -23,7 +24,7 @@ package require -exact qsys 16.1
 # 
 set_module_property DESCRIPTION "Decode the hits from MuTRiG "
 set_module_property NAME mts_preprocessor
-set_module_property VERSION 26.0.0403
+set_module_property VERSION 26.0.0404
 set_module_property INTERNAL false
 set_module_property OPAQUE_ADDRESS_MAP true
 set_module_property GROUP "Mu3e Data Plane/Modules"
