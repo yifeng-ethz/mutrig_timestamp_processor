@@ -1,6 +1,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use std.env.all;
 
 entity mts_processor_tb is
 end entity mts_processor_tb;
@@ -283,7 +284,8 @@ begin
             expected_et             => 511
         );
 
-        assert false report "mts_processor_tb PASSED" severity failure;
+        report "mts_processor_tb PASSED" severity note;
+        finish;
     end process tb_stim;
 
 end architecture sim;

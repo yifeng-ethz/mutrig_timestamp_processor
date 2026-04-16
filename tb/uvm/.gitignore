@@ -1,0 +1,10 @@
+logs/
+reports/
+cov_/
+cov_after/
+cov_before/
+work_/
+work_after*/
+work_before*/
+transcript
+vsim.wlf

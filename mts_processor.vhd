@@ -24,6 +24,12 @@
 --      Date: Apr 13, 2026
 -- Revision: 5.6 (Stabilize white-timestamp simulation math and clamp negative ToT)
 --      Date: Apr 14, 2026
+-- Revision: 5.7 (Make run-control ready stateful and preserve terminate markers through idle drain)
+--      Date: Apr 15, 2026
+-- Version : 26.0.1
+-- Date    : 20260415
+-- Change  : Gate run-control acknowledge on local reset/drain completion and forward a final terminate boundary
+--           even when the upstream receiver closes an idle run with a synthetic hit_type0 EOP pulse.
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -306,9 +312,14 @@ architecture rtl of mts_processor is
     
     type run_state_t is (IDLE, RUN_PREPARE, SYNC, RUNNING, TERMINATING, LINK_TEST, SYNC_TEST, RESET, OUT_OF_DAQ, ERROR);
     signal run_state_cmd	: run_state_t;
+    signal terminating_done : std_logic;
+    signal ctrl_ready_comb  : std_logic;
     
     -- processor
-    signal startofrun_sent					: std_logic_vector(15 downto 0);
+    constant ROUTE_LANE_COUNT_CONST      : natural := 4;
+    constant ROUTE_LANE_BITS_CONST       : natural := 2;
+    signal route_startofrun_sent         : std_logic_vector(ROUTE_LANE_COUNT_CONST - 1 downto 0);
+    signal route_terminate_sent          : std_logic_vector(ROUTE_LANE_COUNT_CONST - 1 downto 0);
     signal hit_in_ok						: std_logic;
     signal processor_allow_input			: std_logic;
     
@@ -478,18 +489,19 @@ architecture rtl of mts_processor is
     -- counter gts 
     signal counter_gts_8n					: unsigned(47 downto 0); -- can be tuned
     
-    -- eop
-    constant EOP_DELAY_CYCLE		: natural := 3;
-    constant N_ENABLED_CHANNEL		: natural := ENABLED_CHANNEL_HI - ENABLED_CHANNEL_LO + 1;
-    signal packet_in_transaction	: std_logic_vector(N_ENABLED_CHANNEL-1 downto 0);
-    constant TERMINATING_EOP_DELAY_CONST : natural := LPM_DIV_PIPELINE + 4;
-    signal terminating_eop_pipe          : std_logic_vector(TERMINATING_EOP_DELAY_CONST - 1 downto 0);
+    -- terminate / per-run close markers
+    constant N_ENABLED_CHANNEL          : natural := ENABLED_CHANNEL_HI - ENABLED_CHANNEL_LO + 1;
+    signal packet_in_transaction        : std_logic_vector(N_ENABLED_CHANNEL-1 downto 0);
+    signal hit_div_busy                 : std_logic;
+    signal input_pipeline_busy          : std_logic;
+    signal terminating_marker_valid     : std_logic;
+    signal terminating_marker_lane      : std_logic_vector(ROUTE_LANE_BITS_CONST - 1 downto 0);
+    signal terminating_marker_sop       : std_logic;
 
     attribute altera_attribute : string;
-    -- These delay lines are only 5/8 deep. Keeping them in FFs avoids the
-    -- standalone critical path introduced by MLAB-based altshift inference.
-    attribute altera_attribute of hit_div              : signal is "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF";
-    attribute altera_attribute of terminating_eop_pipe : signal is "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF";
+    -- Keep the short divider pipeline in FFs; MLAB shift inference hurts the
+    -- standalone timing of the signoff bench.
+    attribute altera_attribute of hit_div : signal is "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF";
     
     
     -- debug_ts 
@@ -554,6 +566,75 @@ begin
         fpga_overflow_lookback_cnt /= to_unsigned(0, fpga_overflow_lookback_cnt'length)
         and lpm_multi_valid_cnt = to_unsigned(0, lpm_multi_valid_cnt'length)
     ) else '0';
+
+    asi_ctrl_ready <= ctrl_ready_comb;
+    ctrl_ready_comb <= '0' when i_rst = '1' else
+                      '1' when (run_state_cmd = IDLE and processor_state = IDLE) else
+                      '1' when (run_state_cmd = RUN_PREPARE and processor_state = RESET and reset_flow = SCLR) else
+                      '1' when (run_state_cmd = SYNC and processor_state = RESET and reset_flow = SYNC) else
+                      '1' when (run_state_cmd = RUNNING and processor_state = RUNNING) else
+                      '1' when (run_state_cmd = TERMINATING and processor_state = FLUSHING and terminating_done = '1') else
+                      '0';
+
+    proc_terminating_marker_comb : process (all)
+        variable div_busy_v        : std_logic;
+        variable pipeline_busy_v   : std_logic;
+        variable marker_found_v    : std_logic;
+        variable marker_lane_v     : std_logic_vector(ROUTE_LANE_BITS_CONST - 1 downto 0);
+    begin
+        div_busy_v      := '0';
+        pipeline_busy_v := '0';
+        marker_found_v  := '0';
+        marker_lane_v   := (others => '0');
+
+        for i in 0 to LPM_DIV_PIPELINE loop
+            if (hit_div(i).valid = '1') then
+                div_busy_v := '1';
+            end if;
+        end loop;
+
+        if (
+            asi_hit_type0_valid = '1'
+            or hit_in.valid = '1'
+            or hit_padding.valid = '1'
+            or hit_prediv.valid = '1'
+            or div_busy_v = '1'
+            or hit_out.valid = '1'
+            or packet_in_transaction /= (packet_in_transaction'range => '0')
+        ) then
+            pipeline_busy_v := '1';
+        end if;
+
+        hit_div_busy <= div_busy_v;
+        input_pipeline_busy <= pipeline_busy_v;
+
+        if (processor_state = FLUSHING and pipeline_busy_v = '0') then
+            for lane in 0 to ROUTE_LANE_COUNT_CONST - 1 loop
+                if (marker_found_v = '0' and route_terminate_sent(lane) = '0') then
+                    marker_found_v := '1';
+                    marker_lane_v  := std_logic_vector(to_unsigned(lane, ROUTE_LANE_BITS_CONST));
+                end if;
+            end loop;
+        end if;
+
+        terminating_marker_valid <= marker_found_v;
+        terminating_marker_lane  <= marker_lane_v;
+        if (marker_found_v = '1' and route_startofrun_sent(to_integer(unsigned(marker_lane_v))) = '0') then
+            terminating_marker_sop <= '1';
+        else
+            terminating_marker_sop <= '0';
+        end if;
+
+        if (
+            processor_state = FLUSHING
+            and pipeline_busy_v = '0'
+            and route_terminate_sent = (route_terminate_sent'range => '1')
+        ) then
+            terminating_done <= '1';
+        else
+            terminating_done <= '0';
+        end if;
+    end process;
 
     -- debug
     --asi_hit_type0_ready		<= i_issp_ready;
@@ -627,42 +708,37 @@ begin
     );
     
     proc_run_control_mgmt_agent : process (i_rst, i_clk)
+        variable decoded_run_state_v : run_state_t;
     begin
         if (i_rst = '1') then 
             run_state_cmd		<= IDLE;
         elsif (rising_edge(i_clk)) then
-            -- valid
+            decoded_run_state_v := run_state_cmd;
             if (asi_ctrl_valid = '1') then 
-                -- payload of run control to run cmd
                 case asi_ctrl_data is 
                     when "000000001" =>
-                        run_state_cmd		<= IDLE;
+                        decoded_run_state_v := IDLE;
                     when "000000010" => 
-                        run_state_cmd		<= RUN_PREPARE;
+                        decoded_run_state_v := RUN_PREPARE;
                     when "000000100" =>
-                        run_state_cmd		<= SYNC;
+                        decoded_run_state_v := SYNC;
                     when "000001000" =>
-                        run_state_cmd		<= RUNNING;
+                        decoded_run_state_v := RUNNING;
                     when "000010000" =>
-                        run_state_cmd		<= TERMINATING;
+                        decoded_run_state_v := TERMINATING;
                     when "000100000" => 
-                        run_state_cmd		<= LINK_TEST;
+                        decoded_run_state_v := LINK_TEST;
                     when "001000000" =>
-                        run_state_cmd		<= SYNC_TEST;
+                        decoded_run_state_v := SYNC_TEST;
                     when "010000000" =>
-                        run_state_cmd		<= RESET;
+                        decoded_run_state_v := RESET;
                     when "100000000" =>
-                        run_state_cmd		<= OUT_OF_DAQ;
+                        decoded_run_state_v := OUT_OF_DAQ;
                     when others =>
-                        run_state_cmd		<= ERROR;
+                        decoded_run_state_v := ERROR;
                 end case;
-            else 
-                run_state_cmd		<= run_state_cmd;
             end if;
-            -- ready
-            -- TODO: hook up with main state machine
-            asi_ctrl_ready		<= '1';
-            
+            run_state_cmd <= decoded_run_state_v;
         end if;
     end process;
         
@@ -1285,148 +1361,83 @@ begin
         end if;
     end process;
 
-    proc_terminating_eop_pipeline : process (i_rst, i_clk)
-    begin
-        if (i_rst = '1') then
-            terminating_eop_pipe <= (others => '0');
-        elsif (rising_edge(i_clk)) then
-            terminating_eop_pipe(0) <= '0';
-            if (
-                asi_hit_type0_valid = '1'
-                and hit_in_ok = '1'
-                and run_state_cmd = TERMINATING
-                and asi_hit_type0_endofpacket = '1'
-            ) then
-                terminating_eop_pipe(0) <= '1';
-            end if;
-
-            for i in 0 to TERMINATING_EOP_DELAY_CONST - 2 loop
-                terminating_eop_pipe(i + 1) <= terminating_eop_pipe(i);
-            end loop;
-        end if;
-    end process;
-    
-
-    
     proc_payload2avst : process (i_rst, i_clk)
-    -- assembly of avst ( hit type 1 )
+    -- assembly of avst (hit type 1) and per-run close markers
+        variable route_lane_v     : natural;
+        variable input_lane_v     : natural;
+        variable input_slot_v     : natural;
+        variable terminate_lane_v : natural;
     begin
         if (i_rst = '1') then 
-            startofrun_sent              <= (others => '0');
-            aso_hit_type1_data           <= (others => '0');
-            aso_hit_type1_valid          <= '0';
-            aso_hit_type1_channel        <= (others => '0');
-            aso_hit_type1_startofpacket  <= '0';
-            aso_hit_type1_endofpacket    <= '0';
-            aso_hit_type1_empty          <= '0';
+            route_startofrun_sent         <= (others => '0');
+            route_terminate_sent          <= (others => '0');
+            packet_in_transaction         <= (others => '0');
+            aso_hit_type1_data            <= (others => '0');
+            aso_hit_type1_valid           <= '0';
+            aso_hit_type1_channel         <= (others => '0');
+            aso_hit_type1_startofpacket   <= '0';
+            aso_hit_type1_endofpacket     <= '0';
+            aso_hit_type1_empty           <= '0';
         
         elsif (rising_edge(i_clk)) then
-            -- TODO: add run states behaviors
-            -- reg out stage
-            aso_hit_type1_startofpacket  <= '0';
-            aso_hit_type1_endofpacket    <= '0';
-            aso_hit_type1_empty          <= '0';
+            aso_hit_type1_data            <= (others => '0');
+            aso_hit_type1_valid           <= '0';
+            aso_hit_type1_channel         <= (others => '0');
+            aso_hit_type1_startofpacket   <= '0';
+            aso_hit_type1_endofpacket     <= '0';
+            aso_hit_type1_empty           <= '0';
+
+            if (processor_state = RESET or processor_state = IDLE) then
+                route_startofrun_sent     <= (others => '0');
+                route_terminate_sent      <= (others => '0');
+                packet_in_transaction     <= (others => '0');
+            end if;
 
             if (processor_state = RUNNING or processor_state = FLUSHING) then 
                 if (hit_out.valid = '1') then
-                    aso_hit_type1_data(O_ASIC_HI downto O_ASIC_LO)				<= hit_out.asic;
-                    aso_hit_type1_data(O_CHANNEL_HI downto O_CHANNEL_LO)		<= hit_out.channel;
-                    aso_hit_type1_data(O_TCC8N_HI downto O_TCC8N_LO)			<= hit_out.tcc_8n;
-                    aso_hit_type1_data(O_TCC1N6_HI downto O_TCC1N6_LO)			<= hit_out.tcc_1n6;
-                    aso_hit_type1_data(O_TFINE_HI downto O_TFINE_LO)			<= hit_out.tfine;
-                    aso_hit_type1_data(O_ET1N6_HI downto O_ET1N6_LO)			<= hit_out.et_1n6;
-                    aso_hit_type1_valid											<= '1';
-                    -- Route hit_type1 into the bank-local hit-stack lane selected by ts8n[5:4].
-                    -- The downstream ring_buffer_cam accepts by this interleaving index and
-                    -- still reads the true ASIC ID from aso_hit_type1_data(O_ASIC_HI:O_ASIC_LO).
-                    aso_hit_type1_channel										<= "00" & hit_out.tcc_8n(5 downto 4);
-                    aso_hit_type1_endofpacket                                    <= terminating_eop_pipe(TERMINATING_EOP_DELAY_CONST - 1);
-                else 
-                    aso_hit_type1_data		<= (others => '0');
-                    aso_hit_type1_valid		<= '0';
-                    aso_hit_type1_channel	<= (others => '0');
+                    route_lane_v := to_integer(unsigned(hit_out.tcc_8n(5 downto 4)));
+                    aso_hit_type1_data(O_ASIC_HI downto O_ASIC_LO)               <= hit_out.asic;
+                    aso_hit_type1_data(O_CHANNEL_HI downto O_CHANNEL_LO)         <= hit_out.channel;
+                    aso_hit_type1_data(O_TCC8N_HI downto O_TCC8N_LO)             <= hit_out.tcc_8n;
+                    aso_hit_type1_data(O_TCC1N6_HI downto O_TCC1N6_LO)           <= hit_out.tcc_1n6;
+                    aso_hit_type1_data(O_TFINE_HI downto O_TFINE_LO)             <= hit_out.tfine;
+                    aso_hit_type1_data(O_ET1N6_HI downto O_ET1N6_LO)             <= hit_out.et_1n6;
+                    aso_hit_type1_valid                                          <= '1';
+                    aso_hit_type1_channel                                        <= "00" & hit_out.tcc_8n(5 downto 4);
+                    if (route_startofrun_sent(route_lane_v) = '0') then
+                        route_startofrun_sent(route_lane_v)                      <= '1';
+                        aso_hit_type1_startofpacket                             <= '1';
+                    end if;
+                elsif (terminating_marker_valid = '1') then
+                    terminate_lane_v := to_integer(unsigned(terminating_marker_lane));
+                    aso_hit_type1_valid                                          <= '1';
+                    aso_hit_type1_channel                                        <= "00" & terminating_marker_lane;
+                    aso_hit_type1_startofpacket                                  <= terminating_marker_sop;
+                    aso_hit_type1_endofpacket                                    <= '1';
+                    aso_hit_type1_empty                                          <= '1';
+                    route_terminate_sent(terminate_lane_v)                       <= '1';
+                    if (route_startofrun_sent(terminate_lane_v) = '0') then
+                        route_startofrun_sent(terminate_lane_v)                  <= '1';
+                    end if;
                 end if;
-            else 
-                aso_hit_type1_data		<= (others => '0');
-                aso_hit_type1_valid		<= '0';
-                aso_hit_type1_channel	<= (others => '0');
             end if;
-            
-            -- derive sop
-            gen_sop : for i in ENABLED_CHANNEL_LO to ENABLED_CHANNEL_HI loop
-                if (processor_state = RUNNING and startofrun_sent(i) = '0') then
-                    if (hit_out.valid = '1' and to_integer(unsigned(hit_out.channel)) = i) then
-                        aso_hit_type1_startofpacket		<= '1';
-                        startofrun_sent(i)				<= '1';
-                    else
-                        aso_hit_type1_startofpacket		<= '0';
-                    end if;
-                elsif (processor_state = RESET) then
-                    startofrun_sent(i)					<= '0';
-                    aso_hit_type1_startofpacket			<= '0';
-                else 
-                    aso_hit_type1_startofpacket		<= '0';
-                end if;
-            end loop gen_sop;
-            
-            -- derive eop_seen for all channels
-            gen_packet_awareness : for i in ENABLED_CHANNEL_LO to ENABLED_CHANNEL_HI loop
-                if (processor_state = RUNNING) then
-                    if (asi_hit_type0_endofpacket = '1' and asi_hit_type0_valid = '1') then -- eop is here
-                        if (to_integer(unsigned(asi_hit_type0_channel)) = i) then -- for this channel
-                            packet_in_transaction(i)		<= '0'; -- eop, output transaction,
-                            -- No new frame generated by assembly, but a frame could already in fifo.
-                            -- This is a speical case, we must check the fifo empty flag. 
-                            -- If empty, we are safe. Simply generate an empty beat with eop to mark the end of run for this channel. 
-                            -- If not empty, ... TODO: think about this corner case. connect headerinfo to it? Or, add a grace period for allowing new frame.
-                        end if;
-                    elsif (asi_hit_type0_startofpacket = '1' and asi_hit_type0_valid = '1') then -- sop is here
-                        if (to_integer(unsigned(asi_hit_type0_channel)) = i) then -- for this channel
-                            packet_in_transaction(i)		<= '1'; -- sop, indicating mutrig packet is continuing 
+
+            if (processor_state = RUNNING or processor_state = FLUSHING) then
+                if (asi_hit_type0_valid = '1') then
+                    input_lane_v := to_integer(unsigned(asi_hit_type0_channel));
+                    if (input_lane_v >= ENABLED_CHANNEL_LO and input_lane_v <= ENABLED_CHANNEL_HI) then
+                        input_slot_v := input_lane_v - ENABLED_CHANNEL_LO;
+                        if (asi_hit_type0_endofpacket = '1') then
+                            packet_in_transaction(input_slot_v)                  <= '0';
+                        elsif (asi_hit_type0_startofpacket = '1') then
+                            packet_in_transaction(input_slot_v)                  <= '1';
                         end if;
                     end if;
-                elsif (processor_state = RESET) then -- reset this
-                    packet_in_transaction(i)		<= '0'; 
                 end if;
-            end loop gen_packet_awareness;
-            
---			-- eop
---			gen_eop : for i in ENABLED_CHANNEL_LO to ENABLED_CHANNEL_HI loop
---				-- derive the internal eop signal 
---				if (processor_state = FLUSHING)
---					if (packet_in_transaction(i) = '1') then -- packet is in transaction, generate eop once eop of this channel is detected
---						if (asi_hit_type0_endofpacket = '1' and asi_hit_type0_valid = '1') then -- detect eop for mutrig frame
---							if (to_integer(unsigned(asi_hit_type0_channel)) = i) then -- for this channel
---								in_trans_eop(i)(0)			<= '1'; -- input to the delay pipeline
---							else
---								in_trans_eop(i)(0)			<= '0';
---							end if;
---						else
---							in_trans_eop(i)(0)			<= '0';
---						end if;
---					else -- not in trasaction, send an empty, valid, eop. 
---						missing_eop(i)			<= '1';
---						
---				
---				
---				
---				end if;
---				-- delay the internal eop signal
---				gen_eop_pipeline : for j in 0 to EOP_DELAY_CYCLE-2 loop
---					in_trans_eop(i)(j+1)	<= in_trans_eop(i)(j);
---			
---				end loop gen_eop_pipeline;
---				-- connect internal eop to streaming output
---				if ( in_trans_eop(i)(EOP_DELAY_CYCLE-2+1) 
---					aso_hit_type1_endofpacket			<= in_trans_eop(i)(EOP_DELAY_CYCLE-2+1); -- for each channel 
---			
---			end loop gen_eop;
-            
-            
-            
+            end if;
         end if;
     end process;
-    
+
     proc_debug_ts_comb : process (all) -- need to delay 1 cycle to match with normal hit data
     begin
         if (rising_edge(i_clk)) then
