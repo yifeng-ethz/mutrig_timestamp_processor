@@ -26,10 +26,12 @@
 --      Date: Apr 14, 2026
 -- Revision: 5.7 (Make run-control ready stateful and preserve terminate markers through idle drain)
 --      Date: Apr 15, 2026
--- Version : 26.0.1
--- Date    : 20260415
--- Change  : Gate run-control acknowledge on local reset/drain completion and forward a final terminate boundary
---           even when the upstream receiver closes an idle run with a synthetic hit_type0 EOP pulse.
+-- Revision: 5.8 (Wait for explicit upstream end-of-run before emitting lane-close markers)
+--      Date: Apr 16, 2026
+-- Version : 26.0.2
+-- Date    : 20260416
+-- Change  : Consume a dedicated hit_type0_endofrun sideband from frame_rcv_ip and emit lane-close markers
+--           only after the upstream run tail and the local divider pipeline are both fully drained.
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -127,6 +129,7 @@ port (
     asi_hit_type0_channel			: in  std_logic_vector(5 downto 0); -- for asic 0-15 (4 bit) + 2 msb for mux sel channel (binary, redundant)
     asi_hit_type0_startofpacket		: in  std_logic; -- mutrig frame
     asi_hit_type0_endofpacket		: in  std_logic;
+    asi_hit_type0_endofrun			: in  std_logic;
     asi_hit_type0_error				: in  std_logic_vector(2 downto 0); 
     -- frame_corrupt & crcerr & hiterr
         -- crcerr available at "eop"
@@ -318,10 +321,12 @@ architecture rtl of mts_processor is
     -- processor
     constant ROUTE_LANE_COUNT_CONST      : natural := 4;
     constant ROUTE_LANE_BITS_CONST       : natural := 2;
+    constant ROUTE_TERMINATED_ALL_CONST  : std_logic_vector(ROUTE_LANE_COUNT_CONST - 1 downto 0) := (others => '1');
     signal route_startofrun_sent         : std_logic_vector(ROUTE_LANE_COUNT_CONST - 1 downto 0);
     signal route_terminate_sent          : std_logic_vector(ROUTE_LANE_COUNT_CONST - 1 downto 0);
     signal hit_in_ok						: std_logic;
     signal processor_allow_input			: std_logic;
+    signal upstream_endofrun_seen        : std_logic;
     
     -- data and control path signals 
     type csr_t is record 
@@ -608,7 +613,7 @@ begin
         hit_div_busy <= div_busy_v;
         input_pipeline_busy <= pipeline_busy_v;
 
-        if (processor_state = FLUSHING and pipeline_busy_v = '0') then
+        if (processor_state = FLUSHING and upstream_endofrun_seen = '1' and pipeline_busy_v = '0') then
             for lane in 0 to ROUTE_LANE_COUNT_CONST - 1 loop
                 if (marker_found_v = '0' and route_terminate_sent(lane) = '0') then
                     marker_found_v := '1';
@@ -627,8 +632,9 @@ begin
 
         if (
             processor_state = FLUSHING
+            and upstream_endofrun_seen = '1'
             and pipeline_busy_v = '0'
-            and route_terminate_sent = (route_terminate_sent'range => '1')
+            and route_terminate_sent = ROUTE_TERMINATED_ALL_CONST
         ) then
             terminating_done <= '1';
         else
@@ -901,8 +907,12 @@ begin
                         processor_state		<= IDLE; 
                     end if;
                     
-                when FLUSHING => -- read fifo eop for all channels are seen
-                    processor_allow_input		<= '1';
+                when FLUSHING => -- drain accepted payload and wait for the explicit upstream end-of-run pulse
+                    if (upstream_endofrun_seen = '0') then
+                        processor_allow_input        <= '1';
+                    else
+                        processor_allow_input        <= '0';
+                    end if;
                     if (run_state_cmd = IDLE) then -- standard sequence
                         processor_state		<= IDLE;
                     end if;
@@ -940,7 +950,11 @@ begin
                 when RUNNING =>
                     asi_hit_type0_ready			<= '1'; -- accepting input hits
                 when FLUSHING =>
-                    asi_hit_type0_ready			<= '1'; -- flushing
+                    if (upstream_endofrun_seen = '0') then
+                        asi_hit_type0_ready         <= '1'; -- flushing until upstream reports end-of-run
+                    else
+                        asi_hit_type0_ready         <= '0';
+                    end if;
                 when others =>
             end case;
         end if;
@@ -1081,12 +1095,19 @@ begin
     
     proc_avst2payload_comb : process (all)
     -- input validation from avst to the datapath
+        variable allow_input_v : std_logic;
     begin
         -- default
-        hit_in_ok		<= '0';
-        if (processor_allow_input = '1') then -- allow input at run prep, running and terminating
-            if (asi_hit_type0_error(HITERR_BIT_LOC) = '0' or csr.discard_hiterr = '0') then -- disable check or no error 
-                hit_in_ok		<= '1'; -- in comb with avst valid
+        hit_in_ok        <= '0';
+        allow_input_v    := '0';
+        if (processor_allow_input = '1') then
+            -- During FLUSHING we still accept buffered tail packets from
+            -- frame_rcv_ip. Dedicated close markers are emitted only after
+            -- the input/pipeline fully drains, so packet starts that arrive
+            -- after the TERMINATING edge still belong to the draining run.
+            allow_input_v := '1';
+            if (allow_input_v = '1' and (asi_hit_type0_error(HITERR_BIT_LOC) = '0' or csr.discard_hiterr = '0')) then -- disable check or no error
+                hit_in_ok        <= '1'; -- in comb with avst valid
             end if;
         end if;
     
@@ -1371,6 +1392,7 @@ begin
         if (i_rst = '1') then 
             route_startofrun_sent         <= (others => '0');
             route_terminate_sent          <= (others => '0');
+            upstream_endofrun_seen        <= '0';
             packet_in_transaction         <= (others => '0');
             aso_hit_type1_data            <= (others => '0');
             aso_hit_type1_valid           <= '0';
@@ -1390,7 +1412,18 @@ begin
             if (processor_state = RESET or processor_state = IDLE) then
                 route_startofrun_sent     <= (others => '0');
                 route_terminate_sent      <= (others => '0');
+                upstream_endofrun_seen    <= '0';
                 packet_in_transaction     <= (others => '0');
+            elsif (
+                asi_hit_type0_endofrun = '1'
+                and processor_state /= RESET
+                and processor_state /= IDLE
+            ) then
+                -- Retain the upstream close pulse even if it lands on the
+                -- RUNNING->FLUSHING transition cycle. This removes the idle
+                -- terminate race where the pulse arrived before FLUSHING was
+                -- visible to this process.
+                upstream_endofrun_seen    <= '1';
             end if;
 
             if (processor_state = RUNNING or processor_state = FLUSHING) then 
@@ -1423,7 +1456,7 @@ begin
             end if;
 
             if (processor_state = RUNNING or processor_state = FLUSHING) then
-                if (asi_hit_type0_valid = '1') then
+                if (asi_hit_type0_valid = '1' and hit_in_ok = '1') then
                     input_lane_v := to_integer(unsigned(asi_hit_type0_channel));
                     if (input_lane_v >= ENABLED_CHANNEL_LO and input_lane_v <= ENABLED_CHANNEL_HI) then
                         input_slot_v := input_lane_v - ENABLED_CHANNEL_LO;

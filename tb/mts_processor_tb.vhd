@@ -25,6 +25,7 @@ architecture sim of mts_processor_tb is
     signal asi_hit_type0_channel    : std_logic_vector(5 downto 0) := (others => '0');
     signal asi_hit_type0_startofpacket : std_logic := '0';
     signal asi_hit_type0_endofpacket   : std_logic := '0';
+    signal asi_hit_type0_endofrun      : std_logic := '0';
     signal asi_hit_type0_error      : std_logic_vector(2 downto 0) := (others => '0');
     signal asi_hit_type0_data       : std_logic_vector(44 downto 0) := (others => '0');
     signal asi_hit_type0_valid      : std_logic := '0';
@@ -157,6 +158,7 @@ begin
             asi_hit_type0_channel       => asi_hit_type0_channel,
             asi_hit_type0_startofpacket => asi_hit_type0_startofpacket,
             asi_hit_type0_endofpacket   => asi_hit_type0_endofpacket,
+            asi_hit_type0_endofrun      => asi_hit_type0_endofrun,
             asi_hit_type0_error         => asi_hit_type0_error,
             asi_hit_type0_data          => asi_hit_type0_data,
             asi_hit_type0_valid         => asi_hit_type0_valid,

@@ -18,9 +18,9 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
 set VERSION_MINOR_DEFAULT_CONST            0
-set VERSION_PATCH_DEFAULT_CONST            1
-set BUILD_DEFAULT_CONST                    415
-set VERSION_DATE_DEFAULT_CONST             20260415
+set VERSION_PATCH_DEFAULT_CONST            2
+set BUILD_DEFAULT_CONST                    416
+set VERSION_DATE_DEFAULT_CONST             20260416
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -94,9 +94,8 @@ emits <b>hit_type1</b> words for downstream hit stacking.<br/><br/>\
 <b>Run-state contract</b><br/>\
 <b>RUN_PREPARE</b> and <b>SYNC</b> are acknowledged only after the local reset/arm path reaches the requested state.<br/>\
 <b>RUNNING</b> accepts new hits.<br/>\
-<b>TERMINATING</b> drains the accepted packet tail and acknowledges only after the final boundary has exited\
-the block. A real final payload beat produces the terminal EOP on that beat; an upstream synthetic idle-close\
-<b>hit_type0</b> EOP is converted into an empty <b>hit_type1</b> marker.<br/><br/>\
+<b>TERMINATING</b> drains the accepted packet tail, waits for the dedicated upstream <b>hit_type0_endofrun</b>\
+pulse, and acknowledges only after one empty <b>hit_type1</b> close marker has been emitted per downstream lane.<br/><br/>\
 <b>Configured slice</b><br/>\
 Bank <b>%s</b>, enabled channel window <b>%d..%d</b> (%d channels), divider pipeline <b>%d</b>, padding wait\
 <b>%d</b> cycles, expected latency <b>%d</b> 8 ns ticks.</html>} \
@@ -126,7 +125,7 @@ Controls built-in report instrumentation and standalone observability. Non-zero 
 Packaged as <b>%s</b>.<br/><br/>\
 <b>Delivered behavior</b><br/>\
 This image aligns the standalone timestamp processor with the run-sequence upgrade contract: <b>asi_ctrl_ready</b> is stateful,\
-idle-close termination emits an empty downstream boundary marker, and the packaged divider depth now matches the RTL default.<br/><br/>\
+the upstream <b>endofrun</b> sideband drives the terminate-close path, and the packaged divider depth now matches the RTL default.<br/><br/>\
 <b>Packaging provenance</b><br/>\
 Default git stamp <b>%s</b> (%s). Git describe: <b>%s</b>.</html>} \
             $version_string \
@@ -156,11 +155,11 @@ Single synchronous <b>clock_interface</b> domain with <b>reset_interface</b> ass
 9-bit one-hot run command. <b>asi_ctrl_ready</b> is low while RUN_PREPARE / SYNC / TERMINATING work is still outstanding and rises only when the local state has truly completed.<br/><br/>\
 <b>Ingress stream: hit_type0_in</b><br/>\
 45-bit payload = ASIC[44:41], channel[40:36], TCC[35:21], TFine[20:16], ECC[15:1], EFlag[0].\
-SOP/EOP delimit one MuTRiG frame. Under TERMINATING, a real final EOP or a synthetic upstream idle-close EOP both feed the downstream termination marker path.<br/><br/>\
+SOP/EOP delimit one MuTRiG frame. A dedicated <b>endofrun</b> pulse marks the last packet of the run; under TERMINATING the processor accepts tail packets until that pulse arrives, then drains and closes each downstream lane.<br/><br/>\
 <b>Egress stream: hit_type1_out</b><br/>\
 39-bit payload = ASIC[38:35], channel[34:30], TCC_8n[29:17], TCC_1n6[16:14], TFine[13:9], ET_1n6[8:0].\
 <b>startofpacket</b> marks the first accepted beat for each enabled channel in a run. <b>endofpacket</b> marks the terminating boundary.\
-<b>empty</b> is asserted only for the synthetic idle-close termination marker. The current RTL exposes <b>aso_hit_type1_ready</b> for interface compatibility but does not stall on it.<br/><br/>\
+<b>empty</b> is asserted only for the dedicated per-lane terminate marker. The current RTL exposes <b>aso_hit_type1_ready</b> for interface compatibility but does not stall on it.<br/><br/>\
 <b>Debug streams</b><br/>\
 <b>debug_ts</b>, <b>debug_burst</b>, and <b>ts_delta</b> are observation-only outputs for standalone bring-up and profiling.<br/><br/>\
 <b>Configured channel window</b><br/>\
@@ -487,6 +486,7 @@ set_interface_property hit_type0_in ENABLED true
 add_interface_port hit_type0_in asi_hit_type0_channel       channel       Input 6
 add_interface_port hit_type0_in asi_hit_type0_startofpacket startofpacket Input 1
 add_interface_port hit_type0_in asi_hit_type0_endofpacket   endofpacket   Input 1
+add_interface_port hit_type0_in asi_hit_type0_endofrun      endofrun      Input 1
 add_interface_port hit_type0_in asi_hit_type0_error         error         Input 3
 add_interface_port hit_type0_in asi_hit_type0_data          data          Input 45
 add_interface_port hit_type0_in asi_hit_type0_valid         valid         Input 1

@@ -106,7 +106,7 @@
           wait_cycles(6);
           pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
           wait_cycles(2);
-          send_synthetic_eop();
+          send_endofrun_pulse();
           wait_cycles(24);
           send_ctrl(CTRL_IDLE, "IDLE");
           wait_cycles(8);
@@ -254,42 +254,41 @@
       int unsigned base_empty_eops;
       int unsigned base_history_size;
       bit [3:0]    close_mask;
-      int          payload_lane;
+      bit [3:0]    payload_mask;
+      int unsigned payload_count;
 
       wait_for_reset_release();
       run_start();
-      base_empty_eops  = m_env.m_scb.empty_eop_count;
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
       base_history_size = m_env.m_scb.history.size();
 
-      fork
-        begin
-          pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
-        end
-        begin
-          wait_cycles(1);
-          send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b1);
-        end
-      join
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b1);
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_cycles(1);
+      send_hit_beat(2, 2, 'h0013, 'h001F, 1'b1, 1'b1, 1'b1);
 
       wait_for_ctrl_ready_low(4, case_id);
       wait_for_empty_eop_count(base_empty_eops + 4, 128, case_id);
       wait_for_ctrl_ready_high(128, case_id);
 
-      close_mask   = '0;
-      payload_lane = -1;
+      close_mask    = '0;
+      payload_mask  = '0;
+      payload_count = 0;
       for (int idx = base_history_size; idx < m_env.m_scb.history.size(); idx++) begin
         mtsp_hit1_obs_item obs;
         obs = m_env.m_scb.history[idx];
         if (!obs.empty) begin
-          payload_lane = int'(obs.channel[1:0]);
+          payload_count++;
+          payload_mask[int'(obs.channel[1:0])] = 1'b1;
           if (obs.eop !== 1'b0)
             `uvm_fatal("MTSP_CASE", "Terminating payload beat must not carry EOP after the close-marker upgrade")
         end else if (obs.eop) begin
           close_mask[int'(obs.channel[1:0])] = 1'b1;
         end
       end
-      if (payload_lane < 0)
-        `uvm_fatal("MTSP_CASE", "Expected one payload beat before the lane close-marker train")
+      if (payload_count != 2)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("Expected two payload beats before the lane close-marker train, got %0d", payload_count))
       if (close_mask !== 4'b1111)
         `uvm_fatal("MTSP_CASE",
           $sformatf("Expected one lane-targeted close marker per output lane, got mask=%b", close_mask))

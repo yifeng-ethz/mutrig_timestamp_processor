@@ -56,6 +56,7 @@ package mtsp_env_pkg;
     bit [5:0]  channel;
     bit        sop;
     bit        eop;
+    bit        endofrun;
     bit [2:0]  error;
     bit [44:0] data;
     bit        valid;
@@ -65,6 +66,7 @@ package mtsp_env_pkg;
     function new(string name = "mtsp_hit0_item");
       super.new(name);
       valid            = 1'b1;
+      endofrun         = 1'b0;
       error            = '0;
       timeout_cycles   = 10000;
       accept_time_ps   = 0;
@@ -220,10 +222,11 @@ package mtsp_env_pkg;
       mtsp_hit0_item item;
       int unsigned   wait_cycles;
 
-      vif.channel <= '0;
-      vif.sop     <= 1'b0;
-      vif.eop     <= 1'b0;
-      vif.error   <= '0;
+      vif.channel  <= '0;
+      vif.sop      <= 1'b0;
+      vif.eop      <= 1'b0;
+      vif.endofrun <= 1'b0;
+      vif.error    <= '0;
       vif.data    <= '0;
       vif.valid   <= 1'b0;
 
@@ -240,19 +243,21 @@ package mtsp_env_pkg;
                 item.timeout_cycles))
         end
 
-        vif.channel <= item.channel;
-        vif.sop     <= item.sop;
-        vif.eop     <= item.eop;
-        vif.error   <= item.error;
+        vif.channel  <= item.channel;
+        vif.sop      <= item.sop;
+        vif.eop      <= item.eop;
+        vif.endofrun <= item.endofrun;
+        vif.error    <= item.error;
         vif.data    <= item.data;
         vif.valid   <= item.valid;
 
         @(posedge vif.clk);
         item.accept_time_ps = $time;
-        vif.channel <= '0;
-        vif.sop     <= 1'b0;
-        vif.eop     <= 1'b0;
-        vif.error   <= '0;
+        vif.channel  <= '0;
+        vif.sop      <= 1'b0;
+        vif.eop      <= 1'b0;
+        vif.endofrun <= 1'b0;
+        vif.error    <= '0;
         vif.data    <= '0;
         vif.valid   <= 1'b0;
         seq_item_port.item_done();
@@ -471,6 +476,7 @@ package mtsp_env_pkg;
     bit [5:0]  channel;
     bit        sop;
     bit        eop;
+    bit        endofrun;
     bit [2:0]  error;
     bit [44:0] data;
     bit        valid;
@@ -479,6 +485,7 @@ package mtsp_env_pkg;
     function new(string name = "mtsp_hit0_seq");
       super.new(name);
       valid          = 1'b1;
+      endofrun       = 1'b0;
       error          = '0;
       accept_time_ps = 0;
     endfunction
@@ -487,10 +494,11 @@ package mtsp_env_pkg;
       mtsp_hit0_item item;
       item = mtsp_hit0_item::type_id::create("hit0_item");
       start_item(item);
-      item.channel = channel;
-      item.sop     = sop;
-      item.eop     = eop;
-      item.error   = error;
+      item.channel  = channel;
+      item.sop      = sop;
+      item.eop      = eop;
+      item.endofrun = endofrun;
+      item.error    = error;
       item.data    = data;
       item.valid   = valid;
       finish_item(item);
@@ -600,20 +608,22 @@ package mtsp_env_pkg;
       seq.channel          = {2'b00, asic_value[3:0]};
       seq.sop              = sop_value;
       seq.eop              = eop_value;
+      seq.endofrun         = 1'b0;
       seq.error            = error_value;
       seq.data             = hit_word;
       seq.valid            = 1'b1;
       seq.start(m_env.m_hit0_sqr);
     endtask
 
-    task automatic send_synthetic_eop();
+    task automatic send_endofrun_pulse();
       mtsp_hit0_seq seq;
-      seq         = mtsp_hit0_seq::type_id::create($sformatf("synth_eop_%0t", $time));
-      seq.channel = '0;
-      seq.sop     = 1'b0;
-      seq.eop     = 1'b1;
-      seq.data    = '0;
-      seq.valid   = 1'b0;
+      seq            = mtsp_hit0_seq::type_id::create($sformatf("endofrun_%0t", $time));
+      seq.channel    = '0;
+      seq.sop        = 1'b0;
+      seq.eop        = 1'b0;
+      seq.endofrun   = 1'b1;
+      seq.data       = '0;
+      seq.valid      = 1'b0;
       seq.start(m_env.m_hit0_sqr);
     endtask
 
@@ -700,7 +710,8 @@ package mtsp_env_pkg;
       int unsigned base_empty_eop_count;
       int unsigned base_history_size;
       bit [3:0]    close_mask;
-      int          payload_lane;
+      bit [3:0]    payload_mask;
+      int unsigned payload_count;
       phase.raise_objection(this);
 
       wait_for_reset_release();
@@ -711,42 +722,40 @@ package mtsp_env_pkg;
       base_empty_eop_count = m_env.m_scb.empty_eop_count;
       base_history_size    = m_env.m_scb.history.size();
 
-      fork
-        begin
-          pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
-        end
-        begin
-          wait_cycles(1);
-          send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b1);
-        end
-      join
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b1);
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_cycles(1);
+      send_hit_beat(2, 2, 'h0013, 'h001F, 1'b1, 1'b1, 1'b1);
+      send_endofrun_pulse();
 
       wait_for_ctrl_ready_low(4, "Active TERMINATING ready deassert");
       wait_for_empty_eop_count(base_empty_eop_count + 4, 128,
         "Active TERMINATING close-marker train");
       wait_for_ctrl_ready_high(128, "Active TERMINATING ready restore");
 
-      if (m_env.m_scb.beat_count < base_beat_count + 5)
+      if (m_env.m_scb.beat_count < base_beat_count + 6)
         `uvm_fatal("MTSP_TEST",
-          $sformatf("Active terminate must emit one payload beat plus four close markers, got beats=%0d base=%0d",
+          $sformatf("Active terminate must emit two payload beats plus four close markers, got beats=%0d base=%0d",
             m_env.m_scb.beat_count, base_beat_count))
       if (m_env.m_scb.eop_count < base_eop_count + 4)
         `uvm_fatal("MTSP_TEST",
           $sformatf("Active terminate must emit four close-marker EOPs, got eops=%0d base=%0d",
             m_env.m_scb.eop_count, base_eop_count))
 
-      close_mask   = '0;
-      payload_lane = -1;
+      close_mask    = '0;
+      payload_mask  = '0;
+      payload_count = 0;
       for (int idx = base_history_size; idx < m_env.m_scb.history.size(); idx++) begin
         mtsp_hit1_obs_item obs;
         obs = m_env.m_scb.history[idx];
         if (!obs.empty) begin
-          payload_lane = int'(obs.channel[1:0]);
+          payload_count++;
+          payload_mask[int'(obs.channel[1:0])] = 1'b1;
           if (obs.eop !== 1'b0)
             `uvm_fatal("MTSP_TEST", "Payload beat must not carry the terminate EOP anymore")
         end else if (obs.eop) begin
           close_mask[int'(obs.channel[1:0])] = 1'b1;
-          if (payload_lane == int'(obs.channel[1:0])) begin
+          if (payload_mask[int'(obs.channel[1:0])]) begin
             if (obs.sop !== 1'b0)
               `uvm_fatal("MTSP_TEST", "Payload lane close marker must not reassert SOP")
           end else begin
@@ -755,8 +764,9 @@ package mtsp_env_pkg;
           end
         end
       end
-      if (payload_lane < 0)
-        `uvm_fatal("MTSP_TEST", "Active terminate run did not emit a payload beat")
+      if (payload_count != 2)
+        `uvm_fatal("MTSP_TEST",
+          $sformatf("Active terminate run must emit exactly two payload beats, got %0d", payload_count))
       if (close_mask !== 4'b1111)
         `uvm_fatal("MTSP_TEST",
           $sformatf("Active terminate must emit one close marker per lane, got mask=%b", close_mask))
@@ -769,6 +779,7 @@ package mtsp_env_pkg;
       base_history_size    = m_env.m_scb.history.size();
 
       pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      send_endofrun_pulse();
 
       wait_for_ctrl_ready_low(4, "Idle TERMINATING ready deassert");
       wait_for_empty_eop_count(base_empty_eop_count + 4, 128,

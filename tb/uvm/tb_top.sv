@@ -40,6 +40,7 @@ module tb_top;
     .asi_hit_type0_channel       (hit0_if.channel),
     .asi_hit_type0_startofpacket (hit0_if.sop),
     .asi_hit_type0_endofpacket   (hit0_if.eop),
+    .asi_hit_type0_endofrun      (hit0_if.endofrun),
     .asi_hit_type0_error         (hit0_if.error),
     .asi_hit_type0_data          (hit0_if.data),
     .asi_hit_type0_valid         (hit0_if.valid),

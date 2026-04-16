@@ -37,18 +37,19 @@ interface mtsp_hit0_if(input logic clk, input logic rst);
   logic [5:0]  channel;
   logic        sop;
   logic        eop;
+  logic        endofrun;
   logic [2:0]  error;
   logic [44:0] data;
   logic        valid;
   logic        ready;
 
   modport drv (
-    output channel, sop, eop, error, data, valid,
+    output channel, sop, eop, endofrun, error, data, valid,
     input  ready, clk, rst
   );
 
   modport mon (
-    input channel, sop, eop, error, data, valid, ready, clk, rst
+    input channel, sop, eop, endofrun, error, data, valid, ready, clk, rst
   );
 endinterface
 

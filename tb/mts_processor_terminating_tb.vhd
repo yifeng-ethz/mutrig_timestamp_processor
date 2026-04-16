@@ -24,6 +24,7 @@ architecture sim of mts_processor_terminating_tb is
     signal asi_hit_type0_channel       : std_logic_vector(5 downto 0) := (others => '0');
     signal asi_hit_type0_startofpacket : std_logic := '0';
     signal asi_hit_type0_endofpacket   : std_logic := '0';
+    signal asi_hit_type0_endofrun      : std_logic := '0';
     signal asi_hit_type0_error         : std_logic_vector(2 downto 0) := (others => '0');
     signal asi_hit_type0_data          : std_logic_vector(44 downto 0) := (others => '0');
     signal asi_hit_type0_valid         : std_logic := '0';
@@ -122,25 +123,19 @@ architecture sim of mts_processor_terminating_tb is
         hit_valid                      <= '0';
     end procedure send_hit_beat;
 
-    procedure send_synthetic_eop(
+    procedure send_endofrun_pulse(
         signal clk                     : in  std_logic;
         signal ready                   : in  std_logic;
-        signal hit_sop                 : out std_logic;
-        signal hit_eop                 : out std_logic;
-        signal hit_valid               : out std_logic
+        signal hit_endofrun           : out std_logic
     ) is
     begin
         while ready /= '1' loop
             wait until rising_edge(clk);
         end loop;
-        hit_sop                        <= '0';
-        hit_eop                        <= '1';
-        hit_valid                      <= '0';
+        hit_endofrun                  <= '1';
         wait until rising_edge(clk);
-        hit_sop                        <= '0';
-        hit_eop                        <= '0';
-        hit_valid                      <= '0';
-    end procedure send_synthetic_eop;
+        hit_endofrun                  <= '0';
+    end procedure send_endofrun_pulse;
 
 begin
 
@@ -157,6 +152,7 @@ begin
             asi_hit_type0_channel       => asi_hit_type0_channel,
             asi_hit_type0_startofpacket => asi_hit_type0_startofpacket,
             asi_hit_type0_endofpacket   => asi_hit_type0_endofpacket,
+            asi_hit_type0_endofrun      => asi_hit_type0_endofrun,
             asi_hit_type0_error         => asi_hit_type0_error,
             asi_hit_type0_data          => asi_hit_type0_data,
             asi_hit_type0_valid         => asi_hit_type0_valid,
@@ -183,8 +179,8 @@ begin
         );
 
     stim : process
-        variable payload_seen_v           : boolean;
-        variable payload_lane_v           : integer;
+        variable payload_count_v          : natural;
+        variable payload_mask_v           : std_logic_vector(3 downto 0);
         variable close_mask_v             : std_logic_vector(3 downto 0);
         variable close_count_v            : natural;
         variable ready_seen_v             : boolean;
@@ -196,10 +192,6 @@ begin
         send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_RUN_PREP_CONST);
         send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_SYNC_CONST);
         send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_RUNNING_CONST);
-
-        asi_ctrl_data  <= CTRL_TERMINATE_CONST;
-        asi_ctrl_valid <= '1';
-        wait until rising_edge(i_clk);
 
         send_hit_beat(
             clk           => i_clk,
@@ -219,26 +211,52 @@ begin
             eop_value     => '1'
         );
 
-        payload_seen_v := false;
-        payload_lane_v := -1;
-        close_mask_v   := (others => '0');
-        close_count_v  := 0;
-        ready_seen_v   := false;
+        asi_ctrl_data  <= CTRL_TERMINATE_CONST;
+        asi_ctrl_valid <= '1';
+        wait_cycles(i_clk, 1);
+        send_hit_beat(
+            clk           => i_clk,
+            ready         => asi_hit_type0_ready,
+            hit_channel   => asi_hit_type0_channel,
+            hit_sop       => asi_hit_type0_startofpacket,
+            hit_eop       => asi_hit_type0_endofpacket,
+            hit_data      => asi_hit_type0_data,
+            hit_valid     => asi_hit_type0_valid,
+            hit_error     => asi_hit_type0_error,
+            asic_value    => 2,
+            channel_value => 2,
+            tcc_raw_value => 16#0013#,
+            ecc_raw_value => 16#001F#,
+            eflag_value   => '1',
+            sop_value     => '1',
+            eop_value     => '1'
+        );
+        send_endofrun_pulse(
+            clk           => i_clk,
+            ready         => asi_hit_type0_ready,
+            hit_endofrun  => asi_hit_type0_endofrun
+        );
+
+        payload_count_v := 0;
+        payload_mask_v  := (others => '0');
+        close_mask_v    := (others => '0');
+        close_count_v   := 0;
+        ready_seen_v    := false;
         for wait_idx in 0 to 128 loop
             wait until rising_edge(i_clk);
             if aso_hit_type1_valid = '1' then
                 if aso_hit_type1_empty = '0' then
-                    payload_seen_v := true;
-                    payload_lane_v := to_integer(unsigned(aso_hit_type1_channel(1 downto 0)));
+                    payload_count_v := payload_count_v + 1;
+                    payload_mask_v(to_integer(unsigned(aso_hit_type1_channel(1 downto 0)))) := '1';
                     assert aso_hit_type1_endofpacket = '0'
                         report "Active terminate must close via dedicated empty markers, not on the payload beat"
                         severity failure;
                 elsif aso_hit_type1_endofpacket = '1' then
                     close_mask_v(to_integer(unsigned(aso_hit_type1_channel(1 downto 0)))) := '1';
                     close_count_v := close_count_v + 1;
-                    if (payload_lane_v = to_integer(unsigned(aso_hit_type1_channel(1 downto 0)))) then
+                    if (payload_mask_v(to_integer(unsigned(aso_hit_type1_channel(1 downto 0)))) = '1') then
                         assert aso_hit_type1_startofpacket = '0'
-                            report "The payload lane close marker must not reassert SOP"
+                            report "A payload lane close marker must not reassert SOP"
                             severity failure;
                     else
                         assert aso_hit_type1_startofpacket = '1'
@@ -250,10 +268,10 @@ begin
             if asi_ctrl_ready = '1' and close_count_v = 4 then
                 ready_seen_v := true;
             end if;
-            exit when payload_seen_v and close_count_v = 4 and ready_seen_v;
+            exit when payload_count_v = 2 and close_count_v = 4 and ready_seen_v;
         end loop;
-        assert payload_seen_v
-            report "Expected one payload beat before the terminate close-marker train"
+        assert payload_count_v = 2
+            report "Expected one RUNNING payload beat plus one buffered terminating payload beat before the close-marker train"
             severity failure;
         assert close_mask_v = "1111"
             report "Expected one lane-targeted empty close marker for each downstream lane"
@@ -271,6 +289,11 @@ begin
 
         asi_ctrl_data  <= CTRL_TERMINATE_CONST;
         asi_ctrl_valid <= '1';
+        send_endofrun_pulse(
+            clk           => i_clk,
+            ready         => asi_hit_type0_ready,
+            hit_endofrun  => asi_hit_type0_endofrun
+        );
 
         close_mask_v   := (others => '0');
         close_count_v  := 0;
