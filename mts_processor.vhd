@@ -567,9 +567,13 @@ begin
 
     -- Carry the overflow-correction window alongside the hit so late ToT
     -- arithmetic no longer depends directly on the live overflow counter.
+    -- The multiplier output becomes valid on the cycle where the countdown
+    -- reaches 1, while a hit captured on that same edge still sees the
+    -- pre-update register value. Accept the final countdown cycle here so the
+    -- first post-product hit also latches the overflow adjustment.
     overflow_adjust_active <= '1' when (
         fpga_overflow_lookback_cnt /= to_unsigned(0, fpga_overflow_lookback_cnt'length)
-        and lpm_multi_valid_cnt = to_unsigned(0, lpm_multi_valid_cnt'length)
+        and lpm_multi_valid_cnt <= to_unsigned(1, lpm_multi_valid_cnt'length)
     ) else '0';
 
     asi_ctrl_ready <= ctrl_ready_comb;
@@ -1070,14 +1074,14 @@ begin
         -- timestamp adder no longer depends on the live lookback counter.
         if (padding_logic_gray_ts_v > padding_upper and hit_padding.tot_t_adjust = '1') then 
             --cc_gts_1n6		:= to_unsigned(cc_mts_1n6 + (to_integer(counter_ov_cnt)-1) * OVERFLOW_1N6, cc_gts_1n6'length);
-            padding_logic_white_ts_v := resize(padding_logic_gray_ts_v, padding_logic_white_ts_v'length) + padding_logic_gts_product_v - to_unsigned(OVERFLOW_1N6, padding_logic_white_ts_v'length);
+            padding_logic_white_ts_v := resize(padding_logic_gray_ts_v, padding_logic_white_ts_v'length) + padding_logic_gts_product_v - to_unsigned(OVERFLOW_TIME_1N6, padding_logic_white_ts_v'length);
         else 
             --cc_gts_1n6		:= to_unsigned(cc_mts_1n6 + to_integer(counter_ov_cnt) * OVERFLOW_1N6, cc_gts_1n6'length);
             padding_logic_white_ts_v := resize(padding_logic_gray_ts_v, padding_logic_white_ts_v'length) + padding_logic_gts_product_v;
         end if;
 
         if (padding_logic_gray_ts_e_v > padding_upper and hit_padding.tot_e_adjust = '1') then 
-            padding_logic_white_ts_e_v := resize(padding_logic_gray_ts_e_v, padding_logic_white_ts_e_v'length) + padding_logic_gts_product_v - to_unsigned(OVERFLOW_1N6, padding_logic_white_ts_e_v'length);
+            padding_logic_white_ts_e_v := resize(padding_logic_gray_ts_e_v, padding_logic_white_ts_e_v'length) + padding_logic_gts_product_v - to_unsigned(OVERFLOW_TIME_1N6, padding_logic_white_ts_e_v'length);
         else 
             padding_logic_white_ts_e_v := resize(padding_logic_gray_ts_e_v, padding_logic_white_ts_e_v'length) + padding_logic_gts_product_v;
         end if;
@@ -1281,6 +1285,8 @@ begin
                 hit_padding.channel		<= hit_in.channel;
                 hit_padding.cc_out		<= cc_out; -- decoded
                 hit_padding.ecc_out		<= ecc_out; -- decoded
+                hit_padding.tot_t_adjust <= overflow_adjust_active;
+                hit_padding.tot_e_adjust <= overflow_adjust_active;
                 hit_padding.e_flag		<= hit_in.e_flag;
                 hit_padding.t_fine		<= hit_in.t_fine;
                 hit_padding.valid		<= '1';
