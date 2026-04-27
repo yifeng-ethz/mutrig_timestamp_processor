@@ -13,14 +13,15 @@ if {[string length $SCRIPT_DIR] == 0} {
 
 set DEFAULT_LPM_DIV_PIPELINE_CONST         4
 set DEFAULT_EXPECTED_LATENCY_8N_CONST      2000
+set DEFAULT_OVERFLOW_LOOKBACK_8N_CONST     2000
 set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
 set VERSION_MINOR_DEFAULT_CONST            0
-set VERSION_PATCH_DEFAULT_CONST            2
-set BUILD_DEFAULT_CONST                    416
-set VERSION_DATE_DEFAULT_CONST             20260416
+set VERSION_PATCH_DEFAULT_CONST            8
+set BUILD_DEFAULT_CONST                    427
+set VERSION_DATE_DEFAULT_CONST             20260427
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -75,6 +76,7 @@ proc compute_derived_values {} {
     set div_pipeline   [get_parameter_value LPM_DIV_PIPELINE]
     set pad_wait       [get_parameter_value PADDING_EOP_WAIT_CYCLE]
     set exp_latency    [get_parameter_value MUTRIG_BUFFER_EXPECTED_LATENCY_8N]
+    set overflow_lookback [get_parameter_value MUTRIG_OVERFLOW_LOOKBACK_8N]
     set bank_name      [get_parameter_value BANK]
     set version_string [format "%d.%d.%d.%04d" \
         [get_parameter_value VERSION_MAJOR] \
@@ -98,26 +100,28 @@ emits <b>hit_type1</b> words for downstream hit stacking.<br/><br/>\
 pulse, and acknowledges only after one empty <b>hit_type1</b> close marker has been emitted per downstream lane.<br/><br/>\
 <b>Configured slice</b><br/>\
 Bank <b>%s</b>, enabled channel window <b>%d..%d</b> (%d channels), divider pipeline <b>%d</b>, padding wait\
-<b>%d</b> cycles, expected latency <b>%d</b> 8 ns ticks.</html>} \
+<b>%d</b> cycles, expected latency <b>%d</b> 8 ns ticks, overflow lookback <b>%d</b> 8 ns ticks.</html>} \
             $bank_name \
             $channel_lo \
             $channel_hi \
             $enabled_count \
             $div_pipeline \
             $pad_wait \
-            $exp_latency]
+            $exp_latency \
+            $overflow_lookback]
     }
     catch {
         set_display_item_property timing_html TEXT {<html>\
 <b>Timing-related parameters</b><br/>\
 <b>LPM_DIV_PIPELINE</b> is packaged at the RTL default of <b>4</b> stages in this revision, matching the delivered source.<br/>\
 <b>PADDING_EOP_WAIT_CYCLE</b> defines the end-of-run grace window used by the terminating drain logic.<br/>\
-<b>MUTRIG_BUFFER_EXPECTED_LATENCY_8N</b> seeds the standalone timestamp-lapse window and the associated error reporting.</html>}
+<b>MUTRIG_BUFFER_EXPECTED_LATENCY_8N</b> seeds the standalone timestamp-lapse window and the associated error reporting.<br/>\
+<b>MUTRIG_OVERFLOW_LOOKBACK_8N</b> is a separate post-wrap disambiguation window used only to decide when a high MuTRiG timestamp belongs to the previous epoch.</html>}
     }
     catch {
         set_display_item_property debug_html TEXT {<html>\
 <b>DEBUG</b><br/>\
-Controls built-in report instrumentation and standalone observability. Non-zero values increase debug verbosity; they do not add a backpressure model to <b>hit_type1_out</b>.</html>}
+Controls built-in report instrumentation and standalone observability. Non-zero values increase debug verbosity; they do not add a backpressure model to <b>hit_type1_out</b>. Hit counters count accepted <b>hit_type0_in</b> ready/valid transfers only.</html>}
     }
     catch {
         set_display_item_property profile_html TEXT [format {<html>\
@@ -125,7 +129,8 @@ Controls built-in report instrumentation and standalone observability. Non-zero 
 Packaged as <b>%s</b>.<br/><br/>\
 <b>Delivered behavior</b><br/>\
 This image aligns the standalone timestamp processor with the run-sequence upgrade contract: <b>asi_ctrl_ready</b> is stateful,\
-the upstream <b>endofrun</b> sideband drives the terminate-close path, and the packaged divider depth now matches the RTL default.<br/><br/>\
+the upstream <b>endofrun</b> sideband drives the terminate-close path, the packaged divider depth matches the RTL default, and\
+CONTROL_STATUS bit 5 can optionally trim timestamp-delay-error payload beats while the default still forwards them with the error sideband asserted.<br/><br/>\
 <b>Packaging provenance</b><br/>\
 Default git stamp <b>%s</b> (%s). Git describe: <b>%s</b>.</html>} \
             $version_string \
@@ -184,9 +189,10 @@ Enabled channel range <b>%d..%d</b> (%d channels).</html>} \
 <tr><td>0x00</td><td>[2]</td><td>soft_reset</td><td>RW</td><td>One-shot local counter / state reset request.</td></tr>\
 <tr><td>0x00</td><td>[3]</td><td>bypass_lapse</td><td>RW</td><td>Bypass the MTS to GTS lapse correction path.</td></tr>\
 <tr><td>0x00</td><td>[4]</td><td>discard_hiterr</td><td>RW</td><td>Reject hit_type0 beats with the configured hiterr bit set.</td></tr>\
+<tr><td>0x00</td><td>[5]</td><td>drop_delay_error</td><td>RW</td><td>Drop hit_type1 payload beats whose timestamp-delay error sideband is asserted. Leave clear to forward error-marked hits to downstream filters and monitors.</td></tr>\
 <tr><td>0x00</td><td>[29]</td><td>delay_ts_field_use_t</td><td>RW</td><td>Select T timestamp for delay calculation when set.</td></tr>\
 <tr><td>0x00</td><td>[30]</td><td>derive_tot</td><td>RW</td><td>Enable long-hit E-T derivation.</td></tr>\
-<tr><td>0x00</td><td>[31,28,27:5]</td><td>reserved</td><td>RW/RO</td><td>Reserved.</td></tr>\
+<tr><td>0x00</td><td>[31,28,27:6]</td><td>reserved</td><td>RW/RO</td><td>Reserved.</td></tr>\
 </table></html>}
     }
 }
@@ -202,6 +208,7 @@ proc validate {} {
     set pad_wait          [get_parameter_value PADDING_EOP_WAIT_CYCLE]
     set div_pipeline      [get_parameter_value LPM_DIV_PIPELINE]
     set exp_latency       [get_parameter_value MUTRIG_BUFFER_EXPECTED_LATENCY_8N]
+    set overflow_lookback [get_parameter_value MUTRIG_OVERFLOW_LOOKBACK_8N]
     set debug_level       [get_parameter_value DEBUG]
     set ip_uid            [get_parameter_value IP_UID]
     set build_value       [get_parameter_value BUILD]
@@ -238,6 +245,12 @@ proc validate {} {
     }
     if {$exp_latency < 0 || $exp_latency > 65535} {
         send_message error "MUTRIG_BUFFER_EXPECTED_LATENCY_8N must stay in the range 0..65535."
+    }
+    if {$overflow_lookback < 0 || $overflow_lookback > 6553} {
+        send_message error "MUTRIG_OVERFLOW_LOOKBACK_8N must stay in the range 0..6553 so the 1.6 ns padding threshold remains non-negative."
+    }
+    if {$overflow_lookback > $exp_latency} {
+        send_message warning "MUTRIG_OVERFLOW_LOOKBACK_8N is larger than MUTRIG_BUFFER_EXPECTED_LATENCY_8N; corrected hits may still be reported as timestamp-latency errors."
     }
     if {$debug_level < 0 || $debug_level > 4} {
         send_message error "DEBUG must stay in the range 0..4."
@@ -347,6 +360,12 @@ set_parameter_property LPM_DIV_PIPELINE DESCRIPTION "Must match the RTL divider 
 add_parameter MUTRIG_BUFFER_EXPECTED_LATENCY_8N NATURAL $DEFAULT_EXPECTED_LATENCY_8N_CONST
 set_parameter_property MUTRIG_BUFFER_EXPECTED_LATENCY_8N DISPLAY_NAME "Expected Buffer Latency (8 ns)"
 set_parameter_property MUTRIG_BUFFER_EXPECTED_LATENCY_8N HDL_PARAMETER true
+set_parameter_property MUTRIG_BUFFER_EXPECTED_LATENCY_8N DESCRIPTION "Timestamp-latency error threshold and CSR reset default, in 8 ns ticks."
+
+add_parameter MUTRIG_OVERFLOW_LOOKBACK_8N NATURAL $DEFAULT_OVERFLOW_LOOKBACK_8N_CONST
+set_parameter_property MUTRIG_OVERFLOW_LOOKBACK_8N DISPLAY_NAME "Overflow Lookback (8 ns)"
+set_parameter_property MUTRIG_OVERFLOW_LOOKBACK_8N HDL_PARAMETER true
+set_parameter_property MUTRIG_OVERFLOW_LOOKBACK_8N DESCRIPTION "Post-wrap epoch-disambiguation window, in 8 ns ticks. This is intentionally independent from the timestamp-error threshold."
 
 add_parameter DEBUG NATURAL 1
 set_parameter_property DEBUG DISPLAY_NAME "Debug Level"
@@ -392,6 +411,7 @@ add_display_item "Configuration" timing_group GROUP "Timing and Drain"
 add_display_item "timing_group" PADDING_EOP_WAIT_CYCLE PARAMETER
 add_display_item "timing_group" LPM_DIV_PIPELINE PARAMETER
 add_display_item "timing_group" MUTRIG_BUFFER_EXPECTED_LATENCY_8N PARAMETER
+add_display_item "timing_group" MUTRIG_OVERFLOW_LOOKBACK_8N PARAMETER
 add_html_text "Configuration" timing_html ""
 add_display_item "Configuration" debug_group GROUP "Debug"
 add_display_item "debug_group" DEBUG PARAMETER

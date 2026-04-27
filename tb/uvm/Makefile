@@ -1,18 +1,6 @@
-QUESTA_HOME ?= /data1/intelFPGA_pro/23.1/questa_fse
-VLIB        = $(QUESTA_HOME)/bin/vlib
-VMAP        = $(QUESTA_HOME)/bin/vmap
-VCOM        = $(QUESTA_HOME)/bin/vcom
-VLOG        = $(QUESTA_HOME)/bin/vlog
-VSIM        = $(QUESTA_HOME)/bin/vsim
-VCOVER      = $(QUESTA_HOME)/bin/vcover
-LMUTIL      = $(QUESTA_HOME)/linux_x86_64/lmutil
+include ../../../scripts/questa_one.mk
 
-QUESTA_LICENSE := $(QUESTA_HOME)/LR-287689_License.dat
-ETH_LIC_SERVER := 8161@lic-mentor.ethz.ch
 SIM_LIB_DIR    := /data1/intelFPGA_pro/23.1/quartus/eda/sim_lib
-
-export LM_LICENSE_FILE   := $(ETH_LIC_SERVER):$(QUESTA_LICENSE)
-export MGLS_LICENSE_FILE := $(LM_LICENSE_FILE)
 
 UVM_DIR       := $(abspath .)
 IP_SRC        := $(abspath ../..)
@@ -21,9 +9,10 @@ BUILD_DIR     = $(WORK_DIR)/build
 LPM_DIR       = $(WORK_DIR)/lpm
 LOG_DIR       := $(UVM_DIR)/logs
 COV_DIR       = $(UVM_DIR)/cov_$(RTL_VARIANT)
-UVM_HOME      ?= $(abspath $(QUESTA_HOME)/verilog_src/uvm-1.2)
+MODELSIM_INI  := modelsim.ini
+UVM_HOME      ?= $(QUESTA_UVM_HOME)
 UVM_SRC       := $(UVM_HOME)/src
-UVM_DPI_SO    := $(firstword $(wildcard $(QUESTA_HOME)/uvm-1.2/linux_x86_64/uvm_dpi.so $(QUESTA_HOME)/verilog_src/uvm-1.2/linux_x86_64/uvm_dpi.so))
+UVM_DPI_SO    := $(QUESTA_UVM_DPI_SO)
 UVM_DPI_LIB   := $(basename $(UVM_DPI_SO))
 DPI_CPP       ?= /usr/bin/gcc
 
@@ -50,9 +39,9 @@ UVM_SRCS = \
 .PHONY: license_check compile run run_sim run_isolated run_bucket_frame run_all_buckets_frame cov_report_case cov_merge cov_report_total run_before_expected_fail run_after prove_delta clean
 
 license_check:
-	@echo "═══ Checking Mentor floating license at $(ETH_LIC_SERVER) ═══"
-	@$(LMUTIL) lmstat -f mtiverification -c $(ETH_LIC_SERVER) >/dev/null 2>&1 || \
-	  { echo "ERROR: mtiverification feature not visible via $(ETH_LIC_SERVER)"; exit 1; }
+	@echo "═══ Checking Mentor floating license at $(QUESTA_LICENSE_SERVER) ═══"
+	@$(LMUTIL) lmstat -f mtiverification -c $(QUESTA_LICENSE_SERVER) >/dev/null 2>&1 || \
+	  { echo "ERROR: mtiverification feature not visible via $(QUESTA_LICENSE_SERVER)"; exit 1; }
 
 compile: license_check $(WORK_DIR)/.compiled
 
@@ -66,15 +55,16 @@ $(WORK_DIR)/.compiled: $(IP_SRC)/dual_port_rom.v $(IP_SRC)/dual_port_rom_init.tx
 	@cp $(IP_SRC)/dual_port_rom_init.txt $(WORK_DIR)/
 	@$(VLIB) $(WORK_DIR)/work
 	@$(VLIB) $(LPM_DIR)
-	@cd $(WORK_DIR) && $(VMAP) -c > /dev/null
-	@cd $(WORK_DIR) && $(VMAP) -modelsimini modelsim.ini work $(WORK_DIR)/work > /dev/null
-	@cd $(WORK_DIR) && $(VMAP) -modelsimini modelsim.ini lpm $(LPM_DIR) > /dev/null
-	@cd $(WORK_DIR) && $(VCOM) -2008 $(VCOM_COV) -modelsimini modelsim.ini -work lpm $(SIM_LIB_DIR)/220pack.vhd
-	@cd $(WORK_DIR) && $(VCOM) -2008 $(VCOM_COV) -modelsimini modelsim.ini -work lpm $(SIM_LIB_DIR)/220model.vhd
-	@cd $(WORK_DIR) && $(VLOG) -modelsimini modelsim.ini -work work $(VLOG_COV) $(IP_SRC)/dual_port_rom.v
-	@cd $(WORK_DIR) && $(VCOM) -2008 $(VCOM_COV) -modelsimini modelsim.ini -work work $(RTL_SRC)
-	@cd $(WORK_DIR) && $(VLOG) -modelsimini modelsim.ini -work work $(VLOG_COV) -sv $(UVM_DIR)/mtsp_if.sv
-	@cd $(WORK_DIR) && $(VLOG) -modelsimini modelsim.ini -work work -mfcu \
+	@cp $(QSIM_INI) $(WORK_DIR)/$(MODELSIM_INI)
+	@chmod u+w $(WORK_DIR)/$(MODELSIM_INI)
+	@cd $(WORK_DIR) && $(VMAP) -modelsimini $(MODELSIM_INI) work $(WORK_DIR)/work > /dev/null
+	@cd $(WORK_DIR) && $(VMAP) -modelsimini $(MODELSIM_INI) lpm $(LPM_DIR) > /dev/null
+	@cd $(WORK_DIR) && $(VCOM) -2008 $(VCOM_COV) -modelsimini $(MODELSIM_INI) -work lpm $(SIM_LIB_DIR)/220pack.vhd
+	@cd $(WORK_DIR) && $(VCOM) -2008 $(VCOM_COV) -modelsimini $(MODELSIM_INI) -work lpm $(SIM_LIB_DIR)/220model.vhd
+	@cd $(WORK_DIR) && $(VLOG) -modelsimini $(MODELSIM_INI) -work work $(VLOG_COV) $(IP_SRC)/dual_port_rom.v
+	@cd $(WORK_DIR) && $(VCOM) -2008 $(VCOM_COV) -modelsimini $(MODELSIM_INI) -work work $(RTL_SRC)
+	@cd $(WORK_DIR) && $(VLOG) -modelsimini $(MODELSIM_INI) -work work $(VLOG_COV) -sv $(UVM_DIR)/mtsp_if.sv
+	@cd $(WORK_DIR) && $(VLOG) -modelsimini $(MODELSIM_INI) -work work -mfcu \
 	  $(VLOG_COV) +incdir+$(UVM_SRC) +incdir+$(UVM_DIR) -sv \
 	  $(UVM_SRC)/uvm_pkg.sv \
 	  $(UVM_DIR)/mtsp_env_pkg.sv \
@@ -87,7 +77,7 @@ run_sim:
 	@echo "=== Running $(RUN_ID) test=$(TEST) variant=$(RTL_VARIANT) seed=$(SEED) ==="
 	@mkdir -p $(COV_DIR)
 	@rm -f $(COV_DIR)/$(RUN_ID)_s$(SEED).ucdb
-	@cd $(WORK_DIR) && $(VSIM) -modelsimini modelsim.ini -c -coverage -L lpm \
+	@cd $(WORK_DIR) && $(VSIM) -modelsimini $(MODELSIM_INI) -c -coverage -L lpm \
 	  -dpicpppath $(DPI_CPP) -sv_lib $(UVM_DPI_LIB) \
 	  -sv_seed $(SEED) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(if $(CASE_ID),+MTSP_CASE_ID=$(CASE_ID),) \

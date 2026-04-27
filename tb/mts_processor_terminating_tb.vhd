@@ -77,6 +77,20 @@ architecture sim of mts_processor_terminating_tb is
         ctrl_data                      <= (others => '0');
     end procedure send_ctrl_until_ready;
 
+    procedure pulse_ctrl(
+        signal clk                     : in  std_logic;
+        signal ctrl_data               : out std_logic_vector(8 downto 0);
+        signal ctrl_valid              : out std_logic;
+        constant ctrl_word             : in  std_logic_vector(8 downto 0)
+    ) is
+    begin
+        ctrl_data                      <= ctrl_word;
+        ctrl_valid                     <= '1';
+        wait until rising_edge(clk);
+        ctrl_valid                     <= '0';
+        ctrl_data                      <= (others => '0');
+    end procedure pulse_ctrl;
+
     procedure send_hit_beat(
         signal clk                     : in  std_logic;
         signal ready                   : in  std_logic;
@@ -323,6 +337,33 @@ begin
             severity failure;
         asi_ctrl_valid <= '0';
         asi_ctrl_data  <= (others => '0');
+
+        send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_IDLE_CONST);
+        send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_RUN_PREP_CONST);
+        send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_SYNC_CONST);
+        send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_RUNNING_CONST);
+
+        pulse_ctrl(i_clk, asi_ctrl_data, asi_ctrl_valid, CTRL_TERMINATE_CONST);
+        wait_cycles(i_clk, 4);
+        assert asi_ctrl_ready = '0'
+            report "Terminating without upstream end-of-run should hold control ready low before re-arm"
+            severity failure;
+
+        pulse_ctrl(i_clk, asi_ctrl_data, asi_ctrl_valid, CTRL_RUN_PREP_CONST);
+        pulse_ctrl(i_clk, asi_ctrl_data, asi_ctrl_valid, CTRL_SYNC_CONST);
+        pulse_ctrl(i_clk, asi_ctrl_data, asi_ctrl_valid, CTRL_RUNNING_CONST);
+
+        ready_seen_v := false;
+        for wait_idx in 0 to 16 loop
+            wait until rising_edge(i_clk);
+            if asi_ctrl_ready = '1' then
+                ready_seen_v := true;
+            end if;
+            exit when ready_seen_v;
+        end loop;
+        assert ready_seen_v
+            report "Expected RUN_PREPARE/SYNC/RUNNING to re-arm MTS from a stuck FLUSHING state"
+            severity failure;
 
         send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_IDLE_CONST);
         report "mts_processor_terminating_tb PASSED" severity note;

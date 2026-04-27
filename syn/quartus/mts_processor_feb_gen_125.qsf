@@ -1,0 +1,20 @@
+set_global_assignment -name FAMILY "Arria V"
+set_global_assignment -name DEVICE 5AGXBA7D4F31C5
+set_global_assignment -name TOP_LEVEL_ENTITY mts_processor_feb_gen_top
+set_global_assignment -name ORIGINAL_QUARTUS_VERSION 18.1.0
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files/mts_processor_feb_gen_125
+set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 4
+set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
+
+set_instance_assignment -name VIRTUAL_PIN ON -to *
+
+set_global_assignment -name VHDL_FILE ../../../quartus_system/feb_system_v3/synthesis/submodules/mts_processor.vhd
+set_global_assignment -name VERILOG_FILE ../../dual_port_rom.v
+set_global_assignment -name SOURCE_FILE ../../dual_port_rom_init.txt
+set_global_assignment -name VHDL_FILE mts_processor_feb_gen_top.vhd
+
+set_global_assignment -name SDC_FILE mts_processor_feb_gen_125.sdc
+set_global_assignment -name LAST_QUARTUS_VERSION "18.1.0 Standard Edition"
+
+set_instance_assignment -name GLOBAL_SIGNAL "GLOBAL CLOCK" -to clk

@@ -9,8 +9,12 @@ end entity mts_processor_tb;
 architecture sim of mts_processor_tb is
 
     constant CLK_PERIOD_CONST       : time := 8 ns;
+    constant CTRL_IDLE_CONST        : std_logic_vector(8 downto 0) := "000000001";
     constant CTRL_RUNNING_CONST     : std_logic_vector(8 downto 0) := "000001000";
     constant CSR_CONTROL_ADDR_CONST : natural := 0;
+    constant CSR_DISCARD_ADDR_CONST : natural := 1;
+    constant CSR_TOTAL_HI_ADDR_CONST: natural := 3;
+    constant CSR_TOTAL_LO_ADDR_CONST: natural := 4;
     constant CSR_GO_DERIVE_TOT_CONST: std_logic_vector(31 downto 0) := x"40000001";
     constant ET_FIELD_HI_CONST      : natural := 8;
     constant ET_FIELD_LO_CONST      : natural := 0;
@@ -67,6 +71,25 @@ architecture sim of mts_processor_tb is
         addr                        <= (others => '0');
         writedata                   <= (others => '0');
     end procedure csr_write;
+
+    procedure csr_read(
+        signal clk                  : in  std_logic;
+        signal addr                 : out std_logic_vector(2 downto 0);
+        signal read                 : out std_logic;
+        signal readdata             : in  std_logic_vector(31 downto 0);
+        constant addr_value         : in  natural;
+        variable data_value         : out std_logic_vector(31 downto 0)
+    ) is
+    begin
+        addr                        <= std_logic_vector(to_unsigned(addr_value, addr'length));
+        read                        <= '1';
+        wait until rising_edge(clk);
+        wait for 1 ns;
+        data_value                  := readdata;
+        read                        <= '0';
+        addr                        <= (others => '0');
+        wait until rising_edge(clk);
+    end procedure csr_read;
 
     procedure send_ctrl(
         signal clk                  : in  std_logic;
@@ -185,6 +208,12 @@ begin
         );
 
     tb_stim : process
+        variable discard_before_v   : std_logic_vector(31 downto 0);
+        variable discard_after_v    : std_logic_vector(31 downto 0);
+        variable total_hi_before_v  : std_logic_vector(31 downto 0);
+        variable total_hi_after_v   : std_logic_vector(31 downto 0);
+        variable total_lo_before_v  : std_logic_vector(31 downto 0);
+        variable total_lo_after_v   : std_logic_vector(31 downto 0);
     begin
         wait for 5 * CLK_PERIOD_CONST;
         wait until rising_edge(i_clk);
@@ -285,6 +314,51 @@ begin
             hit_data                => aso_hit_type1_data,
             expected_et             => 511
         );
+
+        send_ctrl(
+            clk                     => i_clk,
+            ctrl_data               => asi_ctrl_data,
+            ctrl_valid              => asi_ctrl_valid,
+            ctrl_word               => CTRL_IDLE_CONST
+        );
+        for wait_cycle in 1 to 8 loop
+            wait until rising_edge(i_clk);
+        end loop;
+        assert asi_hit_type0_ready = '0'
+            report "hit_type0 ready should be low while MTS is idle"
+            severity failure;
+
+        csr_read(i_clk, avs_csr_address, avs_csr_read, avs_csr_readdata, CSR_DISCARD_ADDR_CONST, discard_before_v);
+        csr_read(i_clk, avs_csr_address, avs_csr_read, avs_csr_readdata, CSR_TOTAL_HI_ADDR_CONST, total_hi_before_v);
+        csr_read(i_clk, avs_csr_address, avs_csr_read, avs_csr_readdata, CSR_TOTAL_LO_ADDR_CONST, total_lo_before_v);
+
+        asi_hit_type0_channel       <= "000010";
+        asi_hit_type0_startofpacket <= '1';
+        asi_hit_type0_endofpacket   <= '1';
+        asi_hit_type0_error         <= "001";
+        asi_hit_type0_data          <= (others => '0');
+        asi_hit_type0_valid         <= '1';
+        for wait_cycle in 1 to 32 loop
+            wait until rising_edge(i_clk);
+            assert asi_hit_type0_ready = '0'
+                report "MTS accepted a held idle hit_type0 beat"
+                severity failure;
+        end loop;
+
+        csr_read(i_clk, avs_csr_address, avs_csr_read, avs_csr_readdata, CSR_DISCARD_ADDR_CONST, discard_after_v);
+        csr_read(i_clk, avs_csr_address, avs_csr_read, avs_csr_readdata, CSR_TOTAL_HI_ADDR_CONST, total_hi_after_v);
+        csr_read(i_clk, avs_csr_address, avs_csr_read, avs_csr_readdata, CSR_TOTAL_LO_ADDR_CONST, total_lo_after_v);
+        assert discard_after_v = discard_before_v
+            report "Discard counter advanced while hit_type0_valid was held with ready low in IDLE"
+            severity failure;
+        assert total_hi_after_v = total_hi_before_v and total_lo_after_v = total_lo_before_v
+            report "Total counter advanced while hit_type0_valid was held with ready low in IDLE"
+            severity failure;
+        asi_hit_type0_valid         <= '0';
+        asi_hit_type0_startofpacket <= '0';
+        asi_hit_type0_endofpacket   <= '0';
+        asi_hit_type0_error         <= (others => '0');
+        asi_hit_type0_channel       <= (others => '0');
 
         report "mts_processor_tb PASSED" severity note;
         finish;

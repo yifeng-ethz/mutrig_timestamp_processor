@@ -21,6 +21,7 @@ proc ::board_bring_up::meta::mts_processor::get_contract {} {
                                 [::board_bring_up::meta::field "soft_reset" "soft reset this IP, including counters and in-processing hits" {[2:2]} "read-write"] \
                                 [::board_bring_up::meta::field "bypass_lapse" "disable the lapse (leap) correction between mts and gts. debug to see the raw coarse counter distribution." {[3:3]} "read-write"] \
                                 [::board_bring_up::meta::field "discard_hiterr" "disable input error check of 'hiterr' error signal" {[4:4]} "read-write"] \
+                                [::board_bring_up::meta::field "drop_delay_error" "drop hit_type1 payload beats whose timestamp-delay error sideband is asserted; default forwards marked hits to downstream filters" {[5:5]} "read-write"] \
                                 [::board_bring_up::meta::field "op_mode" "three-bit operating mode control" {[30:28]} "read-write"]]] \
                 [::board_bring_up::meta::register \
                         "discard_hit_counter" \
