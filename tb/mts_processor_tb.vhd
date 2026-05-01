@@ -13,9 +13,13 @@ architecture sim of mts_processor_tb is
     constant CTRL_RUNNING_CONST     : std_logic_vector(8 downto 0) := "000001000";
     constant CSR_CONTROL_ADDR_CONST : natural := 0;
     constant CSR_DISCARD_ADDR_CONST : natural := 1;
+    constant CSR_OVERFLOW_LOOKBACK_ADDR_CONST : natural := 5;
     constant CSR_TOTAL_HI_ADDR_CONST: natural := 3;
     constant CSR_TOTAL_LO_ADDR_CONST: natural := 4;
     constant CSR_GO_DERIVE_TOT_CONST: std_logic_vector(31 downto 0) := x"40000001";
+    constant OVERFLOW_LOOKBACK_DEFAULT_CONST : natural := 2000;
+    constant OVERFLOW_LOOKBACK_TEST_CONST : natural := 400;
+    constant OVERFLOW_LOOKBACK_CLAMP_CONST : natural := 6553;
     constant ET_FIELD_HI_CONST      : natural := 8;
     constant ET_FIELD_LO_CONST      : natural := 0;
     constant PIPELINE_WAIT_CONST    : natural := 24;
@@ -214,6 +218,7 @@ begin
         variable total_hi_after_v   : std_logic_vector(31 downto 0);
         variable total_lo_before_v  : std_logic_vector(31 downto 0);
         variable total_lo_after_v   : std_logic_vector(31 downto 0);
+        variable lookback_read_v     : std_logic_vector(31 downto 0);
     begin
         wait for 5 * CLK_PERIOD_CONST;
         wait until rising_edge(i_clk);
@@ -226,6 +231,43 @@ begin
             writedata               => avs_csr_writedata,
             addr_value              => CSR_CONTROL_ADDR_CONST,
             data_value              => CSR_GO_DERIVE_TOT_CONST
+        );
+
+        csr_read(i_clk, avs_csr_address, avs_csr_read, avs_csr_readdata, CSR_OVERFLOW_LOOKBACK_ADDR_CONST, lookback_read_v);
+        assert unsigned(lookback_read_v) = to_unsigned(OVERFLOW_LOOKBACK_DEFAULT_CONST, lookback_read_v'length)
+            report "Overflow lookback reset value mismatch"
+            severity failure;
+        csr_write(
+            clk                     => i_clk,
+            addr                    => avs_csr_address,
+            write                   => avs_csr_write,
+            writedata               => avs_csr_writedata,
+            addr_value              => CSR_OVERFLOW_LOOKBACK_ADDR_CONST,
+            data_value              => std_logic_vector(to_unsigned(OVERFLOW_LOOKBACK_TEST_CONST, 32))
+        );
+        csr_read(i_clk, avs_csr_address, avs_csr_read, avs_csr_readdata, CSR_OVERFLOW_LOOKBACK_ADDR_CONST, lookback_read_v);
+        assert unsigned(lookback_read_v) = to_unsigned(OVERFLOW_LOOKBACK_TEST_CONST, lookback_read_v'length)
+            report "Overflow lookback CSR write/read mismatch"
+            severity failure;
+        csr_write(
+            clk                     => i_clk,
+            addr                    => avs_csr_address,
+            write                   => avs_csr_write,
+            writedata               => avs_csr_writedata,
+            addr_value              => CSR_OVERFLOW_LOOKBACK_ADDR_CONST,
+            data_value              => std_logic_vector(to_unsigned(7000, 32))
+        );
+        csr_read(i_clk, avs_csr_address, avs_csr_read, avs_csr_readdata, CSR_OVERFLOW_LOOKBACK_ADDR_CONST, lookback_read_v);
+        assert unsigned(lookback_read_v) = to_unsigned(OVERFLOW_LOOKBACK_CLAMP_CONST, lookback_read_v'length)
+            report "Overflow lookback CSR did not clamp out-of-range write"
+            severity failure;
+        csr_write(
+            clk                     => i_clk,
+            addr                    => avs_csr_address,
+            write                   => avs_csr_write,
+            writedata               => avs_csr_writedata,
+            addr_value              => CSR_OVERFLOW_LOOKBACK_ADDR_CONST,
+            data_value              => std_logic_vector(to_unsigned(OVERFLOW_LOOKBACK_DEFAULT_CONST, 32))
         );
 
         send_ctrl(

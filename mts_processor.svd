@@ -4,8 +4,8 @@
   <vendorID>MU3E</vendorID>
   <name>MU3E_MTS_PROCESSOR</name>
   <series>MU3E_FPGA_IP</series>
-  <version>26.0.404</version>
-  <description>CMSIS-SVD description of the MuTRiG timestamp processor CSR window. This conservative first-pass schema exposes the 8-word relative aperture as read-only WORD registers until the IP author replaces them with the exact CSR contract.</description>
+  <version>26.0.9.0501</version>
+  <description>CMSIS-SVD description of the MuTRiG timestamp processor CSR window.</description>
   <addressUnitBits>8</addressUnitBits>
   <width>32</width>
   <size>32</size>
@@ -25,29 +25,78 @@
       </addressBlock>
       <registers>
         <register>
-          <name>WORD000</name>
-          <description>MTS processor CSR word 0.</description>
+          <name>CONTROL_STATUS</name>
+          <description>Mixed control/status word. Read bit 0 mirrors RUNNING; writes update control fields.</description>
           <addressOffset>0x0</addressOffset>
-          <access>read-only</access>
+          <access>read-write</access>
           <fields>
             <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 0.</description>
+              <name>go_or_running</name>
+              <description>Write go; read RUNNING-state mirror.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-              <access>read-only</access>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>force_stop</name>
+              <description>Manual stop gate.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>soft_reset</name>
+              <description>One-shot local counter/state reset.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>bypass_lapse</name>
+              <description>Bypass MTS-to-GTS lapse correction.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>discard_hiterr</name>
+              <description>Discard hit_type0 beats with hiterr asserted.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>drop_delay_error</name>
+              <description>Drop hit_type1 beats whose timestamp-delay sideband is asserted.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>delay_ts_field_use_t</name>
+              <description>Use T timestamp for delay calculation.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>derive_tot</name>
+              <description>Enable long-hit E-T derivation.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
             </field>
           </fields>
         </register>
         <register>
-          <name>WORD001</name>
-          <description>MTS processor CSR word 1.</description>
+          <name>DISCARD_HIT_CNT</name>
+          <description>Count of discarded input hits.</description>
           <addressOffset>0x4</addressOffset>
           <access>read-only</access>
           <fields>
             <field>
               <name>value</name>
-              <description>Raw MTS processor CSR word 1.</description>
+              <description>Discarded-hit count.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <access>read-only</access>
@@ -55,44 +104,44 @@
           </fields>
         </register>
         <register>
-          <name>WORD002</name>
-          <description>MTS processor CSR word 2.</description>
+          <name>EXPECTED_LATENCY</name>
+          <description>Timestamp-latency error threshold in 8 ns ticks.</description>
           <addressOffset>0x8</addressOffset>
-          <access>read-only</access>
+          <access>read-write</access>
           <fields>
             <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 2.</description>
+              <name>expected_latency</name>
+              <description>Expected hit latency; independent from overflow lookback.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
-              <access>read-only</access>
+              <access>read-write</access>
             </field>
           </fields>
         </register>
         <register>
-          <name>WORD003</name>
-          <description>MTS processor CSR word 3.</description>
+          <name>TOTAL_HIT_CNT_HI</name>
+          <description>Upper 16 bits of the accepted-hit counter.</description>
           <addressOffset>0xC</addressOffset>
           <access>read-only</access>
           <fields>
             <field>
               <name>value</name>
-              <description>Raw MTS processor CSR word 3.</description>
+              <description>Accepted-hit count high halfword.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>16</bitWidth>
               <access>read-only</access>
             </field>
           </fields>
         </register>
         <register>
-          <name>WORD004</name>
-          <description>MTS processor CSR word 4.</description>
+          <name>TOTAL_HIT_CNT_LO</name>
+          <description>Lower 32 bits of the accepted-hit counter.</description>
           <addressOffset>0x10</addressOffset>
           <access>read-only</access>
           <fields>
             <field>
               <name>value</name>
-              <description>Raw MTS processor CSR word 4.</description>
+              <description>Accepted-hit count low word.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <access>read-only</access>
@@ -100,29 +149,29 @@
           </fields>
         </register>
         <register>
-          <name>WORD005</name>
-          <description>MTS processor CSR word 5.</description>
+          <name>OVERFLOW_LOOKBACK</name>
+          <description>Post-wrap epoch-disambiguation lookback in 8 ns ticks.</description>
           <addressOffset>0x14</addressOffset>
-          <access>read-only</access>
+          <access>read-write</access>
           <fields>
             <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 5.</description>
+              <name>overflow_lookback</name>
+              <description>Runtime lapse/overflow lookback; writes are clamped to the non-negative MuTRiG wrap range.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
-              <access>read-only</access>
+              <access>read-write</access>
             </field>
           </fields>
         </register>
         <register>
-          <name>WORD006</name>
-          <description>MTS processor CSR word 6.</description>
+          <name>RESERVED_6</name>
+          <description>Reserved MTS processor CSR word 6.</description>
           <addressOffset>0x18</addressOffset>
           <access>read-only</access>
           <fields>
             <field>
               <name>value</name>
-              <description>Raw MTS processor CSR word 6.</description>
+              <description>Reserved.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <access>read-only</access>
@@ -130,14 +179,14 @@
           </fields>
         </register>
         <register>
-          <name>WORD007</name>
-          <description>MTS processor CSR word 7.</description>
+          <name>RESERVED_7</name>
+          <description>Reserved MTS processor CSR word 7.</description>
           <addressOffset>0x1C</addressOffset>
           <access>read-only</access>
           <fields>
             <field>
               <name>value</name>
-              <description>Raw MTS processor CSR word 7.</description>
+              <description>Reserved.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <access>read-only</access>

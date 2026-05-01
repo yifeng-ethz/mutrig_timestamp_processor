@@ -68,7 +68,7 @@ The plan treats these as current DUT facts, not assumptions:
 - `aso_hit_type1_empty` is driven to `0` in all currently implemented paths
 - `FRAME_CORRPT_BIT_LOC`, `CRCERR_BIT_LOC`, and `PADDING_EOP_WAIT_CYCLE` are generics but are not functionally consumed today
 - `BANK` affects debug report strings only, not datapath behavior
-- `mts_processor_hw.tcl` exposes `LPM_DIV_PIPELINE` default `2` while the VHDL generic default is `4`; DV must cover both compiled configurations
+- `mts_processor_hw.tcl` and the VHDL generic both expose `LPM_DIV_PIPELINE` default `4` in the current packaged revision
 
 ### 2.4 CSR contract
 
@@ -78,6 +78,7 @@ Implemented CSR words:
 - `0x8`: expected latency in 8 ns
 - `0xC`: total hit count high
 - `0x10`: total hit count low
+- `0x14`: overflow-lookback window in 8 ns ticks, read/write, clamped to `0..6553`
 
 Important semantic details:
 - `go` reads back as live RUNNING-state indication, not the programmed bit value
@@ -85,6 +86,8 @@ Important semantic details:
 - `derive_tot` is `op_mode[30]`
 - `delay_ts_field_use_t` is `op_mode[29]`
 - `op_mode[28]` is currently unused
+- `expected_latency` sets the timestamp-error threshold only; it does not tune the epoch-disambiguation lookback
+- `overflow_lookback` tunes the post-wrap lapse disambiguation window and updates the 1.6 ns padding threshold together
 
 ### 2.5 Legacy smoke coverage already present
 
@@ -94,6 +97,7 @@ The checked-in [mts_processor_tb.vhd](/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-
 - one positive `ET_1n6` expectation
 - one `EFlag=0` mask-to-zero expectation
 - one clamp-path expectation using a crafted raw-symbol pair
+- reset/readback, write/readback, clamp, and restore coverage for CSR word `0x14`
 
 The new DV plan keeps that bench as smoke evidence but expands coverage to the full DUT contract.
 
@@ -101,7 +105,7 @@ The new DV plan keeps that bench as smoke evidence but expands coverage to the f
 
 1. Prove the current RTL contract exactly as implemented, including its non-backpressurable output and always-ready control sink.
 2. Prove the timestamp-conversion datapath over accepted, discarded, reset, and overflow-window-sensitive traffic.
-3. Prove `derive_tot`, `delay_ts_field_use_t`, `bypass_lapse`, and `expected_latency` independently and in combination.
+3. Prove `derive_tot`, `delay_ts_field_use_t`, `bypass_lapse`, `expected_latency`, and `overflow_lookback` independently and in combination.
 4. Prove packet-marker behavior: first-hit `startofpacket`, delayed termination `endofpacket`, and the currently constant-zero `empty`.
 5. Prove software-visible counters and status fields are coherent through reset, run, flush, and fault cases.
 6. Prove the current termination behavior and isolate the exact cases that should change once the run-sequence upgrade lands.

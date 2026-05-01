@@ -19,9 +19,9 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
 set VERSION_MINOR_DEFAULT_CONST            0
-set VERSION_PATCH_DEFAULT_CONST            8
-set BUILD_DEFAULT_CONST                    427
-set VERSION_DATE_DEFAULT_CONST             20260427
+set VERSION_PATCH_DEFAULT_CONST            9
+set BUILD_DEFAULT_CONST                    501
+set VERSION_DATE_DEFAULT_CONST             20260501
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -116,7 +116,7 @@ Bank <b>%s</b>, enabled channel window <b>%d..%d</b> (%d channels), divider pipe
 <b>LPM_DIV_PIPELINE</b> is packaged at the RTL default of <b>4</b> stages in this revision, matching the delivered source.<br/>\
 <b>PADDING_EOP_WAIT_CYCLE</b> defines the end-of-run grace window used by the terminating drain logic.<br/>\
 <b>MUTRIG_BUFFER_EXPECTED_LATENCY_8N</b> seeds the standalone timestamp-lapse window and the associated error reporting.<br/>\
-<b>MUTRIG_OVERFLOW_LOOKBACK_8N</b> is a separate post-wrap disambiguation window used only to decide when a high MuTRiG timestamp belongs to the previous epoch.</html>}
+<b>MUTRIG_OVERFLOW_LOOKBACK_8N</b> seeds the post-wrap disambiguation window. Runtime CSR word 5 may reduce or restore this value during hardware tuning without repackaging the IP.</html>}
     }
     catch {
         set_display_item_property debug_html TEXT {<html>\
@@ -128,7 +128,7 @@ Controls built-in report instrumentation and standalone observability. Non-zero 
 <b>Catalog revision</b><br/>\
 Packaged as <b>%s</b>.<br/><br/>\
 <b>Delivered behavior</b><br/>\
-This image aligns the standalone timestamp processor with the run-sequence upgrade contract: <b>asi_ctrl_ready</b> is stateful,\
+This image exposes runtime overflow-lookback tuning at CSR word 5 for Phase-6 lapse-window debug. It also aligns the standalone timestamp processor with the run-sequence upgrade contract: <b>asi_ctrl_ready</b> is stateful,\
 the upstream <b>endofrun</b> sideband drives the terminate-close path, the packaged divider depth matches the RTL default, and\
 CONTROL_STATUS bit 5 can optionally trim timestamp-delay-error payload beats while the default still forwards them with the error sideband asserted.<br/><br/>\
 <b>Packaging provenance</b><br/>\
@@ -147,7 +147,8 @@ UID default is <b>MTSP</b> (0x4D545350).<br/>\
 Default <b>VERSION_GIT</b> = <b>%s</b> (%s). Git describe = <b>%s</b>.<br/>\
 Enable <b>Override Git Stamp</b> to enter a custom value.<br/><br/>\
 <b>Editability</b><br/>\
-<b>IP_UID</b> and <b>INSTANCE_ID</b> remain integration-editable; version/build/date fields stay locked to the packaged image.</html>} \
+<b>IP_UID</b> and <b>INSTANCE_ID</b> remain integration-editable; version/build/date fields stay locked to the packaged image.<br/>\
+This legacy direct-header map has no SCRATCH/SCRATCHPAD register; software must use a real datapath CSR for write/read health checks.</html>} \
             $version_git_hex \
             $::VERSION_GIT_SHORT_DEFAULT_CONST \
             $::VERSION_GIT_DESCRIBE_DEFAULT_CONST]
@@ -181,6 +182,7 @@ Enabled channel range <b>%d..%d</b> (%d channels).</html>} \
 <tr><td>0x02</td><td>0x008</td><td>EXPECTED_LATENCY</td><td>RW</td><td>Expected MuTRiG buffering latency in 8 ns ticks.</td></tr>\
 <tr><td>0x03</td><td>0x00C</td><td>TOTAL_HIT_CNT_HI</td><td>RO</td><td>Upper 16 bits of the running accepted-hit counter.</td></tr>\
 <tr><td>0x04</td><td>0x010</td><td>TOTAL_HIT_CNT_LO</td><td>RO</td><td>Lower 32 bits of the running accepted-hit counter.</td></tr>\
+<tr><td>0x05</td><td>0x014</td><td>OVERFLOW_LOOKBACK</td><td>RW</td><td>Post-wrap epoch-disambiguation lookback in 8 ns ticks. Writes are clamped to the non-negative MuTRiG wrap range.</td></tr>\
 </table><br/>\
 <table border="1" cellpadding="3" width="100%">\
 <tr><th>Word</th><th>Bits</th><th>Field</th><th>Access</th><th>Description</th></tr>\
@@ -193,6 +195,7 @@ Enabled channel range <b>%d..%d</b> (%d channels).</html>} \
 <tr><td>0x00</td><td>[29]</td><td>delay_ts_field_use_t</td><td>RW</td><td>Select T timestamp for delay calculation when set.</td></tr>\
 <tr><td>0x00</td><td>[30]</td><td>derive_tot</td><td>RW</td><td>Enable long-hit E-T derivation.</td></tr>\
 <tr><td>0x00</td><td>[31,28,27:6]</td><td>reserved</td><td>RW/RO</td><td>Reserved.</td></tr>\
+<tr><td>0x05</td><td>[31:0]</td><td>overflow_lookback</td><td>RW</td><td>Runtime overflow disambiguation lookback. Use this to tune the lapse transform independently from EXPECTED_LATENCY.</td></tr>\
 </table></html>}
     }
 }
@@ -373,30 +376,41 @@ set_parameter_property DEBUG HDL_PARAMETER true
 
 add_parameter IP_UID INTEGER $IP_UID_DEFAULT_CONST
 set_parameter_property IP_UID DISPLAY_NAME "IP UID"
+set_parameter_property IP_UID HDL_PARAMETER true
+set_parameter_property IP_UID DISPLAY_HINT hexadecimal
 
 add_parameter VERSION_MAJOR INTEGER $VERSION_MAJOR_DEFAULT_CONST
 set_parameter_property VERSION_MAJOR DISPLAY_NAME "Version Major"
+set_parameter_property VERSION_MAJOR HDL_PARAMETER true
 
 add_parameter VERSION_MINOR INTEGER $VERSION_MINOR_DEFAULT_CONST
 set_parameter_property VERSION_MINOR DISPLAY_NAME "Version Minor"
+set_parameter_property VERSION_MINOR HDL_PARAMETER true
 
 add_parameter VERSION_PATCH INTEGER $VERSION_PATCH_DEFAULT_CONST
 set_parameter_property VERSION_PATCH DISPLAY_NAME "Version Patch"
+set_parameter_property VERSION_PATCH HDL_PARAMETER true
 
 add_parameter BUILD INTEGER $BUILD_DEFAULT_CONST
 set_parameter_property BUILD DISPLAY_NAME "Build"
+set_parameter_property BUILD HDL_PARAMETER true
 
 add_parameter VERSION_DATE INTEGER $VERSION_DATE_DEFAULT_CONST
 set_parameter_property VERSION_DATE DISPLAY_NAME "Version Date"
+set_parameter_property VERSION_DATE HDL_PARAMETER true
 
 add_parameter GIT_STAMP_OVERRIDE BOOLEAN false
 set_parameter_property GIT_STAMP_OVERRIDE DISPLAY_NAME "Override Git Stamp"
 
 add_parameter VERSION_GIT INTEGER $VERSION_GIT_DEFAULT_CONST
 set_parameter_property VERSION_GIT DISPLAY_NAME "Version Git"
+set_parameter_property VERSION_GIT HDL_PARAMETER true
+set_parameter_property VERSION_GIT ENABLED false
+set_parameter_property VERSION_GIT DISPLAY_HINT hexadecimal
 
 add_parameter INSTANCE_ID INTEGER $INSTANCE_ID_DEFAULT_CONST
 set_parameter_property INSTANCE_ID DISPLAY_NAME "Instance ID"
+set_parameter_property INSTANCE_ID HDL_PARAMETER true
 
 # ========================================================================
 # Display items

@@ -2,5 +2,8 @@
 *.bak
 greybox_tmp/
 a5_pin_model_dump.txt
+modelsim.ini
+lpm/
+work/
 syn/quartus/a5_pin_model_dump.txt
 tb/sim_work/

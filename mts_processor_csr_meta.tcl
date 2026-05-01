@@ -32,7 +32,7 @@ proc ::board_bring_up::meta::mts_processor::get_contract {} {
                         "expected_latency_8ns" \
                         "Expected mutrig buffering latency in 8ns" \
                         "0x8" \
-                        [list [::board_bring_up::meta::field "expected_latency" "expected latency of the hit (default=2000)." {[31:0]} "read-write"]]] \
+                        [list [::board_bring_up::meta::field "expected_latency" "expected latency of the hit (default=2000); this does not tune the overflow lookback." {[31:0]} "read-write"]]] \
                 [::board_bring_up::meta::register \
                         "total_hit_cnt_hi" \
                         "Counter of total number of hits at ingress port (upper 16 bits)" \
@@ -42,7 +42,12 @@ proc ::board_bring_up::meta::mts_processor::get_contract {} {
                         "total_hit_cnt_lo" \
                         "Counter of total number of hits at ingress port (lower 32 bits)" \
                         "0x10" \
-                        [list [::board_bring_up::meta::field "total_hit_cnt_lo" "Total number of hits, lower 32 bits." {[31:0]} "read-only"]]]]
+                        [list [::board_bring_up::meta::field "total_hit_cnt_lo" "Total number of hits, lower 32 bits." {[31:0]} "read-only"]]] \
+                [::board_bring_up::meta::register \
+                        "overflow_lookback_8ns" \
+                        "Post-wrap epoch-disambiguation lookback in 8ns ticks" \
+                        "0x14" \
+                        [list [::board_bring_up::meta::field "overflow_lookback" "runtime lapse/overflow lookback; writes are clamped to the non-negative MuTRiG wrap range." {[31:0]} "read-write"]]]]
 
         return [::board_bring_up::meta::contract $registers]
 }

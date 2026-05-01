@@ -1,5 +1,16 @@
 # Changelog
 
+## 26.0.9.0501 - 2026-05-01
+
+- Added CSR word `0x14` / word index `5` as a runtime
+  `overflow_lookback` register in 8 ns ticks.
+- Runtime writes now update the 1.6 ns overflow-lookback window and the
+  padding threshold together, clamped to `0..6553`, so Phase-6 hardware tuning
+  can separate MuTRiG PLL/TDC behavior from MTS lapse-window classification.
+- Updated the CMSIS-SVD, board-bring-up CSR metadata, Platform Designer
+  register-map HTML, VHDL smoke bench, and standalone synthesis harness to
+  cover the new register.
+
 ## 26.0.0404 - 2026-04-14
 
 - Reset the MuTRiG and global timestamp counter state on `i_rst` so the

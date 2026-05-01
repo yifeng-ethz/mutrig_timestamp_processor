@@ -114,13 +114,16 @@ begin
                 asi_hit_type0_channel       <= (others => '0');
                 asi_hit_type0_startofpacket <= '0';
                 asi_hit_type0_endofpacket   <= '0';
+                asi_hit_type0_endofrun      <= '0';
                 asi_hit_type0_error         <= (others => '0');
                 asi_hit_type0_data          <= (others => '0');
                 asi_hit_type0_valid         <= '0';
                 asi_ctrl_data               <= (others => '0');
                 asi_ctrl_valid              <= '0';
+                aso_hit_type1_ready         <= '1';
             else
                 stim_ctr <= stim_ctr + 1;
+                aso_hit_type1_ready <= '1';
 
                 if (asi_hit_type0_valid = '0') or (asi_hit_type0_ready = '1') then
                     if stim_ctr(1 downto 0) /= "00" then
@@ -139,6 +142,11 @@ begin
                         asi_hit_type0_endofpacket <= '1';
                     else
                         asi_hit_type0_endofpacket <= '0';
+                    end if;
+                    if stim_ctr(9 downto 0) = to_unsigned(16#2ff#, 10) then
+                        asi_hit_type0_endofrun <= '1';
+                    else
+                        asi_hit_type0_endofrun <= '0';
                     end if;
 
                     asi_hit_type0_channel       <= std_logic_vector(stim_ctr(5 downto 0));
@@ -172,6 +180,13 @@ begin
                 elsif stim_ctr(5 downto 0) = to_unsigned(3, 6) then
                     avs_csr_read    <= '1';
                     avs_csr_address <= "010";
+                elsif stim_ctr(5 downto 0) = to_unsigned(4, 6) then
+                    avs_csr_write   <= '1';
+                    avs_csr_address <= "101";
+                    avs_csr_writedata <= std_logic_vector(resize(stim_ctr(15 downto 0), avs_csr_writedata'length));
+                elsif stim_ctr(5 downto 0) = to_unsigned(5, 6) then
+                    avs_csr_read    <= '1';
+                    avs_csr_address <= "101";
                 end if;
 
                 probe_next := probe_accum xor avs_csr_readdata xor std_logic_vector(stim_ctr);
