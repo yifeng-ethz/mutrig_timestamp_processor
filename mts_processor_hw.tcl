@@ -18,10 +18,10 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
-set VERSION_MINOR_DEFAULT_CONST            0
-set VERSION_PATCH_DEFAULT_CONST            8
-set BUILD_DEFAULT_CONST                    427
-set VERSION_DATE_DEFAULT_CONST             20260427
+set VERSION_MINOR_DEFAULT_CONST            1
+set VERSION_PATCH_DEFAULT_CONST            0
+set BUILD_DEFAULT_CONST                    506
+set VERSION_DATE_DEFAULT_CONST             20260506
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -121,7 +121,10 @@ Bank <b>%s</b>, enabled channel window <b>%d..%d</b> (%d channels), divider pipe
     catch {
         set_display_item_property debug_html TEXT {<html>\
 <b>DEBUG</b><br/>\
-Controls built-in report instrumentation and standalone observability. Non-zero values increase debug verbosity; they do not add a backpressure model to <b>hit_type1_out</b>. Hit counters count accepted <b>hit_type0_in</b> ready/valid transfers only.</html>}
+Controls built-in report instrumentation and standalone observability. Non-zero values increase debug visibility; they do not add a backpressure model to <b>hit_type1_out</b>. Hit counters count accepted <b>hit_type0_in</b> ready/valid transfers only.<br/><br/>\
+<b>DEBUG = 0</b>: no optional debug conduits are materialized by Platform Designer; the HDL status and sidecar outputs are tied to zero.<br/>\
+<b>DEBUG &gt;= 1</b>: adds <b>debug_status</b>, a 32-bit synthesizable status conduit with ready, accept, busy, state, occupancy, termination, and debug-level fields.<br/>\
+<b>DEBUG &gt;= 2</b>: adds the 64-bit <b>hit_type0_sidecar</b> input conduit and <b>hit_type1_sidecar</b> output conduit. Metadata is sampled only with hit_type0 beats accepted into the datapath and is emitted only with delivered hit_type1 payload beats; terminate markers and locally dropped delay-error hits do not assert sidecar valid.</html>}
     }
     catch {
         set_display_item_property profile_html TEXT [format {<html>\
@@ -130,7 +133,8 @@ Packaged as <b>%s</b>.<br/><br/>\
 <b>Delivered behavior</b><br/>\
 This image aligns the standalone timestamp processor with the run-sequence upgrade contract: <b>asi_ctrl_ready</b> is stateful,\
 the upstream <b>endofrun</b> sideband drives the terminate-close path, the packaged divider depth matches the RTL default, and\
-CONTROL_STATUS bit 5 can optionally trim timestamp-delay-error payload beats while the default still forwards them with the error sideband asserted.<br/><br/>\
+CONTROL_STATUS bit 5 can optionally trim timestamp-delay-error payload beats while the default still forwards them with the error sideband asserted. \
+The DEBUG contract now adds optional synthesizable status and one-to-one hit metadata sidecar conduits without changing DEBUG=0 nominal payload behavior.<br/><br/>\
 <b>Packaging provenance</b><br/>\
 Default git stamp <b>%s</b> (%s). Git describe: <b>%s</b>.</html>} \
             $version_string \
@@ -167,6 +171,9 @@ SOP/EOP delimit one MuTRiG frame. A dedicated <b>endofrun</b> pulse marks the la
 <b>empty</b> is asserted only for the dedicated per-lane terminate marker. The current RTL exposes <b>aso_hit_type1_ready</b> for interface compatibility but does not stall on it.<br/><br/>\
 <b>Debug streams</b><br/>\
 <b>debug_ts</b>, <b>debug_burst</b>, and <b>ts_delta</b> are observation-only outputs for standalone bring-up and profiling.<br/><br/>\
+<b>Optional DEBUG conduits</b><br/>\
+When <b>DEBUG &gt;= 1</b>, <b>debug_status</b> exports a 32-bit packed conduit: bit 0 input ready, bit 1 hit_type0 ready/valid transfer, bit 2 datapath-accepted hit, bit 3 hit_in_ok, bit 4 processor_allow_input, bit 5 input-pipeline busy, bit 6 divider-pipeline busy, bit 7 hit_out valid, bit 8 timestamp-delay error, bit 9 upstream end-of-run seen, bit 10 terminate marker pending, bit 11 control ready, bits 15:12 processor state, bits 19:16 run command state, bits 24:20 internal valid-stage occupancy, bits 28:25 terminate-lane sent mask, bits 31:29 DEBUG level.<br/>\
+When <b>DEBUG &gt;= 2</b>, <b>hit_type0_sidecar</b> provides 64-bit metadata sampled with datapath-accepted hit_type0 beats and <b>hit_type1_sidecar</b> returns the same metadata with delivered hit_type1 payload beats. Sidecar valid is low for terminate markers and for delay-error payload beats dropped by CONTROL_STATUS bit 5.<br/><br/>\
 <b>Configured channel window</b><br/>\
 Enabled channel range <b>%d..%d</b> (%d channels).</html>} \
             $channel_lo \
@@ -195,6 +202,36 @@ Enabled channel range <b>%d..%d</b> (%d channels).</html>} \
 <tr><td>0x00</td><td>[31,28,27:6]</td><td>reserved</td><td>RW/RO</td><td>Reserved.</td></tr>\
 </table></html>}
     }
+}
+
+proc add_debug_status_interface {} {
+    add_interface debug_status conduit start
+    set_interface_property debug_status associatedClock clock_interface
+    set_interface_property debug_status associatedReset reset_interface
+    set_interface_property debug_status ENABLED true
+    add_interface_port debug_status coe_debug_status_data status Output 32
+}
+
+proc add_debug_sidecar_interfaces {} {
+    add_interface hit_type0_sidecar conduit end
+    set_interface_property hit_type0_sidecar associatedClock clock_interface
+    set_interface_property hit_type0_sidecar associatedReset reset_interface
+    set_interface_property hit_type0_sidecar ENABLED true
+    add_interface_port hit_type0_sidecar coe_hit_type0_sidecar_data metadata Input 64
+    add_interface_port hit_type0_sidecar coe_hit_type0_sidecar_valid valid Input 1
+
+    add_interface hit_type1_sidecar conduit start
+    set_interface_property hit_type1_sidecar associatedClock clock_interface
+    set_interface_property hit_type1_sidecar associatedReset reset_interface
+    set_interface_property hit_type1_sidecar ENABLED true
+    add_interface_port hit_type1_sidecar coe_hit_type1_sidecar_data  metadata Output 64
+    add_interface_port hit_type1_sidecar coe_hit_type1_sidecar_valid valid    Output 1
+}
+
+proc set_debug_interface_enable {debug_level} {
+    set_interface_property debug_status ENABLED [expr {$debug_level >= 1}]
+    set_interface_property hit_type0_sidecar ENABLED [expr {$debug_level >= 2}]
+    set_interface_property hit_type1_sidecar ENABLED [expr {$debug_level >= 2}]
 }
 
 proc validate {} {
@@ -283,6 +320,7 @@ proc validate {} {
 
 proc elaborate {} {
     compute_derived_values
+    set debug_level [get_parameter_value DEBUG]
 
     set_parameter_property FRAME_CORRPT_BIT_LOC ENABLED false
     set_parameter_property CRCERR_BIT_LOC ENABLED false
@@ -293,6 +331,8 @@ proc elaborate {} {
     set_parameter_property BUILD ENABLED false
     set_parameter_property VERSION_DATE ENABLED false
     catch {set_parameter_property VERSION_GIT ENABLED [get_parameter_value GIT_STAMP_OVERRIDE]}
+
+    set_debug_interface_enable $debug_level
 }
 
 # ========================================================================
@@ -370,6 +410,9 @@ set_parameter_property MUTRIG_OVERFLOW_LOOKBACK_8N DESCRIPTION "Post-wrap epoch-
 add_parameter DEBUG NATURAL 1
 set_parameter_property DEBUG DISPLAY_NAME "Debug Level"
 set_parameter_property DEBUG HDL_PARAMETER true
+set_parameter_property DEBUG AFFECTS_ELABORATION true
+set_parameter_property DEBUG ALLOWED_RANGES {0 1 2 3 4}
+set_parameter_property DEBUG DESCRIPTION "0 keeps optional debug conduits disabled and tied off in HDL; 1 adds debug_status; 2 and above adds one-to-one 64-bit hit sidecar propagation."
 
 add_parameter IP_UID INTEGER $IP_UID_DEFAULT_CONST
 set_parameter_property IP_UID DISPLAY_NAME "IP UID"
@@ -561,3 +604,6 @@ set_interface_property ts_delta firstSymbolInHighOrderBits true
 set_interface_property ts_delta ENABLED true
 add_interface_port ts_delta aso_ts_delta_valid valid Output 1
 add_interface_port ts_delta aso_ts_delta_data  data  Output 16
+
+add_debug_status_interface
+add_debug_sidecar_interfaces

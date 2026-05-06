@@ -171,6 +171,7 @@ begin
             asi_hit_type0_data          => asi_hit_type0_data,
             asi_hit_type0_valid         => asi_hit_type0_valid,
             asi_hit_type0_ready         => asi_hit_type0_ready,
+            coe_hit_type0_sidecar_data  => (others => '0'),
             aso_hit_type1_channel       => aso_hit_type1_channel,
             aso_hit_type1_startofpacket => aso_hit_type1_startofpacket,
             aso_hit_type1_endofpacket   => aso_hit_type1_endofpacket,
@@ -188,6 +189,9 @@ begin
             aso_debug_burst_data        => aso_debug_burst_data,
             aso_ts_delta_valid          => aso_ts_delta_valid,
             aso_ts_delta_data           => aso_ts_delta_data,
+            coe_debug_status_data       => open,
+            coe_hit_type1_sidecar_data  => open,
+            coe_hit_type1_sidecar_valid => open,
             i_rst                       => i_rst,
             i_clk                       => i_clk
         );

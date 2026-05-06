@@ -34,6 +34,8 @@ architecture sim of mts_processor_tb is
     signal asi_hit_type0_data       : std_logic_vector(44 downto 0) := (others => '0');
     signal asi_hit_type0_valid      : std_logic := '0';
     signal asi_hit_type0_ready      : std_logic;
+    signal coe_hit_type0_sidecar_data : std_logic_vector(63 downto 0) := (others => '0');
+    signal coe_hit_type0_sidecar_valid : std_logic := '0';
     signal aso_hit_type1_channel    : std_logic_vector(3 downto 0);
     signal aso_hit_type1_startofpacket : std_logic;
     signal aso_hit_type1_endofpacket   : std_logic;
@@ -51,6 +53,9 @@ architecture sim of mts_processor_tb is
     signal aso_debug_burst_data     : std_logic_vector(15 downto 0);
     signal aso_ts_delta_valid       : std_logic;
     signal aso_ts_delta_data        : std_logic_vector(15 downto 0);
+    signal coe_debug_status_data    : std_logic_vector(31 downto 0);
+    signal coe_hit_type1_sidecar_data : std_logic_vector(63 downto 0);
+    signal coe_hit_type1_sidecar_valid : std_logic;
     signal i_rst                    : std_logic := '1';
     signal i_clk                    : std_logic := '0';
 
@@ -116,7 +121,10 @@ architecture sim of mts_processor_tb is
         constant channel_value      : in  natural;
         constant tcc_raw_value      : in  natural;
         constant ecc_raw_value      : in  natural;
-        constant eflag_value        : in  std_logic
+        constant eflag_value        : in  std_logic;
+        signal sidecar_data         : out std_logic_vector(63 downto 0);
+        signal sidecar_valid        : out std_logic;
+        constant sidecar_value      : in  std_logic_vector(63 downto 0)
     ) is
         variable hit_word_v         : std_logic_vector(44 downto 0);
     begin
@@ -135,19 +143,26 @@ architecture sim of mts_processor_tb is
         hit_channel                 <= "00" & std_logic_vector(to_unsigned(asic_value, 4));
         hit_data                    <= hit_word_v;
         hit_error                   <= (others => '0');
+        sidecar_data                <= sidecar_value;
+        sidecar_valid               <= '1';
         hit_valid                   <= '1';
         wait until rising_edge(clk);
         hit_valid                   <= '0';
         hit_channel                 <= (others => '0');
         hit_data                    <= (others => '0');
         hit_error                   <= (others => '0');
+        sidecar_data                <= (others => '0');
+        sidecar_valid               <= '0';
     end procedure send_hit;
 
     procedure expect_et(
         signal clk                  : in  std_logic;
         signal hit_valid            : in  std_logic;
         signal hit_data             : in  std_logic_vector(38 downto 0);
-        constant expected_et        : in  natural
+        signal sidecar_valid        : in  std_logic;
+        signal sidecar_data         : in  std_logic_vector(63 downto 0);
+        constant expected_et        : in  natural;
+        constant expected_sidecar   : in  std_logic_vector(63 downto 0)
     ) is
     begin
         for wait_cycle in 0 to PIPELINE_WAIT_CONST loop
@@ -158,6 +173,15 @@ architecture sim of mts_processor_tb is
                         & to_hstring(std_logic_vector(to_unsigned(expected_et, ET_FIELD_HI_CONST - ET_FIELD_LO_CONST + 1)))
                         & " got=0x"
                         & to_hstring(hit_data(ET_FIELD_HI_CONST downto ET_FIELD_LO_CONST))
+                        severity failure;
+                assert sidecar_valid = '1'
+                    report "Expected DEBUG sidecar valid with the hit_type1 payload"
+                    severity failure;
+                assert sidecar_data = expected_sidecar
+                    report "Unexpected DEBUG sidecar metadata exp=0x"
+                        & to_hstring(expected_sidecar)
+                        & " got=0x"
+                        & to_hstring(sidecar_data)
                         severity failure;
                 return;
             end if;
@@ -171,6 +195,9 @@ begin
     i_clk                           <= not i_clk after CLK_PERIOD_CONST / 2;
 
     dut : entity work.mts_processor
+        generic map (
+            DEBUG => 2
+        )
         port map (
             avs_csr_readdata            => avs_csr_readdata,
             avs_csr_read                => avs_csr_read,
@@ -186,6 +213,8 @@ begin
             asi_hit_type0_data          => asi_hit_type0_data,
             asi_hit_type0_valid         => asi_hit_type0_valid,
             asi_hit_type0_ready         => asi_hit_type0_ready,
+            coe_hit_type0_sidecar_data  => coe_hit_type0_sidecar_data,
+            coe_hit_type0_sidecar_valid => coe_hit_type0_sidecar_valid,
             aso_hit_type1_channel       => aso_hit_type1_channel,
             aso_hit_type1_startofpacket => aso_hit_type1_startofpacket,
             aso_hit_type1_endofpacket   => aso_hit_type1_endofpacket,
@@ -203,6 +232,9 @@ begin
             aso_debug_burst_data        => aso_debug_burst_data,
             aso_ts_delta_valid          => aso_ts_delta_valid,
             aso_ts_delta_data           => aso_ts_delta_data,
+            coe_debug_status_data       => coe_debug_status_data,
+            coe_hit_type1_sidecar_data  => coe_hit_type1_sidecar_data,
+            coe_hit_type1_sidecar_valid => coe_hit_type1_sidecar_valid,
             i_rst                       => i_rst,
             i_clk                       => i_clk
         );
@@ -246,13 +278,19 @@ begin
             channel_value           => 1,
             tcc_raw_value           => 16#0003#,
             ecc_raw_value           => 16#000F#,
-            eflag_value             => '1'
+            eflag_value             => '1',
+            sidecar_data            => coe_hit_type0_sidecar_data,
+            sidecar_valid           => coe_hit_type0_sidecar_valid,
+            sidecar_value           => x"0123456789ABCDEF"
         );
         expect_et(
             clk                     => i_clk,
             hit_valid               => aso_hit_type1_valid,
             hit_data                => aso_hit_type1_data,
-            expected_et             => 2
+            sidecar_valid           => coe_hit_type1_sidecar_valid,
+            sidecar_data            => coe_hit_type1_sidecar_data,
+            expected_et             => 2,
+            expected_sidecar        => x"0123456789ABCDEF"
         );
 
         send_hit(
@@ -266,13 +304,19 @@ begin
             channel_value           => 1,
             tcc_raw_value           => 16#0003#,
             ecc_raw_value           => 16#000F#,
-            eflag_value             => '0'
+            eflag_value             => '0',
+            sidecar_data            => coe_hit_type0_sidecar_data,
+            sidecar_valid           => coe_hit_type0_sidecar_valid,
+            sidecar_value           => x"1020304050607080"
         );
         expect_et(
             clk                     => i_clk,
             hit_valid               => aso_hit_type1_valid,
             hit_data                => aso_hit_type1_data,
-            expected_et             => 0
+            sidecar_valid           => coe_hit_type1_sidecar_valid,
+            sidecar_data            => coe_hit_type1_sidecar_data,
+            expected_et             => 0,
+            expected_sidecar        => x"1020304050607080"
         );
 
         send_hit(
@@ -286,13 +330,19 @@ begin
             channel_value           => 1,
             tcc_raw_value           => 16#000F#,
             ecc_raw_value           => 16#0003#,
-            eflag_value             => '1'
+            eflag_value             => '1',
+            sidecar_data            => coe_hit_type0_sidecar_data,
+            sidecar_valid           => coe_hit_type0_sidecar_valid,
+            sidecar_value           => x"DEADBEEFCAFEBABE"
         );
         expect_et(
             clk                     => i_clk,
             hit_valid               => aso_hit_type1_valid,
             hit_data                => aso_hit_type1_data,
-            expected_et             => 0
+            sidecar_valid           => coe_hit_type1_sidecar_valid,
+            sidecar_data            => coe_hit_type1_sidecar_data,
+            expected_et             => 0,
+            expected_sidecar        => x"DEADBEEFCAFEBABE"
         );
 
         send_hit(
@@ -306,13 +356,19 @@ begin
             channel_value           => 1,
             tcc_raw_value           => 16#0001#,
             ecc_raw_value           => 16#0000#,
-            eflag_value             => '1'
+            eflag_value             => '1',
+            sidecar_data            => coe_hit_type0_sidecar_data,
+            sidecar_valid           => coe_hit_type0_sidecar_valid,
+            sidecar_value           => x"0F0E0D0C0B0A0908"
         );
         expect_et(
             clk                     => i_clk,
             hit_valid               => aso_hit_type1_valid,
             hit_data                => aso_hit_type1_data,
-            expected_et             => 511
+            sidecar_valid           => coe_hit_type1_sidecar_valid,
+            sidecar_data            => coe_hit_type1_sidecar_data,
+            expected_et             => 511,
+            expected_sidecar        => x"0F0E0D0C0B0A0908"
         );
 
         send_ctrl(
