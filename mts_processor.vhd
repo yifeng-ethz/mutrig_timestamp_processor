@@ -148,7 +148,8 @@ generic (
     LPM_DIV_PIPELINE		: natural := 4;
     MUTRIG_BUFFER_EXPECTED_LATENCY_8N		: natural := 2000; -- affects the error signal on <hit_type1>
     MUTRIG_OVERFLOW_LOOKBACK_8N               : natural := 2000; -- controls post-wrap epoch disambiguation only
-    DEBUG					: natural := 1
+    DEBUG					: natural := 1;
+    DEBUG_TRACE_REPORTS     : boolean := false
 );
 port (
 
@@ -1545,7 +1546,7 @@ begin
             end if;
 
             if (hit_prediv.valid = '1') then
-                if (DEBUG /= 0) then
+                if (DEBUG_TRACE_REPORTS and DEBUG /= 0) then
                     report "MTS_STAGE[" & BANK & "] div_launch ch="
                         & integer'image(to_integer(unsigned(hit_prediv.channel)))
                         severity note;
@@ -1606,7 +1607,7 @@ begin
     proc_debug_stage_trace : process (i_clk)
     begin
         if (rising_edge(i_clk)) then
-            if (DEBUG /= 0 and i_rst = '0') then
+            if (DEBUG_TRACE_REPORTS and DEBUG /= 0 and i_rst = '0') then
                 if (hit_in.valid = '1') then
                     report "MTS_STAGE[" & BANK & "] hit_in ch="
                         & integer'image(to_integer(unsigned(hit_in.channel)))
