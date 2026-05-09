@@ -12,11 +12,11 @@ fallback with explicit case dispatch.
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
-| BASIC | 130 | 72 | 72 |
+| BASIC | 130 | 80 | 80 |
 | EDGE | 131 | 2 | 2 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 76 | 76 |
+| Total | 521 | 84 | 84 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs now fail with `No explicit UVM stimulus handler`.
@@ -29,6 +29,13 @@ Notes:
 - `STD_MTS_055_expected_latency_updates_padding_upper` was reconciled to the
   current RTL split: `expected_latency` controls delay-error classification,
   while `padding_upper` is derived from `MUTRIG_OVERFLOW_LOOKBACK_8N`.
+- `STD_MTS_071_sop_first_hit_channel0` through
+  `STD_MTS_076_reset_clears_startofrun_sent`,
+  `STD_MTS_079_empty_stays_zero`, and
+  `STD_MTS_080_output_valid_only_in_run_or_flush` now have explicit marker
+  handlers. The SOP cases bind the documented channel to the downstream route
+  lane by choosing raw TCC symbols whose quotient bits `[5:4]` select lanes
+  0..3, while also setting the visible payload channel to the same lane.
 
 ## Debug And RTL Findings From This Batch
 
@@ -43,6 +50,24 @@ Notes:
 | `B055` text still described the pre-5.12 padding contract where `expected_latency` implied the overflow window. | `STD_MTS_055_expected_latency_updates_padding_upper` | `DV_BASIC.md` now preserves the case ID but verifies the current split between delay-error threshold and overflow lookback padding. |
 | White-timestamp quotient can exceed the 13-bit visible `hit_type1.tcc_8n` field. | `STD_MTS_056_no_adjust_below_upper_bound` | UVM checks compare the visible truncated payload field while the debug-sideband scoreboard still validates full-width delay math. |
 | Delay-source checks initially sampled the reset-seeded debug-burst warm-up delta instead of the two-hit comparison delta. | `STD_MTS_066_delay_field_t_path` | UVM now waits for the second `ts_delta` sample before checking T/E-selected polarity. |
+| Output-marker wording can be confused with payload-channel propagation even though RTL SOP bookkeeping is keyed by downstream route lane. | `STD_MTS_071_sop_first_hit_channel0` | UVM now checks SOP/EOP/EMPTY plus `aso_hit_type1_channel` for route lanes 0..3 and uses matching payload channels for trace readability. |
+
+## Submodule Freshness Check
+
+The OPQ IP-core chain requested on 2026-05-09 was fetched and located:
+
+| Repository | Leading Commit | Branch |
+|---|---|---|
+| `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
+| `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
+| `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
+
+`/home/yifeng/packages/musip_2604/external` contains the clean chain:
+`musip d3f4c05` -> `external/mu3e-ip-cores c9ca241` ->
+`packet_scheduler 245eb93`. The active
+`/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores` and
+`packet_scheduler` worktrees are dirty and divergent from those branch tips, so
+no in-place checkout or pull was performed there.
 
 ## Evidence Commands
 
@@ -52,8 +77,8 @@ The focused after-fix regression was run with:
 make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-The complete explicit-case sweep was rerun with all 76 current handlers and
-ended with `ALL_76_EXPLICIT_CASES_PASS`.
+The complete explicit-case sweep was rerun with all 84 current handlers and
+ended with `ALL_84_EXPLICIT_CASES_PASS`.
 
 The merged after-fix coverage report was regenerated with:
 
@@ -62,15 +87,15 @@ make -C tb/uvm cov_report_total RTL_VARIANT=after
 ```
 
 The current merged report is `tb/uvm/cov_after/merged.txt`; its filtered
-instance coverage summary is `64.46%`.
+instance coverage summary is `64.51%`.
 
-Current evidenced explicit cases are the 76 handlers in `tb/uvm/mtsp_cases.svh`.
+Current evidenced explicit cases are the 84 handlers in `tb/uvm/mtsp_cases.svh`.
 Each has a matching `tb/uvm/logs/*_after_s1.log` and
 `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 445 uncovered BASIC, EDGE, PROF, and ERROR cases, then regenerate the ordered
+the remaining 437 uncovered BASIC, EDGE, PROF, and ERROR cases, then regenerate the ordered
 coverage/report dashboard from current artifacts instead of relying on stale
 proxy rows.
