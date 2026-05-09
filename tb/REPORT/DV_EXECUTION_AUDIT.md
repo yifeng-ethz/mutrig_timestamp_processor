@@ -1,68 +1,98 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-09
+Date: 2026-05-09, refreshed through 2026-05-10 00:08 Europe/Zurich
 
 ## Scope
 
 This audit records the current plan-to-UVM execution state after enabling the
-dual normal/debug monitor path and replacing the old generic documented-case
-fallback with explicit case dispatch.
+dual normal/debug monitor path, replacing the old generic documented-case
+fallback with explicit case dispatch, and completing the BASIC B111-B130 batch.
 
 ## Current Coverage Of Documented Cases
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
-| BASIC | 130 | 109 | 109 |
+| BASIC | 130 | 129 | 129 |
 | EDGE | 131 | 2 | 2 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 113 | 113 |
+| Total | 521 | 133 | 133 |
 
 Notes:
-- Unimplemented `mtsp_doc_case_test` case IDs now fail with `No explicit UVM stimulus handler`.
+- Unimplemented `mtsp_doc_case_test` case IDs fail with
+  `No explicit UVM stimulus handler`.
 - The old generic smoke fallback is no longer counted as evidence.
-- `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an audit finding.
+- `STD_MTS_106_total_counter_hi_rollover` remains intentionally open. It needs
+  a rollover-specific strategy, such as a legal long-run accelerator or a
+  separately justified counter preload hook, rather than a fake pass through a
+  short simulation.
+- `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
+  audit finding.
 - `DV_PROF.md` has no explicit UVM handlers yet.
-- `STD_MTS_032_idle_rejects_clean_hit` was reconciled to the ready/valid contract:
-  a beat driven while `ready=0` is not an accepted transfer and does not change
-  total/discard counters.
+- The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
+  generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
+  not accepted as closure evidence until regenerated from the current explicit
+  handler/artifact set.
+
+## BASIC Reconciliation Notes
+
+- `STD_MTS_008_idle_from_flushing` and
+  `STD_MTS_045_terminating_without_eop_then_idle` were reconciled to the
+  delivered stateful control-ready contract: enter `FLUSHING`, assert upstream
+  `endofrun`, wait for the empty close-marker train, then send `IDLE`.
+- `STD_MTS_032_idle_rejects_clean_hit` was reconciled to the ready/valid
+  contract: a beat driven while `ready=0` is not an accepted transfer and does
+  not change total/discard counters.
 - `STD_MTS_055_expected_latency_updates_padding_upper` was reconciled to the
   current RTL split: `expected_latency` controls delay-error classification,
   while `padding_upper` is derived from `MUTRIG_OVERFLOW_LOOKBACK_8N`.
 - `STD_MTS_071_sop_first_hit_channel0` through
   `STD_MTS_076_reset_clears_startofrun_sent`,
   `STD_MTS_079_empty_stays_zero`, and
-  `STD_MTS_080_output_valid_only_in_run_or_flush` now have explicit marker
+  `STD_MTS_080_output_valid_only_in_run_or_flush` have explicit marker
   handlers. The SOP cases bind the documented channel to the downstream route
   lane by choosing raw TCC symbols whose quotient bits `[5:4]` select lanes
   0..3, while also setting the visible payload channel to the same lane.
 - `STD_MTS_081_route_lane0` through
-  `STD_MTS_090_delay_field_changes_error_source` now have explicit routing and
+  `STD_MTS_090_delay_field_changes_error_source` have explicit routing and
   timestamp-delay handlers. These cases use a ROM-inverse lookup from
   `dual_port_rom_init.txt` to construct exact raw MuTRiG symbols for the
   requested decoded timestamp quotient, and every output hit is required to
   have a paired normal/debug trace entry.
 - `STD_MTS_091_debug_burst_only_running` through
-  `STD_MTS_100_debug_streams_clear_outside_running` now have explicit
-  debug-burst and `ts_delta` handlers. The cases check RUNNING-only debug
-  sideband activity, first-hit history warm-up, positive/negative/zero
-  timestamp deltas, sign-magnitude to two's-complement conversion, arrival
-  delta dependence on GTS spacing, and debug stream clearing after IDLE.
+  `STD_MTS_100_debug_streams_clear_outside_running` check RUNNING-only debug
+  sideband activity, first-hit history warm-up, signed timestamp deltas,
+  sign-magnitude conversion, arrival delta dependence on GTS spacing, and debug
+  stream clearing after IDLE.
 - `STD_MTS_101_replay_smoke_positive_et` through
   `STD_MTS_105_total_counter_matches_all_valid` and
   `STD_MTS_107_soft_reset_clears_counters` through
-  `STD_MTS_110_force_stop_persists_until_cleared` now have explicit handlers.
-  These preserve the checked-in VHDL smoke ET vectors and add CSR-visible
-  counter checks for discard, total, soft reset, SYNC reset, running-status,
-  and force-stop persistence.
-- `STD_MTS_106_total_counter_hi_rollover` remains intentionally open. It needs
-  a rollover-specific strategy, such as a legal long-run accelerator or a
-  separately justified counter preload hook, rather than a fake pass through a
-  short simulation.
-- The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
-  generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
-  not accepted as closure evidence until regenerated from the current explicit
-  handler/artifact set.
+  `STD_MTS_110_force_stop_persists_until_cleared` preserve the checked-in VHDL
+  smoke ET vectors and add CSR-visible counter checks.
+- `STD_MTS_111_compile_rtl_default_div_pipeline` and
+  `STD_MTS_112_compile_packaged_div_pipeline` now compile/run with
+  `LPM_DIV_PIPELINE=4` and `LPM_DIV_PIPELINE=2` respectively. The observed
+  monitor-defined input/output latencies are 11 and 9 cycles.
+- `STD_MTS_113_single_enabled_channel_window` and
+  `STD_MTS_114_upper_enabled_window` now exercise compile-time enabled-channel
+  windows and prove packet-open bookkeeping against outside-window and
+  inside-window sideband lanes.
+- `STD_MTS_115_remapped_hiterr_bit`,
+  `STD_MTS_116_remapped_crcerr_still_inert`, and
+  `STD_MTS_117_remapped_frame_corrupt_still_inert` now exercise the remapped
+  error-bit generics. Only the configured `HITERR_BIT_LOC` affects discard
+  behavior in the current RTL.
+- `STD_MTS_118_changed_latency_generic_at_power_on` proves
+  `MUTRIG_BUFFER_EXPECTED_LATENCY_8N=128` reaches CSR and debug trace metadata.
+- `STD_MTS_119_bank_string_is_debug_only` proves `BANK=DOWN` changes debug
+  report text only; normal payload and debug-side evidence remain functional.
+- `STD_MTS_120_debug_zero_is_functionally_equivalent` proves `DEBUG=0`
+  suppresses VHDL report text only. The current RTL still emits debug sideband
+  outputs, and the UVM scoreboard continues to require normal/debug pairing.
+- `STD_MTS_121` through `STD_MTS_130` now provide the terminate/drain,
+  stateful-ready, terminal-boundary, and canonical
+  `RUN_PREPARE -> SYNC -> RUNNING -> TERMINATING -> IDLE` bring-up sequence
+  evidence for later hardware reference work.
 
 ## Debug And RTL Findings From This Batch
 
@@ -72,16 +102,9 @@ Notes:
 | First standard-sequence hit could be transformed before the harness had proven RUNNING status. | `STD_MTS_006_running_from_sync` | UVM `run_start()` now polls CSR running status and waits for hit input ready. |
 | Input datapath, counters, and monitor could disagree around stale ready/accept windows. | `STD_MTS_006_running_from_sync` | RTL uses a combinational state-derived ready window and samples datapath payloads only on accepted ready/valid transfers. |
 | CSR read data could be sampled from the previous transaction. | `STD_MTS_006_running_from_sync` | UVM CSR driver now drives requests on `negedge` and samples after positive-edge acknowledgement. |
-| Termination case omitted the explicit upstream `endofrun` pulse required by current RTL. | `STD_MTS_077_terminating_input_eop_forwards_output_eop` | Case and `DV_BASIC.md` now use the current payload-drain plus `endofrun` sequence. |
-| `B032` text conflicted with the ready/valid transfer contract by expecting counter increments while `ready=0`. | `STD_MTS_032_idle_rejects_clean_hit` | `DV_BASIC.md` and the UVM case now require no accepted hit, no output, and no counter change for the ready-low IDLE beat. |
-| `B055` text still described the pre-5.12 padding contract where `expected_latency` implied the overflow window. | `STD_MTS_055_expected_latency_updates_padding_upper` | `DV_BASIC.md` now preserves the case ID but verifies the current split between delay-error threshold and overflow lookback padding. |
-| White-timestamp quotient can exceed the 13-bit visible `hit_type1.tcc_8n` field. | `STD_MTS_056_no_adjust_below_upper_bound` | UVM checks compare the visible truncated payload field while the debug-sideband scoreboard still validates full-width delay math. |
-| Delay-source checks initially sampled the reset-seeded debug-burst warm-up delta instead of the two-hit comparison delta. | `STD_MTS_066_delay_field_t_path` | UVM now waits for the second `ts_delta` sample before checking T/E-selected polarity. |
-| Output-marker wording can be confused with payload-channel propagation even though RTL SOP bookkeeping is keyed by downstream route lane. | `STD_MTS_071_sop_first_hit_channel0` | UVM now checks SOP/EOP/EMPTY plus `aso_hit_type1_channel` for route lanes 0..3 and uses matching payload channels for trace readability. |
-| Route-lane and delay-error cases need raw timestamp symbols for exact decoded quotients rather than hand-picked constants. | `STD_MTS_081_route_lane0` | UVM now builds a ROM inverse from `dual_port_rom_init.txt`, so tests request decoded quotient/remainder targets and the harness selects the matching raw MuTRiG symbol. |
-| Delay-error boundary cases need proof that the normal output and debug side path describe the same hit. | `STD_MTS_085_error_low_in_range` | UVM requires a paired `mtsp_hit_trace_item` per checked hit, logs `MTSP_TRACE` metadata, and validates `hit_type1.error` against the scoreboard's `debug_ts` math. |
-| Debug-burst and `ts_delta` cases need signed delta checks independent of delay-error status. | `STD_MTS_093_first_running_hit_warms_history` | UVM now checks the debug-burst/`ts_delta` analysis port histories directly and keeps the paired `debug_ts` trace metadata as separate evidence. |
+| Termination cases needed the explicit upstream `endofrun` pulse required by current RTL. | `STD_MTS_077_terminating_input_eop_forwards_output_eop` | Cases and `DV_BASIC.md` now use payload drain plus `endofrun` before expecting close markers. |
 | A post-traffic SYNC reset cannot be driven as `RUNNING -> RUN_PREPARE -> SYNC`; current RTL only accepts `RUN_PREPARE` from `IDLE` or `FLUSHING`. | `STD_MTS_108_sync_clears_counters` | UVM now uses the legal `IDLE -> RUN_PREPARE -> SYNC` sequence before checking that counters clear in RESET/SYNC. |
+| `IDLE` could be decoded while `asi_ctrl_ready=0`, aborting close-marker generation. | `STD_MTS_129_upgrade_case_idle_after_boundary_only` | RTL fix `e61fc9f22e83` gates control decode on `asi_ctrl_valid && ctrl_ready_comb`; before fails and after passes under `prove_delta`. |
 
 ## Submodule Freshness Check
 
@@ -97,36 +120,88 @@ The OPQ IP-core chain requested on 2026-05-09 was fetched and located:
 `musip d3f4c05` -> `external/mu3e-ip-cores c9ca241` ->
 `packet_scheduler 245eb93`. The active
 `/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores` and
-`packet_scheduler` worktrees are dirty and divergent from those branch tips, so
+`packet_scheduler` worktrees were dirty and divergent from those branch tips, so
 no in-place checkout or pull was performed there.
 
 ## Evidence Commands
 
-The focused after-fix regression was run with:
+Focused B111-B130 regression:
+
+```bash
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<B111-B130 case_id> SEED=1
+```
+
+Result: `NEW_B111_B130_PASS`, then refreshed under the final full sweep.
+
+RTL before/after bug proof:
+
+```bash
+make -C tb/uvm prove_delta TEST=mtsp_doc_case_test CASE_ID=STD_MTS_129_upgrade_case_idle_after_boundary_only SEED=1
+```
+
+Result: before RTL fails at 220 ns with `IDLE command must not be accepted
+before close markers complete`; after RTL passes with
+`beats=4 payloads=0 eops=4 empty_eops=4`.
+
+Final explicit-case sweep:
 
 ```bash
 make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-The complete explicit-case sweep was rerun with all 113 current handlers and
-ended with `ALL_113_EXPLICIT_CASES_PASS`.
+Result: `FINAL_ALL_133_EXPLICIT_CASES_PASS`.
 
-The merged after-fix coverage report was regenerated with:
+Combo terminate contract:
+
+```bash
+make -C tb/uvm run_after TEST=COMBO_MTSP_001_terminate_contract_test SEED=1
+```
+
+Result: passed with `inputs=2 beats=10 payloads=2 eops=8 empty_eops=8
+debug_ts=2 dual_path_pairs=2 traces=2`.
+
+Coverage:
 
 ```bash
 make -C tb/uvm cov_report_total RTL_VARIANT=after
 ```
 
-The current merged report is `tb/uvm/cov_after/merged.txt`; its filtered
-instance coverage summary is `64.70%`.
+Current merged report: `tb/uvm/cov_after/merged.txt`.
 
-Current evidenced explicit cases are the 113 handlers in `tb/uvm/mtsp_cases.svh`.
-Each has a matching `tb/uvm/logs/*_after_s1.log` and
-`tb/uvm/cov_after/*_s1.ucdb` artifact.
+Filtered instance coverage summary: `64.44%`.
+
+Artifact check:
+
+```text
+explicit_cases=133 missing_artifacts=0
+combo_pass=True
+```
+
+Additional checks:
+
+```bash
+git diff --check
+./tb/run_mts_processor_tb.sh
+python3 /home/yifeng/.codex/skills/rtl-writing/scripts/rtl_style_check.py mts_processor.vhd
+python3 /home/yifeng/.codex/skills/dv-workflow/scripts/bug_history_format_check.py BUG_HISTORY.md
+```
+
+Results:
+- `git diff --check`: pass.
+- `./tb/run_mts_processor_tb.sh`: `mts_processor_tb PASSED`.
+- `rtl_style_check.py`: fail on 952 legacy style issues in `mts_processor.vhd`
+  such as tabs, legacy `i_` ports, constant naming, and alignment. This batch
+  did not attempt a broad file restyle.
+- `bug_history_format_check.py BUG_HISTORY.md`: pass.
+
+Current evidenced explicit cases are the 133 handlers in
+`tb/uvm/mtsp_cases.svh`. Each has a matching
+`tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 408 uncovered BASIC, EDGE, PROF, and ERROR cases, then regenerate the ordered
+the remaining 388 uncovered BASIC, EDGE, PROF, and ERROR cases, including
+`STD_MTS_106_total_counter_hi_rollover`, then regenerate the ordered
 coverage/report dashboard from current artifacts instead of relying on stale
 proxy rows.
