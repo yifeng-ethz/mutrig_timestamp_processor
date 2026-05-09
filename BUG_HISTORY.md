@@ -8,8 +8,8 @@
   - the visible `hit_type1` payload came from the registered `hit_out` path
   - the delay-error sideband was derived from the separate `debug_ts` valid path
   - mixed clean/error traffic therefore allowed the sideband classification to describe the neighboring hit instead of the beat on the normal output path
-- Fix status: fixed in local commit pending hash assignment.
-- Fix commit: pending local commit; replace with the commit hash after the verified fix commit is created.
+- Fix status: fixed.
+- Fix commit: `497bf11` (`[FIX] Align delay error sideband with hit`)
 - Verification context:
   - `make -C tb/uvm prove_delta TEST=mtsp_doc_case_test CASE_ID=CORNER_MTS_127_delay_error_sideband_tracks_hit SEED=1`
   - `before` RTL fails with `MTSP_DELAY_MATH` / `MTSP_CASE`
