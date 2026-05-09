@@ -6,14 +6,18 @@ module tb_top;
   `include "uvm_macros.svh"
 
   logic clk = 1'b0;
-  logic rst = 1'b1;
+  logic rst;
 
   always #(CLK_PERIOD_PS/2) clk = ~clk;
 
+  mtsp_reset_if rst_if(.clk(clk));
+
+  assign rst = rst_if.rst;
+
   initial begin
-    rst = 1'b1;
+    rst_if.rst = 1'b1;
     #(10 * CLK_PERIOD_PS);
-    rst = 1'b0;
+    rst_if.rst = 1'b0;
   end
 
   mtsp_csr_if  csr_if(.clk(clk), .rst(rst));
@@ -77,6 +81,8 @@ module tb_top;
     else $error("hit_type1 empty asserted without valid EOP");
 
   initial begin
+    uvm_config_db#(virtual mtsp_reset_if.drv)::set(
+      null, "uvm_test_top", "rst_vif", rst_if);
     uvm_config_db#(virtual mtsp_csr_if.drv)::set(
       null, "uvm_test_top.m_env.m_csr_drv", "vif", csr_if);
     uvm_config_db#(virtual mtsp_csr_if.mon)::set(
@@ -87,10 +93,14 @@ module tb_top;
       null, "uvm_test_top.m_env.m_hit0_drv", "vif", hit0_if);
     uvm_config_db#(virtual mtsp_hit0_if.mon)::set(
       null, "uvm_test_top.m_env.m_hit0_mon", "vif", hit0_if);
+    uvm_config_db#(virtual mtsp_hit0_if.mon)::set(
+      null, "uvm_test_top", "hit0_vif", hit0_if);
     uvm_config_db#(virtual mtsp_hit1_if.mon)::set(
       null, "uvm_test_top.m_env.m_hit1_mon", "vif", hit1_if);
     uvm_config_db#(virtual mtsp_dbg_if.mon)::set(
       null, "uvm_test_top.m_env.m_dbg_mon", "vif", dbg_if);
+    uvm_config_db#(virtual mtsp_dbg_if.mon)::set(
+      null, "uvm_test_top", "dbg_vif", dbg_if);
     uvm_config_db#(virtual mtsp_ctrl_if.mon)::set(
       null, "uvm_test_top", "ctrl_vif", ctrl_if);
 

@@ -83,12 +83,14 @@ package mtsp_env_pkg;
     bit [2:0]  error;
     bit [44:0] data;
     bit        valid;
+    bit        wait_for_ready;
     int unsigned timeout_cycles;
     time       accept_time_ps;
 
     function new(string name = "mtsp_hit0_item");
       super.new(name);
       valid            = 1'b1;
+      wait_for_ready   = 1'b1;
       endofrun         = 1'b0;
       error            = '0;
       timeout_cycles   = 10000;
@@ -189,27 +191,29 @@ package mtsp_env_pkg;
       forever begin
         seq_item_port.get_next_item(item);
 
-        @(posedge vif.clk);
+        @(negedge vif.clk);
         vif.address   <= item.address;
         vif.writedata <= item.writedata;
         vif.write     <= item.is_write;
         vif.read      <= !item.is_write;
 
         wait_cycles = 0;
-        while (vif.waitrequest === 1'b1) begin
+        do begin
           @(posedge vif.clk);
+          #1ps;
           wait_cycles++;
           if (wait_cycles > item.timeout_cycles)
             `uvm_fatal("MTSP_CSR_TIMEOUT",
               $sformatf("Timed out waiting for CSR completion at address 0x%0h",
                 item.address))
-        end
+        end while (vif.waitrequest === 1'b1);
 
-        if (!item.is_write)
+        if (!item.is_write) begin
           item.readdata = vif.readdata;
+        end
         item.complete_time_ps = $time;
 
-        @(posedge vif.clk);
+        @(negedge vif.clk);
         vif.address   <= '0;
         vif.read      <= 1'b0;
         vif.write     <= 1'b0;
@@ -241,6 +245,7 @@ package mtsp_env_pkg;
 
       forever begin
         @(posedge vif.clk);
+        #1ps;
         if (vif.rst === 1'b1)
           continue;
         if ((vif.write === 1'b1 || vif.read === 1'b1) &&
@@ -343,14 +348,16 @@ package mtsp_env_pkg;
       forever begin
         seq_item_port.get_next_item(item);
 
-        wait_cycles = 0;
-        while (vif.ready !== 1'b1) begin
-          @(posedge vif.clk);
-          wait_cycles++;
-          if (wait_cycles > item.timeout_cycles)
-            `uvm_fatal("MTSP_HIT0_TIMEOUT",
-              $sformatf("Timed out waiting for hit0 ready after %0d cycles",
-                item.timeout_cycles))
+        if (item.wait_for_ready) begin
+          wait_cycles = 0;
+          while (vif.ready !== 1'b1) begin
+            @(posedge vif.clk);
+            wait_cycles++;
+            if (wait_cycles > item.timeout_cycles)
+              `uvm_fatal("MTSP_HIT0_TIMEOUT",
+                $sformatf("Timed out waiting for hit0 ready after %0d cycles",
+                  item.timeout_cycles))
+          end
         end
 
         vif.channel  <= item.channel;
@@ -397,6 +404,7 @@ package mtsp_env_pkg;
 
       forever begin
         @(posedge vif.clk);
+        #1ps;
         if (vif.rst === 1'b1)
           continue;
         if (vif.valid === 1'b1 && vif.ready === 1'b1) begin
@@ -436,6 +444,7 @@ package mtsp_env_pkg;
 
       forever begin
         @(posedge vif.clk);
+        #1ps;
         if (vif.rst === 1'b1)
           continue;
         if (vif.valid === 1'b1) begin
@@ -476,6 +485,7 @@ package mtsp_env_pkg;
 
       forever begin
         @(posedge vif.clk);
+        #1ps;
         if (vif.rst === 1'b1)
           continue;
 
@@ -515,6 +525,7 @@ package mtsp_env_pkg;
     uvm_analysis_imp_dbg  #(mtsp_dbg_obs_item,  mtsp_scoreboard) dbg_imp;
 
     int unsigned beat_count;
+    int unsigned csr_access_count;
     int unsigned payload_beat_count;
     int unsigned input_accept_count;
     int unsigned eop_count;
@@ -531,6 +542,7 @@ package mtsp_env_pkg;
     bit [38:0]   last_eop_data;
 
     mtsp_hit1_obs_item history[$];
+    mtsp_csr_obs_item  csr_history[$];
     mtsp_hit0_obs_item hit0_history[$];
     mtsp_dbg_obs_item  debug_ts_history[$];
     mtsp_dbg_obs_item  debug_burst_history[$];
@@ -551,6 +563,7 @@ package mtsp_env_pkg;
       hit1_imp         = new("hit1_imp", this);
       dbg_imp          = new("dbg_imp", this);
       beat_count       = 0;
+      csr_access_count = 0;
       payload_beat_count = 0;
       input_accept_count = 0;
       eop_count        = 0;
@@ -574,9 +587,11 @@ package mtsp_env_pkg;
 
     function automatic bit delay_math_error(bit [15:0] debug_ts,
                                             bit [31:0] latency);
-      int signed delta;
-      delta = signed16(debug_ts);
-      return !((delta > 0) && (delta < int'(latency)));
+      int signed       delta;
+      longint unsigned latency_u;
+      delta     = signed16(debug_ts);
+      latency_u = latency;
+      return !((delta > 0) && (longint'(delta) < latency_u));
     endfunction
 
     function void pair_debug_ts();
@@ -616,6 +631,8 @@ package mtsp_env_pkg;
     endfunction
 
     function void write_csr(mtsp_csr_obs_item item);
+      csr_history.push_back(item);
+      csr_access_count++;
       if (item.is_write && item.address == 3'd2)
         expected_latency = item.writedata;
     endfunction
@@ -676,8 +693,8 @@ package mtsp_env_pkg;
             pending_hit1.size(), pending_debug_ts.size()))
 
       `uvm_info("MTSP_SCB",
-        $sformatf("inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d dual_path_pairs=%0d traces=%0d",
-          input_accept_count, beat_count, payload_beat_count, eop_count,
+        $sformatf("csr=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d dual_path_pairs=%0d traces=%0d",
+          csr_access_count, input_accept_count, beat_count, payload_beat_count, eop_count,
           empty_eop_count, debug_ts_count, debug_burst_count, ts_delta_count,
           dual_path_pair_count, trace_history.size()),
         UVM_LOW)
@@ -817,11 +834,13 @@ package mtsp_env_pkg;
     bit [2:0]  error;
     bit [44:0] data;
     bit        valid;
+    bit        wait_for_ready;
     time       accept_time_ps;
 
     function new(string name = "mtsp_hit0_seq");
       super.new(name);
       valid          = 1'b1;
+      wait_for_ready = 1'b1;
       endofrun       = 1'b0;
       error          = '0;
       accept_time_ps = 0;
@@ -838,6 +857,7 @@ package mtsp_env_pkg;
       item.error    = error;
       item.data    = data;
       item.valid   = valid;
+      item.wait_for_ready = wait_for_ready;
       finish_item(item);
       accept_time_ps = item.accept_time_ps;
     endtask
@@ -847,7 +867,10 @@ package mtsp_env_pkg;
     `uvm_component_utils(mtsp_base_test)
 
     mtsp_env                 m_env;
+    virtual mtsp_reset_if.drv rst_vif;
     virtual mtsp_ctrl_if.mon ctrl_vif;
+    virtual mtsp_hit0_if.mon hit0_vif;
+    virtual mtsp_dbg_if.mon  dbg_vif;
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -856,8 +879,14 @@ package mtsp_env_pkg;
     function void build_phase(uvm_phase phase);
       super.build_phase(phase);
       m_env = mtsp_env::type_id::create("m_env", this);
+      if (!uvm_config_db#(virtual mtsp_reset_if.drv)::get(this, "", "rst_vif", rst_vif))
+        `uvm_fatal("MTSP_TEST", "Missing rst_vif")
       if (!uvm_config_db#(virtual mtsp_ctrl_if.mon)::get(this, "", "ctrl_vif", ctrl_vif))
         `uvm_fatal("MTSP_TEST", "Missing ctrl_vif")
+      if (!uvm_config_db#(virtual mtsp_hit0_if.mon)::get(this, "", "hit0_vif", hit0_vif))
+        `uvm_fatal("MTSP_TEST", "Missing hit0_vif")
+      if (!uvm_config_db#(virtual mtsp_dbg_if.mon)::get(this, "", "dbg_vif", dbg_vif))
+        `uvm_fatal("MTSP_TEST", "Missing dbg_vif")
     endfunction
 
     task automatic wait_cycles(int unsigned cycles);
@@ -869,6 +898,16 @@ package mtsp_env_pkg;
       while (ctrl_vif.rst !== 1'b0)
         @(posedge ctrl_vif.clk);
       wait_cycles(2);
+    endtask
+
+    task automatic drive_global_reset(int unsigned assert_cycles = 4,
+                                      int unsigned release_cycles = 2);
+      rst_vif.rst <= 1'b1;
+      repeat (assert_cycles)
+        @(posedge rst_vif.clk);
+      rst_vif.rst <= 1'b0;
+      repeat (release_cycles)
+        @(posedge rst_vif.clk);
     endtask
 
     task automatic csr_write(bit [2:0] addr, bit [31:0] data);
@@ -885,6 +924,64 @@ package mtsp_env_pkg;
       seq.addr = addr;
       seq.start(m_env.m_csr_sqr);
       data = seq.data;
+    endtask
+
+    task automatic expect_csr_mask(bit [2:0] addr,
+                                   bit [31:0] expected,
+                                   bit [31:0] mask,
+                                   string ctx);
+      bit [31:0] csr_word;
+      csr_read(addr, csr_word);
+      if ((csr_word & mask) !== (expected & mask))
+        `uvm_fatal("MTSP_CSR",
+          $sformatf("%s addr=%0d expected(masked)=0x%08h got=0x%08h mask=0x%08h",
+            ctx, addr, expected & mask, csr_word, mask))
+    endtask
+
+    task automatic read_total_count(output bit [47:0] total_count);
+      bit [31:0] hi_word;
+      bit [31:0] lo_word;
+      csr_read(3'd3, hi_word);
+      csr_read(3'd4, lo_word);
+      total_count = {hi_word[15:0], lo_word};
+    endtask
+
+    task automatic expect_total_count(bit [47:0] expected, string ctx);
+      bit [47:0] total_count;
+      read_total_count(total_count);
+      if (total_count !== expected)
+        `uvm_fatal("MTSP_CSR",
+          $sformatf("%s expected total_count=%0d got %0d",
+            ctx, expected, total_count))
+    endtask
+
+    task automatic expect_discard_count(bit [31:0] expected, string ctx);
+      bit [31:0] discard_count;
+      csr_read(3'd1, discard_count);
+      if (discard_count !== expected)
+        `uvm_fatal("MTSP_CSR",
+          $sformatf("%s expected discard_count=%0d got %0d",
+            ctx, expected, discard_count))
+    endtask
+
+    task automatic expect_hit0_ready(bit expected, string ctx);
+      if (hit0_vif.ready !== expected)
+        `uvm_fatal("MTSP_READY",
+          $sformatf("%s expected hit0 ready=%0b got %0b",
+            ctx, expected, hit0_vif.ready))
+    endtask
+
+    task automatic wait_for_hit0_ready(bit expected,
+                                       int unsigned max_cycles,
+                                       string ctx);
+      repeat (max_cycles) begin
+        if (hit0_vif.ready === expected)
+          return;
+        @(posedge hit0_vif.clk);
+      end
+      `uvm_fatal("MTSP_READY",
+        $sformatf("%s timed out waiting for hit0 ready=%0b, got %0b",
+          ctx, expected, hit0_vif.ready))
     endtask
 
     task automatic send_ctrl_and_capture(logic [8:0] cmd, string state_name,
@@ -906,6 +1003,19 @@ package mtsp_env_pkg;
       send_ctrl_and_capture(cmd, state_name, ignored_time, post_accept_delay_cycles);
     endtask
 
+    task automatic wait_for_running_status(int unsigned max_polls,
+                                           string ctx);
+      bit [31:0] csr_word;
+      repeat (max_polls) begin
+        csr_read(3'd0, csr_word);
+        if (csr_word[0] === 1'b1)
+          return;
+        wait_cycles(1);
+      end
+      `uvm_fatal("MTSP_RUN",
+        $sformatf("%s timed out waiting for CSR running status bit", ctx))
+    endtask
+
     task automatic pulse_ctrl(logic [8:0] cmd, string state_name);
       mtsp_ctrl_seq seq;
       seq                = mtsp_ctrl_seq::type_id::create($sformatf("ctrl_pulse_%s_%0t", state_name, $time));
@@ -919,7 +1029,9 @@ package mtsp_env_pkg;
       send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
       send_ctrl(CTRL_SYNC, "SYNC");
       send_ctrl(CTRL_RUNNING, "RUNNING");
-      wait_cycles(2);
+      wait_for_running_status(64, "run_start");
+      wait_for_hit0_ready(1'b1, 16, "run_start");
+      wait_cycles(1);
     endtask
 
     task automatic send_hit_beat(int unsigned asic_value,
@@ -929,7 +1041,9 @@ package mtsp_env_pkg;
                                  bit eflag_value,
                                  bit sop_value,
                                  bit eop_value,
-                                 bit [2:0] error_value = '0);
+                                 bit [2:0] error_value = '0,
+                                 bit wait_for_ready = 1'b1,
+                                 int unsigned tfine_value = 0);
       mtsp_hit0_seq seq;
       bit [44:0]    hit_word;
 
@@ -937,7 +1051,7 @@ package mtsp_env_pkg;
       hit_word[44:41]      = asic_value[3:0];
       hit_word[40:36]      = channel_value[4:0];
       hit_word[35:21]      = tcc_raw_value[14:0];
-      hit_word[20:16]      = '0;
+      hit_word[20:16]      = tfine_value[4:0];
       hit_word[15:1]       = ecc_raw_value[14:0];
       hit_word[0]          = eflag_value;
 
@@ -949,6 +1063,7 @@ package mtsp_env_pkg;
       seq.error            = error_value;
       seq.data             = hit_word;
       seq.valid            = 1'b1;
+      seq.wait_for_ready   = wait_for_ready;
       seq.start(m_env.m_hit0_sqr);
     endtask
 

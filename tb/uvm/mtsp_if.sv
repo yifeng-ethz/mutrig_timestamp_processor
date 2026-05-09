@@ -1,5 +1,18 @@
 `timescale 1ps/1ps
 
+interface mtsp_reset_if(input logic clk);
+  logic rst;
+
+  modport drv (
+    output rst,
+    input  clk
+  );
+
+  modport mon (
+    input rst, clk
+  );
+endinterface
+
 interface mtsp_csr_if(input logic clk, input logic rst);
   logic [2:0]  address;
   logic        read;

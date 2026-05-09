@@ -43,8 +43,10 @@
 --      Date: Apr 27, 2026
 -- Revision: 5.15 (Align timestamp-delay error classification with the output hit beat)
 --      Date: Apr 30, 2026
--- Version : 26.0.9
--- Date    : 20260430
+-- Revision: 5.16 (Gate debug_ts to the same active output states as hit_type1)
+--      Date: May 9, 2026
+-- Version : 26.0.10
+-- Date    : 20260509
 -- Change  : Register the corrected divider numerators in hit_prediv, then split divider launch and
 --           ToT subtraction into separate cycles. A one-cycle delayed copy of the divider outputs keeps
 --           the quotient/remainder aligned with the metadata shift pipeline. External RESET / OUT_OF_DAQ
@@ -64,6 +66,15 @@
 --           consumers can decide whether to trim or observe them.
 --           The timestamp-delay error sideband is now derived in the same registered pipeline stage that
 --           assembles hit_out, so mixed clean/error traffic cannot tag the neighboring output beat.
+--           debug_ts valid is now gated with the active hit_type1 output states, so reset/SCLR flush
+--           traffic cannot create debug-only samples with no normal-path payload to cross-check.
+--           Counter clearing is now limited to the actual RESET/SYNC phase, preventing stale reset_flow
+--           state from clearing the first accepted hit after a standard bring-up sequence.
+--           The input datapath now samples only accepted ready/valid hit_type0 transfers, aligning
+--           transformed outputs, packet bookkeeping, counters, and UVM monitor observations.
+--           The hit input ready window is now derived combinationally from the current processor state,
+--           removing stale ready assertions across RUN_PREPARE/SYNC/RUNNING handoff cycles while keeping
+--           the documented force_stop ready-high/drop-current-beat behavior.
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -359,6 +370,7 @@ architecture rtl of mts_processor is
     signal route_terminate_sent          : std_logic_vector(ROUTE_LANE_COUNT_CONST - 1 downto 0);
     signal hit_in_ok						: std_logic;
     signal processor_allow_input			: std_logic;
+    signal processor_accept_window          : std_logic;
     signal upstream_endofrun_seen        : std_logic;
     signal asi_hit_type0_ready_i         : std_logic;
     signal asi_hit_type0_accept          : std_logic;
@@ -945,6 +957,7 @@ begin
                     end if;
                 
                 when RUNNING =>
+                    reset_flow                  <= DONE;
                     processor_allow_input		<= '1';
                     if (run_state_cmd = TERMINATING) then -- standard sequence
                         processor_state		<= FLUSHING;
@@ -953,6 +966,7 @@ begin
                     end if;
                     
                 when FLUSHING => -- drain accepted payload and wait for the explicit upstream end-of-run pulse
+                    reset_flow                  <= DONE;
                     if (upstream_endofrun_seen = '0') then
                         processor_allow_input        <= '1';
                     else
@@ -982,37 +996,12 @@ begin
         end if;
     end process;
     
-    proc_in_ready : process (i_rst, i_clk)
+    proc_in_ready : process (all)
     begin
         if (i_rst = '1') then 
             asi_hit_type0_ready_i       <= '0';
-        
-        elsif (rising_edge(i_clk)) then 
-            -- default 
-            asi_hit_type0_ready_i			<= '0';	
-            case processor_state is 
-                when IDLE => 
-                    asi_hit_type0_ready_i			<= '0';
-                when RESET =>
-                    case reset_flow is 
-                        when SCLR => 
-                            asi_hit_type0_ready_i			<= '1'; -- flushing fifo
-                        when SYNC =>
-                            asi_hit_type0_ready_i			<= '0';
-                        when DONE =>
-                            asi_hit_type0_ready_i			<= '0';
-                        when others =>
-                    end case;
-                when RUNNING =>
-                    asi_hit_type0_ready_i			<= '1'; -- accepting input hits
-                when FLUSHING =>
-                    if (upstream_endofrun_seen = '0') then
-                        asi_hit_type0_ready_i       <= '1'; -- flushing until upstream reports end-of-run
-                    else
-                        asi_hit_type0_ready_i       <= '0';
-                    end if;
-                when others =>
-            end case;
+        else
+            asi_hit_type0_ready_i       <= processor_accept_window;
         end if;
     
     end process;
@@ -1145,14 +1134,35 @@ begin
         -- default
         hit_in_ok        <= '0';
         allow_input_v    := '0';
-        if (processor_allow_input = '1') then
-            -- During FLUSHING we still accept buffered tail packets from
-            -- frame_rcv_ip. Dedicated close markers are emitted only after
-            -- the input/pipeline fully drains, so packet starts that arrive
-            -- after the TERMINATING edge still belong to the draining run.
-            allow_input_v := '1';
-            if (allow_input_v = '1' and (asi_hit_type0_error(HITERR_BIT_LOC) = '0' or csr.discard_hiterr = '0')) then -- disable check or no error
-                hit_in_ok        <= '1'; -- in comb with avst valid
+
+        if (i_rst = '0') then
+            case processor_state is
+                when RESET =>
+                    if (reset_flow = SCLR) then
+                        allow_input_v := '1';
+                    end if;
+                when RUNNING =>
+                    allow_input_v := '1';
+                when FLUSHING =>
+                    -- During FLUSHING we still accept buffered tail packets from
+                    -- frame_rcv_ip. Dedicated close markers are emitted only after
+                    -- the input/pipeline fully drains, so packet starts that arrive
+                    -- after the TERMINATING edge still belong to the draining run.
+                    if (upstream_endofrun_seen = '0') then
+                        allow_input_v := '1';
+                    end if;
+                when others =>
+                    null;
+            end case;
+        end if;
+
+        processor_accept_window <= allow_input_v;
+        if (allow_input_v = '1') then
+            if (
+                csr.force_stop = '0'
+                and (asi_hit_type0_error(HITERR_BIT_LOC) = '0' or csr.discard_hiterr = '0')
+            ) then -- disable check or no error
+                hit_in_ok      <= '1'; -- in comb with avst valid
             end if;
         end if;
     
@@ -1166,8 +1176,19 @@ begin
             debug_msg.discard_hit_cnt		<= (others => '0');
             debug_msg.total_hit_cnt			<= (others => '0');
         elsif (rising_edge(i_clk)) then 
-            
-            if (reset_flow = SYNC or csr.soft_reset = '1') then -- soft reset by csr
+            if (DEBUG /= 0 and asi_hit_type0_valid = '1') then
+                report "MTS_COUNT[" & BANK & "] valid="
+                    & std_logic'image(asi_hit_type0_valid)
+                    & " ready=" & std_logic'image(asi_hit_type0_ready_i)
+                    & " accept=" & std_logic'image(asi_hit_type0_accept)
+                    & " hit_in_ok=" & std_logic'image(hit_in_ok)
+                    & " state=" & processor_state_t'image(processor_state)
+                    & " reset_flow=" & reset_flow_t'image(reset_flow)
+                    & " total_pre=" & integer'image(to_integer(debug_msg.total_hit_cnt(30 downto 0)))
+                    severity note;
+            end if;
+
+            if ((processor_state = RESET and reset_flow = SYNC) or csr.soft_reset = '1') then -- soft reset by csr
                 debug_msg.discard_hit_cnt		<= (others => '0'); -- sclr the counter
                 debug_msg.total_hit_cnt			<= (others => '0');
             elsif (asi_hit_type0_accept = '1') then -- count only accepted ready/valid beats
@@ -1335,7 +1356,7 @@ begin
             hit_out_delay_error <= '0';
 
             -- input stage
-            if (asi_hit_type0_valid = '1' and hit_in_ok = '1') then 
+            if (asi_hit_type0_accept = '1' and hit_in_ok = '1') then
                 hit_in.asic		<= asi_hit_type0_data(I_ASIC_HI downto I_ASIC_LO);
                 hit_in.channel	<= asi_hit_type0_data(I_CHANNEL_HI downto I_CHANNEL_LO);
                 hit_in.t_fine	<= asi_hit_type0_data(I_TFINE_HI downto I_TFINE_LO);
@@ -1575,7 +1596,7 @@ begin
             end if;
 
             if (processor_state = RUNNING or processor_state = FLUSHING) then
-                if (asi_hit_type0_valid = '1' and hit_in_ok = '1') then
+                if (asi_hit_type0_accept = '1' and hit_in_ok = '1') then
                     input_lane_v := to_integer(unsigned(asi_hit_type0_channel));
                     if (input_lane_v >= ENABLED_CHANNEL_LO and input_lane_v <= ENABLED_CHANNEL_HI) then
                         input_slot_v := input_lane_v - ENABLED_CHANNEL_LO;
@@ -1590,18 +1611,33 @@ begin
         end if;
     end process;
 
-    proc_debug_ts_comb : process (i_clk) -- need to delay 1 cycle to match with normal hit data
+    proc_debug_ts_comb : process (i_rst, i_clk) -- need to delay 1 cycle to match with normal hit data
     begin
-        if (rising_edge(i_clk)) then
-            aso_debug_ts_data           <= int_aso_debug_ts_data;
-            aso_debug_ts_valid          <= int_aso_debug_ts_valid;
+        if (i_rst = '1') then
+            aso_debug_ts_data           <= (others => '0');
+            aso_debug_ts_valid          <= '0';
+        elsif (rising_edge(i_clk)) then
+            if (
+                (processor_state = RUNNING or processor_state = FLUSHING)
+                and (csr.drop_delay_error = '0' or hit_out_delay_error = '0')
+            ) then
+                aso_debug_ts_data       <= int_aso_debug_ts_data;
+                aso_debug_ts_valid      <= int_aso_debug_ts_valid;
+            else
+                aso_debug_ts_data       <= (others => '0');
+                aso_debug_ts_valid      <= '0';
+            end if;
         end if;
     end process;
     
     proc_debug_ts : process (i_clk)
     begin
         if (rising_edge(i_clk)) then
-            if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- 48 bit - 48 bit (no of/df)
+            if (
+                i_rst = '0'
+                and (processor_state = RUNNING or processor_state = FLUSHING)
+                and hit_div(LPM_DIV_PIPELINE).valid = '1'
+            ) then -- 48 bit - 48 bit (no of/df)
                 if (csr.delay_ts_field_use_t = '1') then  
                     int_aso_debug_ts_data <= debug_delay_delta16(counter_gts_8n, unsigned(tcc_div_quotient_d));
                 else 
@@ -1609,6 +1645,7 @@ begin
                 end if;
                 int_aso_debug_ts_valid  <= '1';
             else 
+                int_aso_debug_ts_data   <= (others => '0');
                 int_aso_debug_ts_valid  <= '0';
             end if;
         end if;

@@ -103,7 +103,7 @@
 - `B074 | STD_MTS_074_sop_first_hit_channel3`: Repeat for channel 3; expect one SOP. Covers the fourth enabled channel.
 - `B075 | STD_MTS_075_no_repeated_sop_same_channel`: Drive a second accepted hit for a previously seen enabled channel in the same run; expect no repeated SOP. Verifies `startofrun_sent` persistence.
 - `B076 | STD_MTS_076_reset_clears_startofrun_sent`: Enter `RESET` and start a new run; expect SOP eligibility to return for each enabled channel. Verifies reset cleanup.
-- `B077 | STD_MTS_077_terminating_input_eop_forwards_output_eop`: In `TERMINATING`, accept an input beat with `endofpacket=1`; expect one delayed output `endofpacket`. Proves the explicit termination-EOP pipeline.
+- `B077 | STD_MTS_077_terminating_input_eop_forwards_output_eop`: In `TERMINATING`, accept an input beat with `endofpacket=1` and the explicit upstream `endofrun` pulse; expect the lane-close output `endofpacket` train after payload drain. Proves the current termination-EOP pipeline.
 - `B078 | STD_MTS_078_nonterminating_eop_not_forwarded`: Accept an input beat with `endofpacket=1` while still in `RUNNING`; expect no output EOP. Documents the current “termination-only” EOP forwarding.
 - `B079 | STD_MTS_079_empty_stays_zero`: Observe normal hit traffic and confirm `aso_hit_type1_empty` remains `0`. Locks down the current constant-zero contract.
 - `B080 | STD_MTS_080_output_valid_only_in_run_or_flush`: Drive accepted hits across `IDLE`, `RESET`, `RUNNING`, and `FLUSHING`; expect `aso_hit_type1_valid` only in `RUNNING` or `FLUSHING` when `hit_out.valid=1`. Verifies the source gating.
