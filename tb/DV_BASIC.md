@@ -75,7 +75,7 @@
 - `B052 | STD_MTS_052_ecc_uses_second_rom_port`: Drive a hit with a known raw `ECC`; expect the second ROM port to be used concurrently and mirrored by the scoreboard. Confirms the dual-port decode behavior.
 - `B053 | STD_MTS_053_bypass_off_uses_white_timestamp`: With `bypass_lapse=0`, expect the divider numerators to come from the padded 50-bit white timestamp path. Covers the normal operating mode.
 - `B054 | STD_MTS_054_bypass_on_uses_gray_timestamp`: With `bypass_lapse=1`, expect the divider numerators to be loaded directly from decoded gray values. Covers the debug bypass mode.
-- `B055 | STD_MTS_055_expected_latency_updates_padding_upper`: Rewrite `expected_latency`; expect subsequent hits to observe the new `padding_upper` boundary. Proves the software-controlled window.
+- `B055 | STD_MTS_055_expected_latency_updates_padding_upper`: Rewrite `expected_latency`; expect subsequent hits to use the new delay-error threshold while the overflow `padding_upper` remains controlled by `MUTRIG_OVERFLOW_LOOKBACK_8N`. Preserves the legacy case name while proving the current split between timestamp-error latency and wrap disambiguation.
 - `B056 | STD_MTS_056_no_adjust_below_upper_bound`: Choose a decoded timestamp below `padding_upper`; expect no overflow subtraction in the white-timestamp model. Covers the normal non-wrap path.
 - `B057 | STD_MTS_057_t_path_adjust_above_upper_bound`: Choose a T-path hit above `padding_upper` while the overflow-adjust latch is active; expect one overflow subtraction. Covers the T correction path.
 - `B058 | STD_MTS_058_e_path_adjust_above_upper_bound`: Choose an E-path hit above `padding_upper` while the overflow-adjust latch is active; expect one overflow subtraction on the E branch. Covers the E correction path.

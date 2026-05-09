@@ -45,6 +45,92 @@
             ctx, tfine_value[4:0], hit_obs.data[13:9], hit_obs.data))
     endtask
 
+    task automatic expect_last_payload_math(int unsigned asic_value,
+                                            int unsigned channel_value,
+                                            int unsigned tfine_value,
+                                            int unsigned tcc8n_value,
+                                            int unsigned tcc1n6_value,
+                                            int unsigned et1n6_value,
+                                            string ctx);
+      mtsp_hit1_obs_item hit_obs;
+      bit [12:0] expected_tcc8n;
+      bit [2:0]  expected_tcc1n6;
+      bit [8:0]  expected_et1n6;
+
+      expected_tcc8n  = tcc8n_value[12:0];
+      expected_tcc1n6 = tcc1n6_value[2:0];
+      expected_et1n6  = et1n6_value[8:0];
+
+      expect_last_payload_fields(asic_value, channel_value, tfine_value, ctx);
+      hit_obs = find_last_hit1_obs();
+      if (hit_obs.data[29:17] !== expected_tcc8n)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected TCC_8N=%0d got %0d data=0x%010h",
+            ctx, expected_tcc8n, hit_obs.data[29:17], hit_obs.data))
+      if (hit_obs.data[16:14] !== expected_tcc1n6)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected TCC_1N6=%0d got %0d data=0x%010h",
+            ctx, expected_tcc1n6, hit_obs.data[16:14], hit_obs.data))
+      if (hit_obs.data[8:0] !== expected_et1n6)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected ET_1N6=%0d got %0d data=0x%010h",
+            ctx, expected_et1n6, hit_obs.data[8:0], hit_obs.data))
+    endtask
+
+    task automatic expect_last_payload_error(bit expected_error, string ctx);
+      mtsp_hit1_obs_item hit_obs;
+
+      hit_obs = find_last_hit1_obs();
+      if (hit_obs == null)
+        `uvm_fatal("MTSP_CASE", $sformatf("%s expected a hit_type1 payload", ctx))
+      if (hit_obs.error !== expected_error)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected hit_type1 error=%0b got %0b data=0x%010h",
+            ctx, expected_error, hit_obs.error, hit_obs.data))
+    endtask
+
+    task automatic configure_datapath_mode(bit bypass_lapse,
+                                           bit derive_tot,
+                                           bit delay_ts_field_use_t = 1'b1);
+      bit [31:0] csr_word;
+
+      csr_word = 32'h0000_0001 | 32'h0000_0010;
+      if (bypass_lapse)
+        csr_word |= 32'h0000_0008;
+      if (delay_ts_field_use_t)
+        csr_word |= 32'h2000_0000;
+      if (derive_tot)
+        csr_word |= 32'h4000_0000;
+      csr_write(3'd0, csr_word);
+      wait_cycles(2);
+    endtask
+
+    task automatic send_hit_and_expect_math(int unsigned asic_value,
+                                            int unsigned channel_value,
+                                            int unsigned tcc_raw_value,
+                                            int unsigned ecc_raw_value,
+                                            bit eflag_value,
+                                            int unsigned tfine_value,
+                                            int unsigned tcc8n_value,
+                                            int unsigned tcc1n6_value,
+                                            int unsigned et1n6_value,
+                                            string ctx);
+      int unsigned base_beats;
+
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(asic_value, channel_value, tcc_raw_value, ecc_raw_value,
+        eflag_value, 1'b1, 1'b0, '0, 1'b1, tfine_value);
+      wait_for_beat_count(base_beats + 1, 256, ctx);
+      expect_last_payload_math(asic_value, channel_value, tfine_value,
+        tcc8n_value, tcc1n6_value, et1n6_value, ctx);
+    endtask
+
+    task automatic wait_inside_one_wrap_lookback(string ctx);
+      // With default generics, one local MuTRiG wrap occurs after about 6554
+      // clocks and the overflow lookback remains active for 2000 more clocks.
+      wait_cycles(6600);
+    endtask
+
     task automatic expect_no_new_beats(int unsigned base_beats,
                                        int unsigned base_eops,
                                        int unsigned base_empty_eops,
@@ -771,6 +857,102 @@
       expect_unhandled_control_word_noop(CTRL_OUT_OF_DAQ, "OUT_OF_DAQ");
     endtask
 
+    task automatic do_std_051_tcc_uses_rom_decode();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_hit_and_expect_math(2, 4, 15'h001F, 15'h0001, 1'b0, 5'd3,
+        13'd0, 3'd4, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_052_ecc_uses_second_rom_port();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_hit_and_expect_math(2, 5, 15'h0001, 15'h001F, 1'b1, 5'd6,
+        13'd0, 3'd0, 9'd4, case_id);
+    endtask
+
+    task automatic do_std_053_bypass_off_uses_white_timestamp();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      send_hit_and_expect_math(2, 6, 15'h07FF, 15'h07FF, 1'b0, 5'd7,
+        13'd6555, 3'd2, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_054_bypass_on_uses_gray_timestamp();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      send_hit_and_expect_math(2, 7, 15'h07FF, 15'h07FF, 1'b0, 5'd8,
+        13'd2, 3'd0, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_055_expected_latency_updates_padding_upper();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+
+      csr_write(3'd2, 32'd32);
+      wait_cycles(2);
+      send_hit_and_expect_math(2, 8, 15'h5EE7, 15'h5EE7, 1'b0, 5'd9,
+        13'd5000, 3'd0, 9'd0, $sformatf("%s strict latency", case_id));
+      expect_last_payload_error(1'b1, $sformatf("%s strict latency", case_id));
+
+      csr_write(3'd2, 32'd4096);
+      wait_cycles(2);
+      send_hit_and_expect_math(2, 8, 15'h5EE7, 15'h5EE7, 1'b0, 5'd10,
+        13'd5000, 3'd0, 9'd0, $sformatf("%s relaxed latency", case_id));
+      expect_last_payload_error(1'b0, $sformatf("%s relaxed latency", case_id));
+    endtask
+
+    task automatic do_std_056_no_adjust_below_upper_bound();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      send_hit_and_expect_math(2, 9, 15'h259B, 15'h259B, 1'b0, 5'd11,
+        13'd2761, 3'd2, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_057_t_path_adjust_above_upper_bound();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      send_hit_and_expect_math(2, 10, 15'h5EE7, 15'h5EE7, 1'b0, 5'd12,
+        13'd5000, 3'd0, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_058_e_path_adjust_above_upper_bound();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b1);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      send_hit_and_expect_math(2, 11, 15'h259B, 15'h5EE7, 1'b1, 5'd13,
+        13'd2761, 3'd2, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_059_divider_quotient_populates_tcc8n();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_hit_and_expect_math(2, 12, 15'h7FFE, 15'h7FFE, 1'b0, 5'd14,
+        13'd2, 3'd4, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_060_divider_remainder_populates_tcc1n6();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_hit_and_expect_math(2, 13, 15'h3FFF, 15'h3FFF, 1'b0, 5'd15,
+        13'd2, 3'd3, 9'd0, case_id);
+    endtask
+
     task automatic do_std_061_short_mode_zeroes_et();
       int unsigned base_beats;
       mtsp_hit1_obs_item hit_obs;
@@ -965,6 +1147,16 @@
         "STD_MTS_048_sync_test_word_is_nonfunctional_today": do_std_048_sync_test_word_is_nonfunctional_today();
         "STD_MTS_049_reset_word_is_nonfunctional_today": do_std_049_reset_word_is_nonfunctional_today();
         "STD_MTS_050_out_of_daq_word_is_nonfunctional_today": do_std_050_out_of_daq_word_is_nonfunctional_today();
+        "STD_MTS_051_tcc_uses_rom_decode": do_std_051_tcc_uses_rom_decode();
+        "STD_MTS_052_ecc_uses_second_rom_port": do_std_052_ecc_uses_second_rom_port();
+        "STD_MTS_053_bypass_off_uses_white_timestamp": do_std_053_bypass_off_uses_white_timestamp();
+        "STD_MTS_054_bypass_on_uses_gray_timestamp": do_std_054_bypass_on_uses_gray_timestamp();
+        "STD_MTS_055_expected_latency_updates_padding_upper": do_std_055_expected_latency_updates_padding_upper();
+        "STD_MTS_056_no_adjust_below_upper_bound": do_std_056_no_adjust_below_upper_bound();
+        "STD_MTS_057_t_path_adjust_above_upper_bound": do_std_057_t_path_adjust_above_upper_bound();
+        "STD_MTS_058_e_path_adjust_above_upper_bound": do_std_058_e_path_adjust_above_upper_bound();
+        "STD_MTS_059_divider_quotient_populates_tcc8n": do_std_059_divider_quotient_populates_tcc8n();
+        "STD_MTS_060_divider_remainder_populates_tcc1n6": do_std_060_divider_remainder_populates_tcc1n6();
         "STD_MTS_061_short_mode_zeroes_et": do_std_061_short_mode_zeroes_et();
         "STD_MTS_063_tot_mode_positive_delta": do_std_063_tot_mode_positive_delta();
         "STD_MTS_077_terminating_input_eop_forwards_output_eop": do_std_077_terminating_input_eop_forwards_output_eop();
