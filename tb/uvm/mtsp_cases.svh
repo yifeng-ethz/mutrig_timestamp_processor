@@ -23,6 +23,28 @@
       return m_env.m_scb.history[m_env.m_scb.history.size() - 1];
     endfunction
 
+    task automatic expect_last_payload_fields(int unsigned asic_value,
+                                              int unsigned channel_value,
+                                              int unsigned tfine_value,
+                                              string ctx);
+      mtsp_hit1_obs_item hit_obs;
+      hit_obs = find_last_hit1_obs();
+      if (hit_obs == null)
+        `uvm_fatal("MTSP_CASE", $sformatf("%s expected a hit_type1 payload", ctx))
+      if (hit_obs.data[38:35] !== asic_value[3:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected ASIC=%0d got %0d data=0x%010h",
+            ctx, asic_value[3:0], hit_obs.data[38:35], hit_obs.data))
+      if (hit_obs.data[34:30] !== channel_value[4:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected channel=%0d got %0d data=0x%010h",
+            ctx, channel_value[4:0], hit_obs.data[34:30], hit_obs.data))
+      if (hit_obs.data[13:9] !== tfine_value[4:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected TFine=%0d got %0d data=0x%010h",
+            ctx, tfine_value[4:0], hit_obs.data[13:9], hit_obs.data))
+    endtask
+
     task automatic expect_no_new_beats(int unsigned base_beats,
                                        int unsigned base_eops,
                                        int unsigned base_empty_eops,
@@ -517,6 +539,78 @@
       wait_for_beat_count(base_beats + 1, 128, case_id);
     endtask
 
+    task automatic do_std_032_idle_rejects_clean_hit();
+      int unsigned base_inputs;
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      expect_hit0_ready(1'b0, case_id);
+      base_inputs = m_env.m_scb.input_accept_count;
+      base_beats  = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0, '0, 1'b0);
+      wait_cycles(4);
+      if (m_env.m_scb.input_accept_count != base_inputs)
+        `uvm_fatal("MTSP_CASE", "IDLE must not accept a hit0 beat while ready is low")
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count, 32, case_id);
+      expect_total_count(48'd0, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_std_033_reset_sclr_flush_accept();
+      int unsigned base_inputs;
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_cycles(3);
+      expect_hit0_ready(1'b1, case_id);
+      base_inputs = m_env.m_scb.input_accept_count;
+      base_beats  = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0);
+      wait_cycles(4);
+      if (m_env.m_scb.input_accept_count != base_inputs + 1)
+        `uvm_fatal("MTSP_CASE", "RESET/SCLR must accept one flush beat at hit0")
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count, 48, case_id);
+      expect_total_count(48'd1, case_id);
+    endtask
+
+    task automatic do_std_034_reset_sync_blocks_hit();
+      int unsigned base_inputs;
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_cycles(2);
+      send_ctrl(CTRL_SYNC, "SYNC");
+      wait_cycles(4);
+      expect_hit0_ready(1'b0, case_id);
+      base_inputs = m_env.m_scb.input_accept_count;
+      base_beats  = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0, '0, 1'b0);
+      wait_cycles(4);
+      if (m_env.m_scb.input_accept_count != base_inputs)
+        `uvm_fatal("MTSP_CASE", "RESET/SYNC must not accept a hit0 beat while ready is low")
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count, 32, case_id);
+      expect_total_count(48'd0, case_id);
+    endtask
+
+    task automatic do_std_035_flushing_accepts_hit();
+      int unsigned base_inputs;
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_cycles(3);
+      wait_for_hit0_ready(1'b1, 16, case_id);
+      base_inputs = m_env.m_scb.input_accept_count;
+      base_beats  = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128, case_id);
+      if (m_env.m_scb.input_accept_count != base_inputs + 1)
+        `uvm_fatal("MTSP_CASE", "FLUSHING must accept a clean hit before upstream endofrun")
+    endtask
+
     task automatic do_std_036_hiterr_discard_enabled();
       int unsigned base_beats;
       bit [31:0] discard_cnt;
@@ -553,6 +647,128 @@
       base_beats = m_env.m_scb.beat_count;
       send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0);
       expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count, 64, case_id);
+    endtask
+
+    task automatic do_std_039_rejected_hiterr_still_counts_total();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0, 3'b001);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count, 64, case_id);
+      expect_total_count(48'd1, case_id);
+      expect_discard_count(32'd1, case_id);
+    endtask
+
+    task automatic do_std_040_matched_sideband_and_data_fields();
+      int unsigned base_beats;
+      mtsp_hit0_obs_item in_obs;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(3, 17, 'h0013, 'h001F, 1'b1, 1'b1, 1'b0, '0, 1'b1, 5'd21);
+      wait_for_beat_count(base_beats + 1, 128, case_id);
+      expect_last_payload_fields(3, 17, 21, case_id);
+      if (m_env.m_scb.hit0_history.size() == 0)
+        `uvm_fatal("MTSP_CASE", "Expected hit0 monitor to capture the accepted sideband")
+      in_obs = m_env.m_scb.hit0_history[m_env.m_scb.hit0_history.size() - 1];
+      if (in_obs.channel !== 6'd3)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("Expected packet sideband channel to follow the sideband domain, got %0d",
+            in_obs.channel))
+    endtask
+
+    task automatic do_std_041_legacy_running_plus_one_hit();
+      do_std_003_direct_running_entry_allowed();
+    endtask
+
+    task automatic do_std_042_standard_prepare_sync_run();
+      do_std_006_running_from_sync();
+    endtask
+
+    task automatic do_std_043_run_prepare_without_sync();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_cycles(3);
+      expect_hit0_ready(1'b1, case_id);
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count, 64, case_id);
+      expect_total_count(48'd1, case_id);
+    endtask
+
+    task automatic do_std_044_repeated_sync_pulses();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_cycles(2);
+      send_ctrl(CTRL_SYNC, "SYNC");
+      send_ctrl(CTRL_SYNC, "SYNC");
+      send_ctrl(CTRL_SYNC, "SYNC");
+      wait_cycles(4);
+      expect_hit0_ready(1'b0, case_id);
+      base_beats = m_env.m_scb.beat_count;
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count, 24, case_id);
+      expect_total_count(48'd0, case_id);
+    endtask
+
+    task automatic do_std_045_terminating_without_eop_then_idle();
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_cycles(4);
+      base_beats      = m_env.m_scb.beat_count;
+      base_eops       = m_env.m_scb.eop_count;
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      send_ctrl(CTRL_IDLE, "IDLE");
+      expect_hit0_ready(1'b0, case_id);
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 64, case_id);
+    endtask
+
+    task automatic do_std_046_running_abort_no_flush();
+      do_std_009_running_abort_to_idle();
+    endtask
+
+    task automatic expect_unhandled_control_word_noop(logic [8:0] cmd, string cmd_name);
+      int unsigned base_beats;
+      bit [31:0] csr_word;
+
+      wait_for_reset_release();
+      base_beats = m_env.m_scb.beat_count;
+      send_ctrl(cmd, cmd_name);
+      wait_cycles(4);
+      csr_read(3'd0, csr_word);
+      if (csr_word[0] !== 1'b0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s must not put the processor into RUNNING, csr0=0x%08h",
+            cmd_name, csr_word))
+      expect_hit0_ready(1'b0, case_id);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count, 24, case_id);
+    endtask
+
+    task automatic do_std_047_link_test_word_is_nonfunctional_today();
+      expect_unhandled_control_word_noop(CTRL_LINK_TEST, "LINK_TEST");
+    endtask
+
+    task automatic do_std_048_sync_test_word_is_nonfunctional_today();
+      expect_unhandled_control_word_noop(CTRL_SYNC_TEST, "SYNC_TEST");
+    endtask
+
+    task automatic do_std_049_reset_word_is_nonfunctional_today();
+      expect_unhandled_control_word_noop(CTRL_RESET_WORD, "RESET_WORD");
+    endtask
+
+    task automatic do_std_050_out_of_daq_word_is_nonfunctional_today();
+      expect_unhandled_control_word_noop(CTRL_OUT_OF_DAQ, "OUT_OF_DAQ");
     endtask
 
     task automatic do_std_061_short_mode_zeroes_et();
@@ -730,9 +946,25 @@
         "STD_MTS_029_csr_burst_of_serial_accesses": do_std_029_csr_burst_of_serial_accesses();
         "STD_MTS_030_total_counter_counts_all_valid": do_std_030_total_counter_counts_all_valid();
         "STD_MTS_031_running_accepts_clean_hit": do_std_031_running_accepts_clean_hit();
+        "STD_MTS_032_idle_rejects_clean_hit": do_std_032_idle_rejects_clean_hit();
+        "STD_MTS_033_reset_sclr_flush_accept": do_std_033_reset_sclr_flush_accept();
+        "STD_MTS_034_reset_sync_blocks_hit": do_std_034_reset_sync_blocks_hit();
+        "STD_MTS_035_flushing_accepts_hit": do_std_035_flushing_accepts_hit();
         "STD_MTS_036_hiterr_discard_enabled": do_std_036_hiterr_discard_enabled();
         "STD_MTS_037_hiterr_discard_disabled": do_std_037_hiterr_discard_disabled();
         "STD_MTS_038_force_stop_blocks_acceptance": do_std_038_force_stop_blocks_acceptance();
+        "STD_MTS_039_rejected_hiterr_still_counts_total": do_std_039_rejected_hiterr_still_counts_total();
+        "STD_MTS_040_matched_sideband_and_data_fields": do_std_040_matched_sideband_and_data_fields();
+        "STD_MTS_041_legacy_running_plus_one_hit": do_std_041_legacy_running_plus_one_hit();
+        "STD_MTS_042_standard_prepare_sync_run": do_std_042_standard_prepare_sync_run();
+        "STD_MTS_043_run_prepare_without_sync": do_std_043_run_prepare_without_sync();
+        "STD_MTS_044_repeated_sync_pulses": do_std_044_repeated_sync_pulses();
+        "STD_MTS_045_terminating_without_eop_then_idle": do_std_045_terminating_without_eop_then_idle();
+        "STD_MTS_046_running_abort_no_flush": do_std_046_running_abort_no_flush();
+        "STD_MTS_047_link_test_word_is_nonfunctional_today": do_std_047_link_test_word_is_nonfunctional_today();
+        "STD_MTS_048_sync_test_word_is_nonfunctional_today": do_std_048_sync_test_word_is_nonfunctional_today();
+        "STD_MTS_049_reset_word_is_nonfunctional_today": do_std_049_reset_word_is_nonfunctional_today();
+        "STD_MTS_050_out_of_daq_word_is_nonfunctional_today": do_std_050_out_of_daq_word_is_nonfunctional_today();
         "STD_MTS_061_short_mode_zeroes_et": do_std_061_short_mode_zeroes_et();
         "STD_MTS_063_tot_mode_positive_delta": do_std_063_tot_mode_positive_delta();
         "STD_MTS_077_terminating_input_eop_forwards_output_eop": do_std_077_terminating_input_eop_forwards_output_eop();

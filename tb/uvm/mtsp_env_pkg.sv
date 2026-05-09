@@ -14,6 +14,10 @@ package mtsp_env_pkg;
   localparam logic [8:0] CTRL_SYNC        = 9'b000000100;
   localparam logic [8:0] CTRL_RUNNING     = 9'b000001000;
   localparam logic [8:0] CTRL_TERMINATING = 9'b000010000;
+  localparam logic [8:0] CTRL_LINK_TEST   = 9'b000100000;
+  localparam logic [8:0] CTRL_SYNC_TEST   = 9'b001000000;
+  localparam logic [8:0] CTRL_RESET_WORD  = 9'b010000000;
+  localparam logic [8:0] CTRL_OUT_OF_DAQ  = 9'b100000000;
   localparam time CLK_PERIOD_PS           = 8000ps;
 
   typedef enum int unsigned {

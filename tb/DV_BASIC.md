@@ -46,7 +46,7 @@
 ## 4. Input Acceptance And Discard Paths
 
 - `B031 | STD_MTS_031_running_accepts_clean_hit`: In `RUNNING` with `force_stop=0` and `discard_hiterr=1`, drive a clean valid beat; expect it to be accepted and eventually emitted as `hit_type1`. Establishes the base datapath contract.
-- `B032 | STD_MTS_032_idle_rejects_clean_hit`: In `IDLE`, drive a valid beat; expect no `hit_type1` output, discard counting, and total counting. Proves that `IDLE` is not an acceptance state.
+- `B032 | STD_MTS_032_idle_rejects_clean_hit`: In `IDLE`, drive a valid beat while `ready=0`; expect no accepted hit, no `hit_type1` output, and no counter change because the ready/valid transfer did not occur. Proves that `IDLE` is not an acceptance state.
 - `B033 | STD_MTS_033_reset_sclr_flush_accept`: In `RESET/SCLR`, drive a valid beat; expect `asi_hit_type0_ready=1` and the beat to be accepted for flush behavior because `processor_allow_input=1` in this substate. Covers the flush-only ingress path.
 - `B034 | STD_MTS_034_reset_sync_blocks_hit`: In `RESET/SYNC`, drive a valid beat; expect no acceptance because ready is low and `processor_allow_input=0`. Proves the synchronizing hold phase.
 - `B035 | STD_MTS_035_flushing_accepts_hit`: In `FLUSHING`, drive a valid beat; expect acceptance and output under the current RTL contract. Documents the present post-terminate drain semantics.
