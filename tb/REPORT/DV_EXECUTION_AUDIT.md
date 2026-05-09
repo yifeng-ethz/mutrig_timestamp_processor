@@ -12,11 +12,11 @@ fallback with explicit case dispatch.
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
-| BASIC | 130 | 64 | 64 |
+| BASIC | 130 | 72 | 72 |
 | EDGE | 131 | 2 | 2 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 68 | 68 |
+| Total | 521 | 76 | 76 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs now fail with `No explicit UVM stimulus handler`.
@@ -42,6 +42,7 @@ Notes:
 | `B032` text conflicted with the ready/valid transfer contract by expecting counter increments while `ready=0`. | `STD_MTS_032_idle_rejects_clean_hit` | `DV_BASIC.md` and the UVM case now require no accepted hit, no output, and no counter change for the ready-low IDLE beat. |
 | `B055` text still described the pre-5.12 padding contract where `expected_latency` implied the overflow window. | `STD_MTS_055_expected_latency_updates_padding_upper` | `DV_BASIC.md` now preserves the case ID but verifies the current split between delay-error threshold and overflow lookback padding. |
 | White-timestamp quotient can exceed the 13-bit visible `hit_type1.tcc_8n` field. | `STD_MTS_056_no_adjust_below_upper_bound` | UVM checks compare the visible truncated payload field while the debug-sideband scoreboard still validates full-width delay math. |
+| Delay-source checks initially sampled the reset-seeded debug-burst warm-up delta instead of the two-hit comparison delta. | `STD_MTS_066_delay_field_t_path` | UVM now waits for the second `ts_delta` sample before checking T/E-selected polarity. |
 
 ## Evidence Commands
 
@@ -51,8 +52,8 @@ The focused after-fix regression was run with:
 make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-The complete explicit-case sweep was rerun with all 68 current handlers and
-ended with `ALL_68_EXPLICIT_CASES_PASS`.
+The complete explicit-case sweep was rerun with all 76 current handlers and
+ended with `ALL_76_EXPLICIT_CASES_PASS`.
 
 The merged after-fix coverage report was regenerated with:
 
@@ -61,15 +62,15 @@ make -C tb/uvm cov_report_total RTL_VARIANT=after
 ```
 
 The current merged report is `tb/uvm/cov_after/merged.txt`; its filtered
-instance coverage summary is `63.58%`.
+instance coverage summary is `64.46%`.
 
-Current evidenced explicit cases are the 68 handlers in `tb/uvm/mtsp_cases.svh`.
+Current evidenced explicit cases are the 76 handlers in `tb/uvm/mtsp_cases.svh`.
 Each has a matching `tb/uvm/logs/*_after_s1.log` and
 `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 453 uncovered BASIC, EDGE, PROF, and ERROR cases, then regenerate the ordered
+the remaining 445 uncovered BASIC, EDGE, PROF, and ERROR cases, then regenerate the ordered
 coverage/report dashboard from current artifacts instead of relying on stale
 proxy rows.

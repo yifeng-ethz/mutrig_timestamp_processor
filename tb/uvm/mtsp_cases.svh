@@ -131,6 +131,40 @@
       wait_cycles(6600);
     endtask
 
+    task automatic wait_for_ts_delta_count(int unsigned expected_count,
+                                           int unsigned max_cycles,
+                                           string ctx);
+      repeat (max_cycles) begin
+        if (m_env.m_scb.ts_delta_count >= expected_count)
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+      `uvm_fatal("MTSP_TIMEOUT",
+        $sformatf("%s timed out waiting for ts_delta_count=%0d, got %0d",
+          ctx, expected_count, m_env.m_scb.ts_delta_count))
+    endtask
+
+    task automatic expect_last_ts_delta_polarity(bit expect_negative,
+                                                 string ctx);
+      mtsp_dbg_obs_item obs;
+      int signed         delta;
+
+      if (m_env.m_scb.debug_burst_history.size() == 0 ||
+          m_env.m_scb.ts_delta_history.size() == 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected debug_burst and ts_delta observations", ctx))
+      obs   = m_env.m_scb.ts_delta_history[m_env.m_scb.ts_delta_history.size() - 1];
+      delta = m_env.m_scb.signed16(obs.data);
+      if (expect_negative && delta >= 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected negative ts_delta, got %0d (0x%04h)",
+            ctx, delta, obs.data))
+      if (!expect_negative && delta <= 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected positive ts_delta, got %0d (0x%04h)",
+            ctx, delta, obs.data))
+    endtask
+
     task automatic expect_no_new_beats(int unsigned base_beats,
                                        int unsigned base_eops,
                                        int unsigned base_empty_eops,
@@ -954,33 +988,103 @@
     endtask
 
     task automatic do_std_061_short_mode_zeroes_et();
-      int unsigned base_beats;
-      mtsp_hit1_obs_item hit_obs;
-
       wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
       run_start();
-      base_beats = m_env.m_scb.beat_count;
-      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0);
-      wait_for_beat_count(base_beats + 1, 128, case_id);
-      hit_obs = find_last_hit1_obs();
-      if (hit_obs == null || hit_obs.data[8:0] != 9'h000)
-        `uvm_fatal("MTSP_CASE", "Short mode must drive ET_1n6=0")
+      send_hit_and_expect_math(2, 1, 15'h0001, 15'h001F, 1'b1, 5'd16,
+        13'd0, 3'd0, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_062_tot_mode_masks_eflag0();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_hit_and_expect_math(2, 2, 15'h0001, 15'h001F, 1'b0, 5'd17,
+        13'd0, 3'd0, 9'd0, case_id);
     endtask
 
     task automatic do_std_063_tot_mode_positive_delta();
-      int unsigned base_beats;
-      mtsp_hit1_obs_item hit_obs;
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_hit_and_expect_math(2, 3, 15'h0001, 15'h001F, 1'b1, 5'd18,
+        13'd0, 3'd0, 9'd4, case_id);
+    endtask
+
+    task automatic do_std_064_tot_mode_negative_delta_reference();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_hit_and_expect_math(2, 4, 15'h001F, 15'h0001, 1'b1, 5'd19,
+        13'd0, 3'd4, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_065_tot_mode_saturates_above_511();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_hit_and_expect_math(2, 5, 15'h0001, 15'h6619, 1'b1, 5'd20,
+        13'd0, 3'd0, 9'd511, case_id);
+    endtask
+
+    task automatic do_std_066_delay_field_t_path();
+      int unsigned base_ts_delta;
 
       wait_for_reset_release();
-      csr_write(3'd0, 32'h4000_0001);
-      send_ctrl(CTRL_RUNNING, "RUNNING");
-      wait_cycles(2);
-      base_beats = m_env.m_scb.beat_count;
-      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0);
-      wait_for_beat_count(base_beats + 1, 128, case_id);
-      hit_obs = find_last_hit1_obs();
-      if (hit_obs == null || hit_obs.data[8:0] == 9'h000)
-        `uvm_fatal("MTSP_CASE", "ToT mode positive delta must produce nonzero ET")
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_ts_delta = m_env.m_scb.ts_delta_count;
+
+      send_hit_and_expect_math(2, 6, 15'h0001, 15'h5EE7, 1'b1, 5'd21,
+        13'd0, 3'd0, 9'd0, $sformatf("%s first T-selected hit", case_id));
+      expect_last_payload_error(1'b0, $sformatf("%s first T-selected hit", case_id));
+      send_hit_and_expect_math(2, 6, 15'h7FFE, 15'h0001, 1'b1, 5'd22,
+        13'd2, 3'd4, 9'd0, $sformatf("%s second T-selected hit", case_id));
+      expect_last_payload_error(1'b0, $sformatf("%s second T-selected hit", case_id));
+      wait_for_ts_delta_count(base_ts_delta + 2, 64, case_id);
+      expect_last_ts_delta_polarity(1'b0, case_id);
+    endtask
+
+    task automatic do_std_067_delay_field_e_path();
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b0);
+      run_start();
+      base_ts_delta = m_env.m_scb.ts_delta_count;
+
+      send_hit_and_expect_math(2, 7, 15'h0001, 15'h5EE7, 1'b1, 5'd23,
+        13'd0, 3'd0, 9'd0, $sformatf("%s first E-selected hit", case_id));
+      expect_last_payload_error(1'b1, $sformatf("%s first E-selected hit", case_id));
+      send_hit_and_expect_math(2, 7, 15'h7FFE, 15'h0001, 1'b1, 5'd24,
+        13'd2, 3'd4, 9'd0, $sformatf("%s second E-selected hit", case_id));
+      expect_last_payload_error(1'b0, $sformatf("%s second E-selected hit", case_id));
+      wait_for_ts_delta_count(base_ts_delta + 2, 64, case_id);
+      expect_last_ts_delta_polarity(1'b1, case_id);
+    endtask
+
+    task automatic do_std_068_tfine_passthrough();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_hit_and_expect_math(2, 8, 15'h7FFE, 15'h7FFE, 1'b0, 5'd27,
+        13'd2, 3'd4, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_069_asic_passthrough();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_hit_and_expect_math(9, 9, 15'h7FFE, 15'h7FFE, 1'b0, 5'd28,
+        13'd2, 3'd4, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_070_channel_passthrough();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_hit_and_expect_math(3, 23, 15'h7FFE, 15'h7FFE, 1'b0, 5'd29,
+        13'd2, 3'd4, 9'd0, case_id);
     endtask
 
     task automatic do_std_077_terminating_input_eop_forwards_output_eop();
@@ -1158,7 +1262,15 @@
         "STD_MTS_059_divider_quotient_populates_tcc8n": do_std_059_divider_quotient_populates_tcc8n();
         "STD_MTS_060_divider_remainder_populates_tcc1n6": do_std_060_divider_remainder_populates_tcc1n6();
         "STD_MTS_061_short_mode_zeroes_et": do_std_061_short_mode_zeroes_et();
+        "STD_MTS_062_tot_mode_masks_eflag0": do_std_062_tot_mode_masks_eflag0();
         "STD_MTS_063_tot_mode_positive_delta": do_std_063_tot_mode_positive_delta();
+        "STD_MTS_064_tot_mode_negative_delta_reference": do_std_064_tot_mode_negative_delta_reference();
+        "STD_MTS_065_tot_mode_saturates_above_511": do_std_065_tot_mode_saturates_above_511();
+        "STD_MTS_066_delay_field_t_path": do_std_066_delay_field_t_path();
+        "STD_MTS_067_delay_field_e_path": do_std_067_delay_field_e_path();
+        "STD_MTS_068_tfine_passthrough": do_std_068_tfine_passthrough();
+        "STD_MTS_069_asic_passthrough": do_std_069_asic_passthrough();
+        "STD_MTS_070_channel_passthrough": do_std_070_channel_passthrough();
         "STD_MTS_077_terminating_input_eop_forwards_output_eop": do_std_077_terminating_input_eop_forwards_output_eop();
         "STD_MTS_078_nonterminating_eop_not_forwarded": do_std_078_nonterminating_eop_not_forwarded();
         "CORNER_MTS_011_expected_latency_zero": do_corner_011_expected_latency_zero();
