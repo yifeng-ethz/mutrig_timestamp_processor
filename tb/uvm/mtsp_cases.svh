@@ -305,6 +305,31 @@
       expect_last_trace_pair(ctx);
     endtask
 
+    task automatic send_smoke_hit_and_expect_et(int unsigned tcc_raw_value,
+                                                int unsigned ecc_raw_value,
+                                                bit eflag_value,
+                                                int unsigned expected_et,
+                                                string ctx);
+      int unsigned base_beats;
+      int unsigned base_traces;
+      mtsp_hit1_obs_item hit_obs;
+
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 1, tcc_raw_value, ecc_raw_value, eflag_value,
+        1'b1, 1'b0, '0, 1'b1, 5'd0);
+      wait_for_beat_count(base_beats + 1, 128, ctx);
+      wait_for_trace_count(base_traces + 1, 128, ctx);
+      hit_obs = find_last_hit1_obs();
+      if (hit_obs == null)
+        `uvm_fatal("MTSP_CASE", $sformatf("%s expected smoke payload", ctx))
+      if (hit_obs.data[8:0] !== expected_et[8:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected smoke ET_1N6=%0d got %0d data=0x%010h",
+            ctx, expected_et[8:0], hit_obs.data[8:0], hit_obs.data))
+      expect_last_trace_pair(ctx);
+    endtask
+
     task automatic calibrate_next_output_arrival(output int signed predicted_arrival,
                                                  input string ctx);
       int signed first_arrival;
@@ -1892,6 +1917,136 @@
         `uvm_fatal("MTSP_CASE", "Debug streams must not advance after leaving RUNNING")
     endtask
 
+    task automatic start_legacy_smoke_mode();
+      wait_for_reset_release();
+      csr_write(3'd0, 32'h4000_0001);
+      send_ctrl(CTRL_RUNNING, "RUNNING");
+      wait_for_running_status(64, case_id);
+      wait_for_hit0_ready(1'b1, 16, case_id);
+      wait_cycles(1);
+    endtask
+
+    task automatic do_std_101_replay_smoke_positive_et();
+      start_legacy_smoke_mode();
+      send_smoke_hit_and_expect_et(15'h0003, 15'h000F, 1'b1, 9'd2, case_id);
+    endtask
+
+    task automatic do_std_102_replay_smoke_eflag_zero();
+      start_legacy_smoke_mode();
+      send_smoke_hit_and_expect_et(15'h0003, 15'h000F, 1'b0, 9'd0, case_id);
+    endtask
+
+    task automatic do_std_103_replay_smoke_clamp_vector();
+      start_legacy_smoke_mode();
+      send_smoke_hit_and_expect_et(15'h000F, 15'h0003, 1'b1, 9'd0,
+        $sformatf("%s negative clamp", case_id));
+      send_smoke_hit_and_expect_et(15'h0001, 15'h0000, 1'b1, 9'd511,
+        $sformatf("%s saturation clamp", case_id));
+    endtask
+
+    task automatic do_std_104_discard_counter_matches_rejections();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(1, 128, $sformatf("%s clean accepted", case_id));
+      expect_last_trace_pair($sformatf("%s clean accepted", case_id));
+
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 15'h0003, 15'h0003, 1'b0, 1'b1, 1'b0, 3'b001);
+      send_hit_beat(2, 2, 15'h0007, 15'h0007, 1'b0, 1'b1, 1'b0, 3'b001);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 64, case_id);
+      expect_total_count(48'd3, case_id);
+      expect_discard_count(32'd2, case_id);
+    endtask
+
+    task automatic do_std_105_total_counter_matches_all_valid();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(1, 128, $sformatf("%s clean accepted", case_id));
+      expect_last_trace_pair($sformatf("%s clean accepted", case_id));
+
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 15'h0003, 15'h0003, 1'b0, 1'b1, 1'b0, 3'b001);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 64, $sformatf("%s rejected hiterr", case_id));
+
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT & ~32'h0000_0010);
+      wait_cycles(2);
+      send_hit_beat(2, 2, 15'h0007, 15'h0007, 1'b0, 1'b1, 1'b0, 3'b001);
+      wait_for_beat_count(base_beats + 1, 128, $sformatf("%s accepted hiterr", case_id));
+      expect_last_trace_pair($sformatf("%s accepted hiterr", case_id));
+      expect_total_count(48'd3, case_id);
+      expect_discard_count(32'd1, case_id);
+    endtask
+
+    task automatic do_std_107_soft_reset_clears_counters();
+      do_std_017_soft_reset_self_clear();
+    endtask
+
+    task automatic do_std_108_sync_clears_counters();
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(1, 128, $sformatf("%s pre-sync traffic", case_id));
+      expect_total_count(48'd1, $sformatf("%s pre-sync count", case_id));
+
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(4);
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_cycles(2);
+      send_ctrl(CTRL_SYNC, "SYNC");
+      wait_cycles(4);
+      expect_total_count(48'd0, $sformatf("%s post-sync count", case_id));
+      expect_discard_count(32'd0, $sformatf("%s post-sync discard", case_id));
+    endtask
+
+    task automatic do_std_109_running_status_bit_semantics();
+      wait_for_reset_release();
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0001,
+        $sformatf("%s IDLE status", case_id));
+      run_start();
+      expect_csr_mask(3'd0, 32'h0000_0001, 32'h0000_0001,
+        $sformatf("%s RUNNING status", case_id));
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(4);
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0001,
+        $sformatf("%s post-IDLE status", case_id));
+    endtask
+
+    task automatic do_std_110_force_stop_persists_until_cleared();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0002);
+      wait_cycles(2);
+      expect_csr_mask(3'd0, 32'h0000_0002, 32'h0000_0002,
+        $sformatf("%s force_stop set", case_id));
+
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 64, $sformatf("%s force_stop blocked", case_id));
+      expect_csr_mask(3'd0, 32'h0000_0002, 32'h0000_0002,
+        $sformatf("%s force_stop persisted", case_id));
+
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT);
+      wait_cycles(2);
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0002,
+        $sformatf("%s force_stop cleared", case_id));
+      send_hit_beat(2, 1, 15'h0003, 15'h0003, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128, $sformatf("%s acceptance restored", case_id));
+      expect_last_trace_pair($sformatf("%s acceptance restored", case_id));
+      expect_total_count(48'd2, case_id);
+      expect_discard_count(32'd1, case_id);
+    endtask
+
     task automatic do_corner_011_expected_latency_zero();
       int unsigned base_beats;
       mtsp_hit1_obs_item hit_obs;
@@ -2048,6 +2203,15 @@
         "STD_MTS_098_negative_signmag_conversion": do_std_098_negative_signmag_conversion();
         "STD_MTS_099_arrival_delta_uses_gts": do_std_099_arrival_delta_uses_gts();
         "STD_MTS_100_debug_streams_clear_outside_running": do_std_100_debug_streams_clear_outside_running();
+        "STD_MTS_101_replay_smoke_positive_et": do_std_101_replay_smoke_positive_et();
+        "STD_MTS_102_replay_smoke_eflag_zero": do_std_102_replay_smoke_eflag_zero();
+        "STD_MTS_103_replay_smoke_clamp_vector": do_std_103_replay_smoke_clamp_vector();
+        "STD_MTS_104_discard_counter_matches_rejections": do_std_104_discard_counter_matches_rejections();
+        "STD_MTS_105_total_counter_matches_all_valid": do_std_105_total_counter_matches_all_valid();
+        "STD_MTS_107_soft_reset_clears_counters": do_std_107_soft_reset_clears_counters();
+        "STD_MTS_108_sync_clears_counters": do_std_108_sync_clears_counters();
+        "STD_MTS_109_running_status_bit_semantics": do_std_109_running_status_bit_semantics();
+        "STD_MTS_110_force_stop_persists_until_cleared": do_std_110_force_stop_persists_until_cleared();
         "CORNER_MTS_011_expected_latency_zero": do_corner_011_expected_latency_zero();
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();

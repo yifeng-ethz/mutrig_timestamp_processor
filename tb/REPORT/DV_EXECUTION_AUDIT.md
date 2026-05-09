@@ -12,11 +12,11 @@ fallback with explicit case dispatch.
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
-| BASIC | 130 | 100 | 100 |
+| BASIC | 130 | 109 | 109 |
 | EDGE | 131 | 2 | 2 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 104 | 104 |
+| Total | 521 | 113 | 113 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs now fail with `No explicit UVM stimulus handler`.
@@ -48,6 +48,17 @@ Notes:
   sideband activity, first-hit history warm-up, positive/negative/zero
   timestamp deltas, sign-magnitude to two's-complement conversion, arrival
   delta dependence on GTS spacing, and debug stream clearing after IDLE.
+- `STD_MTS_101_replay_smoke_positive_et` through
+  `STD_MTS_105_total_counter_matches_all_valid` and
+  `STD_MTS_107_soft_reset_clears_counters` through
+  `STD_MTS_110_force_stop_persists_until_cleared` now have explicit handlers.
+  These preserve the checked-in VHDL smoke ET vectors and add CSR-visible
+  counter checks for discard, total, soft reset, SYNC reset, running-status,
+  and force-stop persistence.
+- `STD_MTS_106_total_counter_hi_rollover` remains intentionally open. It needs
+  a rollover-specific strategy, such as a legal long-run accelerator or a
+  separately justified counter preload hook, rather than a fake pass through a
+  short simulation.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -70,6 +81,7 @@ Notes:
 | Route-lane and delay-error cases need raw timestamp symbols for exact decoded quotients rather than hand-picked constants. | `STD_MTS_081_route_lane0` | UVM now builds a ROM inverse from `dual_port_rom_init.txt`, so tests request decoded quotient/remainder targets and the harness selects the matching raw MuTRiG symbol. |
 | Delay-error boundary cases need proof that the normal output and debug side path describe the same hit. | `STD_MTS_085_error_low_in_range` | UVM requires a paired `mtsp_hit_trace_item` per checked hit, logs `MTSP_TRACE` metadata, and validates `hit_type1.error` against the scoreboard's `debug_ts` math. |
 | Debug-burst and `ts_delta` cases need signed delta checks independent of delay-error status. | `STD_MTS_093_first_running_hit_warms_history` | UVM now checks the debug-burst/`ts_delta` analysis port histories directly and keeps the paired `debug_ts` trace metadata as separate evidence. |
+| A post-traffic SYNC reset cannot be driven as `RUNNING -> RUN_PREPARE -> SYNC`; current RTL only accepts `RUN_PREPARE` from `IDLE` or `FLUSHING`. | `STD_MTS_108_sync_clears_counters` | UVM now uses the legal `IDLE -> RUN_PREPARE -> SYNC` sequence before checking that counters clear in RESET/SYNC. |
 
 ## Submodule Freshness Check
 
@@ -96,8 +108,8 @@ The focused after-fix regression was run with:
 make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-The complete explicit-case sweep was rerun with all 104 current handlers and
-ended with `ALL_104_EXPLICIT_CASES_PASS`.
+The complete explicit-case sweep was rerun with all 113 current handlers and
+ended with `ALL_113_EXPLICIT_CASES_PASS`.
 
 The merged after-fix coverage report was regenerated with:
 
@@ -106,15 +118,15 @@ make -C tb/uvm cov_report_total RTL_VARIANT=after
 ```
 
 The current merged report is `tb/uvm/cov_after/merged.txt`; its filtered
-instance coverage summary is `64.51%`.
+instance coverage summary is `64.70%`.
 
-Current evidenced explicit cases are the 104 handlers in `tb/uvm/mtsp_cases.svh`.
+Current evidenced explicit cases are the 113 handlers in `tb/uvm/mtsp_cases.svh`.
 Each has a matching `tb/uvm/logs/*_after_s1.log` and
 `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 417 uncovered BASIC, EDGE, PROF, and ERROR cases, then regenerate the ordered
+the remaining 408 uncovered BASIC, EDGE, PROF, and ERROR cases, then regenerate the ordered
 coverage/report dashboard from current artifacts instead of relying on stale
 proxy rows.
