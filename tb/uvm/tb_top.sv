@@ -26,7 +26,9 @@ module tb_top;
   mtsp_hit1_if hit1_if(.clk(clk), .rst(rst));
   mtsp_dbg_if  dbg_if(.clk(clk), .rst(rst));
 
-  assign hit1_if.ready = 1'b1;
+  initial begin
+    hit1_if.ready = 1'b1;
+  end
 
   mts_processor dut (
     .avs_csr_readdata            (csr_if.readdata),
@@ -97,6 +99,8 @@ module tb_top;
       null, "uvm_test_top", "hit0_vif", hit0_if);
     uvm_config_db#(virtual mtsp_hit1_if.mon)::set(
       null, "uvm_test_top.m_env.m_hit1_mon", "vif", hit1_if);
+    uvm_config_db#(virtual mtsp_hit1_if.drv)::set(
+      null, "uvm_test_top", "hit1_drv_vif", hit1_if);
     uvm_config_db#(virtual mtsp_dbg_if.mon)::set(
       null, "uvm_test_top.m_env.m_dbg_mon", "vif", dbg_if);
     uvm_config_db#(virtual mtsp_dbg_if.mon)::set(

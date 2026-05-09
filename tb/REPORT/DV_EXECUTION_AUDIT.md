@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-09, refreshed through 2026-05-10 01:22 CEST
+Date: 2026-05-09, refreshed through 2026-05-10 01:32 CEST
 
 ## Scope
 
@@ -9,17 +9,17 @@ dual normal/debug monitor path, replacing the old generic documented-case
 fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
 adding the first EDGE CSR/input-protocol, divider/ToT, and debug-threshold
 boundary batches, the EDGE reset and force-stop recovery batch, and the EDGE
-generic/configuration batch.
+generic/configuration and ready-edge batches.
 
 ## Current Coverage Of Documented Cases
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
 | BASIC | 130 | 129 | 129 |
-| EDGE | 131 | 68 | 68 |
+| EDGE | 131 | 77 | 77 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 199 | 199 |
+| Total | 521 | 208 | 208 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -176,6 +176,14 @@ Notes:
   `LPM_DIV_PIPELINE + 7` cycles, measured as 9 cycles for the packaged
   `LPM_DIV_PIPELINE=2` override and 11 cycles for the RTL-default
   `LPM_DIV_PIPELINE=4` build.
+- `CORNER_MTS_101` through `CORNER_MTS_104` now make `aso_hit_type1_ready`
+  controllable from UVM and prove the current DUT still emits payload and
+  close-marker beats while sink ready is low or toggling. `CORNER_MTS_106`
+  through `CORNER_MTS_110` cover hit-input ready state semantics in
+  `FLUSHING`, `IDLE`, `RESET/SCLR`, `RESET/SYNC`, and output quietness outside
+  `RUNNING`/`FLUSHING`. `CORNER_MTS_105` remains open because its intended
+  result is an assertion/monitor trap for illegal `ready=X`, which needs a
+  separate expected-error execution mode rather than a normal passing UVM run.
 
 ## Debug And RTL Findings From This Batch
 
@@ -262,6 +270,16 @@ Result: all ten cases passed after reviewing and correcting the E094/E095
 terminate-delay contract from `LPM_DIV_PIPELINE + 4` to the RTL-observable
 `LPM_DIV_PIPELINE + 7`; refreshed under the final full sweep.
 
+Focused EDGE ready/backpressure batch:
+
+```bash
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E101-E104,E106-E110 case_id> SEED=1
+```
+
+Result: all nine implemented cases passed, then refreshed under the final full
+sweep. `CORNER_MTS_105_output_ready_unknown_monitor_trap` remains open pending
+an expected-error/SVA-trap regression mode.
+
 RTL before/after bug proof:
 
 ```bash
@@ -278,7 +296,7 @@ Final explicit-case sweep:
 make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=199`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=208`.
 
 Combo terminate contract:
 
@@ -297,12 +315,12 @@ make -C tb/uvm cov_report_total RTL_VARIANT=after
 
 Current merged report: `tb/uvm/cov_after/merged.txt`.
 
-Filtered instance coverage summary: `66.31%`.
+Filtered instance coverage summary: `66.34%`.
 
 Artifact check:
 
 ```text
-explicit_cases=199 missing_artifacts=0
+explicit_cases=208 missing_artifacts=0
 combo_pass=True
 ```
 
@@ -329,16 +347,16 @@ Results:
   canonical table/header format. This batch only corrected the E094/E095 timing
   text inside the legacy EDGE file.
 
-Current evidenced explicit cases are the 199 handlers in
+Current evidenced explicit cases are the 208 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 322 uncovered BASIC, EDGE, PROF, and ERROR cases, including
+the remaining 313 uncovered BASIC, EDGE, PROF, and ERROR cases, including
 `STD_MTS_106_total_counter_hi_rollover` and
 `CORNER_MTS_018_counter_read_on_low_word_rollover`, plus the in-flight CSR
-mode-sampling cases `CORNER_MTS_057` and `CORNER_MTS_058`, then regenerate the
-ordered coverage/report dashboard from current artifacts instead of relying on
-stale proxy rows.
+mode-sampling cases `CORNER_MTS_057` and `CORNER_MTS_058`, the expected-error
+ready trap `CORNER_MTS_105`, then regenerate the ordered coverage/report
+dashboard from current artifacts instead of relying on stale proxy rows.

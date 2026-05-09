@@ -897,6 +897,7 @@ package mtsp_env_pkg;
     virtual mtsp_reset_if.drv rst_vif;
     virtual mtsp_ctrl_if.mon ctrl_vif;
     virtual mtsp_hit0_if.mon hit0_vif;
+    virtual mtsp_hit1_if.drv hit1_drv_vif;
     virtual mtsp_dbg_if.mon  dbg_vif;
 
     function new(string name, uvm_component parent);
@@ -912,6 +913,8 @@ package mtsp_env_pkg;
         `uvm_fatal("MTSP_TEST", "Missing ctrl_vif")
       if (!uvm_config_db#(virtual mtsp_hit0_if.mon)::get(this, "", "hit0_vif", hit0_vif))
         `uvm_fatal("MTSP_TEST", "Missing hit0_vif")
+      if (!uvm_config_db#(virtual mtsp_hit1_if.drv)::get(this, "", "hit1_drv_vif", hit1_drv_vif))
+        `uvm_fatal("MTSP_TEST", "Missing hit1_drv_vif")
       if (!uvm_config_db#(virtual mtsp_dbg_if.mon)::get(this, "", "dbg_vif", dbg_vif))
         `uvm_fatal("MTSP_TEST", "Missing dbg_vif")
     endfunction
@@ -935,6 +938,19 @@ package mtsp_env_pkg;
       rst_vif.rst <= 1'b0;
       repeat (release_cycles)
         @(posedge rst_vif.clk);
+    endtask
+
+    task automatic set_hit1_ready(bit ready_value);
+      hit1_drv_vif.ready <= ready_value;
+      @(posedge hit1_drv_vif.clk);
+    endtask
+
+    task automatic toggle_hit1_ready_for(int unsigned cycles);
+      for (int unsigned idx = 0; idx < cycles; idx++) begin
+        hit1_drv_vif.ready <= idx[0];
+        @(posedge hit1_drv_vif.clk);
+      end
+      hit1_drv_vif.ready <= 1'b1;
     endtask
 
     task automatic csr_write(bit [2:0] addr, bit [31:0] data);
