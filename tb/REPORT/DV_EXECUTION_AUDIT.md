@@ -1,23 +1,23 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-09, refreshed through 2026-05-10 00:31 Europe/Zurich
+Date: 2026-05-09, refreshed through 2026-05-10 00:47 Europe/Zurich
 
 ## Scope
 
 This audit records the current plan-to-UVM execution state after enabling the
 dual normal/debug monitor path, replacing the old generic documented-case
 fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
-adding the first EDGE CSR/input-protocol batch.
+adding the first EDGE CSR/input-protocol and divider/ToT boundary batches.
 
 ## Current Coverage Of Documented Cases
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
 | BASIC | 130 | 129 | 129 |
-| EDGE | 131 | 20 | 20 |
+| EDGE | 131 | 38 | 38 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 151 | 151 |
+| Total | 521 | 169 | 169 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -30,6 +30,11 @@ Notes:
 - `CORNER_MTS_018_counter_read_on_low_word_rollover` remains open for the same
   class of rollover-snapshot strategy. It is not counted as covered by the new
   CSR boundary batch.
+- `CORNER_MTS_057_toggle_derive_tot_between_hits` and
+  `CORNER_MTS_058_toggle_delay_field_between_hits` remain open until the
+  in-flight CSR mode-sampling contract is resolved. A weak post-output toggle
+  check is not counted as evidence for the documented accepted-hit sampling
+  requirement.
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
 - `DV_PROF.md` has no explicit UVM handlers yet.
@@ -128,6 +133,23 @@ Notes:
 - `CORNER_MTS_028` through `CORNER_MTS_030` add max payload field checks and a
   sideband-aware hit helper so the UVM path can drive full 6-bit
   `asi_hit_type0_channel` values independently from payload ASIC/channel fields.
+- `CORNER_MTS_041` through `CORNER_MTS_045` now drive exact ROM-inverse
+  decoded symbols for divide remainders 0 through 4 and require paired
+  normal/debug trace evidence for each payload.
+- `CORNER_MTS_046` through `CORNER_MTS_050` now check route bits `[5:4]` for
+  lanes 0 through 3 plus a quotient boundary transition from route 0 to route
+  1. The route sideband and packed payload quotient are checked together to
+  catch route/data skew.
+- `CORNER_MTS_051` through `CORNER_MTS_056` now cover short-mode EFlag masking,
+  ToT-mode EFlag masking, smallest positive ToT delta, largest unsaturated
+  delta, first saturated delta, and negative-delta clamp behavior. The initial
+  `CORNER_MTS_053` bring-up exposed a test-vector unit mismatch: ToT is in
+  decoded 1.6 ns ticks, not quotient steps. The stimulus was corrected before
+  evidence was accepted.
+- `CORNER_MTS_059` and `CORNER_MTS_060` now cover EFlag toggling and TFine
+  extremes. `CORNER_MTS_057` and `CORNER_MTS_058` are intentionally not
+  implemented by these helpers because their documented per-accepted-hit CSR
+  mode sampling needs a separate RTL/harness decision.
 
 ## Debug And RTL Findings From This Batch
 
@@ -178,6 +200,15 @@ make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E012-E017,E019-E030 ca
 Result: `EDGE_E012_E017_E019_E030_PASS`, then refreshed under the final full
 sweep.
 
+Focused EDGE divider/ToT batch:
+
+```bash
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E041-E056,E059-E060 case_id> SEED=1
+```
+
+Result: `EDGE_E041_E056_E059_E060_PASS`, then refreshed under the final full
+sweep.
+
 RTL before/after bug proof:
 
 ```bash
@@ -194,7 +225,7 @@ Final explicit-case sweep:
 make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=151`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=169`.
 
 Combo terminate contract:
 
@@ -213,12 +244,12 @@ make -C tb/uvm cov_report_total RTL_VARIANT=after
 
 Current merged report: `tb/uvm/cov_after/merged.txt`.
 
-Filtered instance coverage summary: `64.35%`.
+Filtered instance coverage summary: `64.53%`.
 
 Artifact check:
 
 ```text
-explicit_cases=151 missing_artifacts=0
+explicit_cases=169 missing_artifacts=0
 combo_pass=True
 ```
 
@@ -239,15 +270,16 @@ Results:
   did not attempt a broad file restyle.
 - `bug_history_format_check.py BUG_HISTORY.md`: pass.
 
-Current evidenced explicit cases are the 151 handlers in
+Current evidenced explicit cases are the 169 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 370 uncovered BASIC, EDGE, PROF, and ERROR cases, including
+the remaining 352 uncovered BASIC, EDGE, PROF, and ERROR cases, including
 `STD_MTS_106_total_counter_hi_rollover` and
-`CORNER_MTS_018_counter_read_on_low_word_rollover`, then regenerate the ordered
-coverage/report dashboard from current artifacts instead of relying on stale
-proxy rows.
+`CORNER_MTS_018_counter_read_on_low_word_rollover`, plus the in-flight CSR
+mode-sampling cases `CORNER_MTS_057` and `CORNER_MTS_058`, then regenerate the
+ordered coverage/report dashboard from current artifacts instead of relying on
+stale proxy rows.

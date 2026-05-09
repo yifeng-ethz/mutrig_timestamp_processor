@@ -380,6 +380,38 @@
       expect_last_trace_pair(ctx);
     endtask
 
+    task automatic send_dual_quotient_hit_and_expect(int unsigned t_quotient,
+                                                     int unsigned t_remainder,
+                                                     int unsigned e_quotient,
+                                                     int unsigned e_remainder,
+                                                     int unsigned asic_value,
+                                                     int unsigned channel_value,
+                                                     bit eflag_value,
+                                                     int unsigned tfine_value,
+                                                     int unsigned et1n6_value,
+                                                     bit sop_value,
+                                                     string ctx);
+      int unsigned t_raw_value;
+      int unsigned e_raw_value;
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      lookup_raw_for_quotient(t_quotient, t_remainder, t_raw_value,
+        $sformatf("%s T symbol", ctx));
+      lookup_raw_for_quotient(e_quotient, e_remainder, e_raw_value,
+        $sformatf("%s E symbol", ctx));
+
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(asic_value, channel_value, t_raw_value, e_raw_value,
+        eflag_value, sop_value, 1'b0, '0, 1'b1, tfine_value);
+      wait_for_beat_count(base_beats + 1, 128, ctx);
+      wait_for_trace_count(base_traces + 1, 128, ctx);
+      expect_last_payload_math(asic_value, channel_value, tfine_value,
+        t_quotient, t_remainder, et1n6_value, ctx);
+      expect_last_trace_pair(ctx);
+    endtask
+
     task automatic send_smoke_hit_and_expect_et(int unsigned tcc_raw_value,
                                                 int unsigned ecc_raw_value,
                                                 bit eflag_value,
@@ -2953,6 +2985,183 @@
       expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
     endtask
 
+    task automatic do_corner_041_remainder_zero_case();
+      int signed observed_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_quotient_hit_and_capture(8, 0, 2, 0, 5'd1, observed_delta, case_id);
+      expect_last_output_flags(1'b1, 1'b0, 1'b0, 0, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_042_remainder_one_case();
+      int signed observed_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_quotient_hit_and_capture(8, 1, 2, 1, 5'd2, observed_delta, case_id);
+      expect_last_output_flags(1'b1, 1'b0, 1'b0, 0, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_043_remainder_two_case();
+      int signed observed_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_quotient_hit_and_capture(8, 2, 2, 2, 5'd3, observed_delta, case_id);
+      expect_last_output_flags(1'b1, 1'b0, 1'b0, 0, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_044_remainder_three_case();
+      int signed observed_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_quotient_hit_and_capture(8, 3, 2, 3, 5'd4, observed_delta, case_id);
+      expect_last_output_flags(1'b1, 1'b0, 1'b0, 0, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_045_remainder_four_case();
+      int signed observed_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_quotient_hit_and_capture(8, 4, 2, 4, 5'd5, observed_delta, case_id);
+      expect_last_output_flags(1'b1, 1'b0, 1'b0, 0, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_046_route_bits_00();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_route_lane_hit_and_expect(0, 0, 1'b1, case_id);
+    endtask
+
+    task automatic do_corner_047_route_bits_01();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_route_lane_hit_and_expect(1, 1, 1'b1, case_id);
+    endtask
+
+    task automatic do_corner_048_route_bits_10();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_route_lane_hit_and_expect(2, 2, 1'b1, case_id);
+    endtask
+
+    task automatic do_corner_049_route_bits_11();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_route_lane_hit_and_expect(3, 3, 1'b1, case_id);
+    endtask
+
+    task automatic do_corner_050_route_change_across_boundary();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_dual_quotient_hit_and_expect(15, 0, 15, 0, 2, 15, 1'b0, 5'd6,
+        9'd0, 1'b1, $sformatf("%s route0 side of boundary", case_id));
+      expect_last_output_flags(1'b1, 1'b0, 1'b0, 0,
+        $sformatf("%s route0 side of boundary", case_id));
+      send_dual_quotient_hit_and_expect(16, 0, 16, 0, 2, 16, 1'b0, 5'd6,
+        9'd0, 1'b1, $sformatf("%s route1 side of boundary", case_id));
+      expect_last_output_flags(1'b1, 1'b0, 1'b0, 1,
+        $sformatf("%s route1 side of boundary", case_id));
+    endtask
+
+    task automatic do_corner_051_short_mode_with_eflag_high();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_dual_quotient_hit_and_expect(0, 0, 4, 0, 2, 5, 1'b1, 5'd7,
+        9'd0, 1'b1, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_052_tot_mode_eflag_zero_large_delta();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_dual_quotient_hit_and_expect(0, 0, 600, 0, 2, 6, 1'b0, 5'd8,
+        9'd0, 1'b1, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_053_tot_mode_smallest_positive_delta();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_dual_quotient_hit_and_expect(0, 0, 0, 1, 2, 7, 1'b1, 5'd9,
+        9'd1, 1'b1, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_054_tot_mode_largest_unsaturated_delta();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_dual_quotient_hit_and_expect(0, 0, 102, 0, 2, 8, 1'b1, 5'd10,
+        9'd510, 1'b1, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_055_tot_mode_first_saturated_delta();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_dual_quotient_hit_and_expect(0, 0, 102, 2, 2, 9, 1'b1, 5'd11,
+        9'd511, 1'b1, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_056_tot_mode_negative_delta_case();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_dual_quotient_hit_and_expect(4, 0, 0, 0, 2, 10, 1'b1, 5'd12,
+        9'd0, 1'b1, case_id);
+      expect_last_payload_error(1'b0, case_id);
+    endtask
+
+    task automatic do_corner_059_toggle_eflag_between_hits();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1);
+      run_start();
+      send_dual_quotient_hit_and_expect(0, 0, 4, 0, 2, 11, 1'b0, 5'd13,
+        9'd0, 1'b1, $sformatf("%s eflag masked hit", case_id));
+      expect_last_payload_error(1'b0, $sformatf("%s eflag masked hit", case_id));
+      send_dual_quotient_hit_and_expect(0, 0, 0, 4, 2, 11, 1'b1, 5'd14,
+        9'd4, 1'b0, $sformatf("%s eflag calculated hit", case_id));
+      expect_last_payload_error(1'b0, $sformatf("%s eflag calculated hit", case_id));
+    endtask
+
+    task automatic do_corner_060_tfine_extremes();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_dual_quotient_hit_and_expect(0, 0, 0, 0, 2, 12, 1'b0, 5'd0,
+        9'd0, 1'b1, $sformatf("%s tfine zero", case_id));
+      expect_last_output_flags(1'b1, 1'b0, 1'b0, 0,
+        $sformatf("%s tfine zero", case_id));
+      send_dual_quotient_hit_and_expect(1, 0, 1, 0, 2, 12, 1'b0, 5'd31,
+        9'd0, 1'b0, $sformatf("%s tfine max", case_id));
+      expect_last_output_flags(1'b0, 1'b0, 1'b0, 0,
+        $sformatf("%s tfine max", case_id));
+    endtask
+
     task automatic do_corner_127_delay_error_sideband_tracks_hit();
       int unsigned       base_beats;
       int unsigned       base_history_size;
@@ -3142,6 +3351,24 @@
         "CORNER_MTS_028_max_payload_fields": do_corner_028_max_payload_fields();
         "CORNER_MTS_029_nonzero_mux_bits_in_sideband": do_corner_029_nonzero_mux_bits_in_sideband();
         "CORNER_MTS_030_sideband_channel_outside_enabled_window": do_corner_030_sideband_channel_outside_enabled_window();
+        "CORNER_MTS_041_remainder_zero_case": do_corner_041_remainder_zero_case();
+        "CORNER_MTS_042_remainder_one_case": do_corner_042_remainder_one_case();
+        "CORNER_MTS_043_remainder_two_case": do_corner_043_remainder_two_case();
+        "CORNER_MTS_044_remainder_three_case": do_corner_044_remainder_three_case();
+        "CORNER_MTS_045_remainder_four_case": do_corner_045_remainder_four_case();
+        "CORNER_MTS_046_route_bits_00": do_corner_046_route_bits_00();
+        "CORNER_MTS_047_route_bits_01": do_corner_047_route_bits_01();
+        "CORNER_MTS_048_route_bits_10": do_corner_048_route_bits_10();
+        "CORNER_MTS_049_route_bits_11": do_corner_049_route_bits_11();
+        "CORNER_MTS_050_route_change_across_boundary": do_corner_050_route_change_across_boundary();
+        "CORNER_MTS_051_short_mode_with_eflag_high": do_corner_051_short_mode_with_eflag_high();
+        "CORNER_MTS_052_tot_mode_eflag_zero_large_delta": do_corner_052_tot_mode_eflag_zero_large_delta();
+        "CORNER_MTS_053_tot_mode_smallest_positive_delta": do_corner_053_tot_mode_smallest_positive_delta();
+        "CORNER_MTS_054_tot_mode_largest_unsaturated_delta": do_corner_054_tot_mode_largest_unsaturated_delta();
+        "CORNER_MTS_055_tot_mode_first_saturated_delta": do_corner_055_tot_mode_first_saturated_delta();
+        "CORNER_MTS_056_tot_mode_negative_delta_case": do_corner_056_tot_mode_negative_delta_case();
+        "CORNER_MTS_059_toggle_eflag_between_hits": do_corner_059_toggle_eflag_between_hits();
+        "CORNER_MTS_060_tfine_extremes": do_corner_060_tfine_extremes();
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();
