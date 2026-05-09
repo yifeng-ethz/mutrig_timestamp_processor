@@ -3514,6 +3514,198 @@
         $sformatf("%s final IDLE status", case_id));
     endtask
 
+    task automatic send_hit_beat_with_sideband_time(int unsigned sideband_channel,
+                                                    int unsigned asic_value,
+                                                    int unsigned channel_value,
+                                                    int unsigned tcc_raw_value,
+                                                    int unsigned ecc_raw_value,
+                                                    bit eflag_value,
+                                                    bit sop_value,
+                                                    bit eop_value,
+                                                    output time accept_time_ps,
+                                                    input bit [2:0] error_value = '0,
+                                                    input bit wait_for_ready = 1'b1,
+                                                    input int unsigned tfine_value = 0);
+      mtsp_hit0_seq seq;
+      bit [44:0]    hit_word;
+
+      hit_word             = '0;
+      hit_word[44:41]      = asic_value[3:0];
+      hit_word[40:36]      = channel_value[4:0];
+      hit_word[35:21]      = tcc_raw_value[14:0];
+      hit_word[20:16]      = tfine_value[4:0];
+      hit_word[15:1]       = ecc_raw_value[14:0];
+      hit_word[0]          = eflag_value;
+
+      seq                  = mtsp_hit0_seq::type_id::create($sformatf("hit0_time_seq_%0t", $time));
+      seq.channel          = sideband_channel[5:0];
+      seq.sop              = sop_value;
+      seq.eop              = eop_value;
+      seq.endofrun         = 1'b0;
+      seq.error            = error_value;
+      seq.data             = hit_word;
+      seq.valid            = 1'b1;
+      seq.wait_for_ready   = wait_for_ready;
+      seq.start(m_env.m_hit0_sqr);
+      accept_time_ps       = seq.accept_time_ps + 1ps;
+    endtask
+
+    task automatic expect_first_empty_eop_latency_since(int unsigned base_history_size,
+                                                        time         base_time_ps,
+                                                        int unsigned expected_cycles,
+                                                        string       ctx);
+      time               latency_ps;
+      int unsigned       observed_cycles;
+
+      for (int idx = base_history_size; idx < m_env.m_scb.history.size(); idx++) begin
+        mtsp_hit1_obs_item obs;
+        obs = m_env.m_scb.history[idx];
+        if (obs.empty && obs.eop) begin
+          if (obs.time_ps <= base_time_ps)
+            `uvm_fatal("MTSP_CASE",
+              $sformatf("%s empty EOP time %0t not after base %0t",
+                ctx, obs.time_ps, base_time_ps))
+          latency_ps      = obs.time_ps - base_time_ps;
+          observed_cycles = int'(latency_ps / CLK_PERIOD_PS);
+          if ((latency_ps % CLK_PERIOD_PS) != 0 || observed_cycles != expected_cycles)
+            `uvm_fatal("MTSP_CASE",
+              $sformatf("%s expected first empty EOP latency %0d cycles, got %0d cycles (%0t ps)",
+                ctx, expected_cycles, observed_cycles, latency_ps))
+          `uvm_info("MTSP_LATENCY",
+            $sformatf("%s accepted_hit=%0t first_empty_eop=%0t latency_cycles=%0d",
+              ctx, base_time_ps, obs.time_ps, observed_cycles),
+            UVM_LOW)
+          return;
+        end
+      end
+      `uvm_fatal("MTSP_CASE",
+        $sformatf("%s did not observe an empty EOP after history base %0d",
+          ctx, base_history_size))
+    endtask
+
+    task automatic prove_terminating_eop_delay(int unsigned expected_cycles,
+                                               string ctx);
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      time         accepted_time_ps;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", ctx));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", ctx));
+
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      send_hit_beat_with_sideband_time(2, 2, 0, 15'h0003, 15'h000F,
+        1'b1, 1'b1, 1'b1, accepted_time_ps);
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s draining payload trace", ctx));
+      expect_last_trace_pair($sformatf("%s draining payload trace", ctx));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s close marker train", ctx));
+      expect_first_empty_eop_latency_since(base_history_size, accepted_time_ps,
+        expected_cycles, ctx);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", ctx));
+    endtask
+
+    task automatic do_corner_091_single_channel_window_index0();
+      prove_enabled_window_bookkeeping(0, 1, case_id);
+    endtask
+
+    task automatic do_corner_092_single_channel_window_index3();
+      prove_enabled_window_bookkeeping(3, 2, case_id);
+    endtask
+
+    task automatic do_corner_093_middle_window_indexing();
+      prove_enabled_window_bookkeeping(1, 3, case_id);
+    endtask
+
+    task automatic do_corner_094_packaged_div_pipeline_delay();
+      prove_terminating_eop_delay(9, case_id);
+    endtask
+
+    task automatic do_corner_095_rtl_div_pipeline_delay();
+      prove_terminating_eop_delay(11, case_id);
+    endtask
+
+    task automatic do_corner_096_zero_default_latency_generic();
+      bit [31:0] csr_word;
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      csr_read(3'd2, csr_word);
+      if (csr_word !== 32'd0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected power-on expected_latency CSR=0 got %0d",
+            case_id, csr_word))
+      run_start();
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128, case_id);
+      wait_for_trace_count(base_traces + 1, 128, case_id);
+      expect_last_trace_expected_latency(0, case_id);
+      expect_last_payload_error(1'b1, case_id);
+    endtask
+
+    task automatic do_corner_097_one_tick_default_latency_generic();
+      bit [31:0] csr_word;
+      int signed   predicted_arrival;
+      int unsigned raw_value;
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      csr_read(3'd2, csr_word);
+      if (csr_word !== 32'd1)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected power-on expected_latency CSR=1 got %0d",
+            case_id, csr_word))
+      run_start();
+
+      calibrate_next_output_arrival(predicted_arrival,
+        $sformatf("%s threshold calibration", case_id));
+      if (predicted_arrival <= 1)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s cannot craft debug_delta=1 from predicted arrival %0d",
+            case_id, predicted_arrival))
+
+      lookup_raw_for_quotient(predicted_arrival - 1, 0, raw_value, case_id);
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 3, raw_value, raw_value, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s generic equality-threshold hit", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s generic equality-threshold trace", case_id));
+      expect_last_trace_expected_latency(1, case_id);
+      expect_last_trace_delta(1, 1, 1'b1,
+        $sformatf("%s default expected_latency=1 strict upper equality", case_id));
+    endtask
+
+    task automatic do_corner_098_remapped_hiterr_to_bit2();
+      do_std_115_remapped_hiterr_bit();
+    endtask
+
+    task automatic do_corner_099_frame_corrupt_bit_still_inert();
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0, 3'b100);
+      wait_for_beat_count(1, 128, case_id);
+      expect_last_trace_pair(case_id);
+      expect_total_count(48'd1, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_corner_100_padding_eop_wait_still_inert();
+      do_std_128_upgrade_case_terminal_boundary_without_extra_hits();
+    endtask
+
     task automatic do_corner_127_delay_error_sideband_tracks_hit();
       int unsigned       base_beats;
       int unsigned       base_history_size;
@@ -3741,6 +3933,16 @@
         "CORNER_MTS_088_prepare_after_soft_reset": do_corner_088_prepare_after_soft_reset();
         "CORNER_MTS_089_sync_after_force_stop_cycle": do_corner_089_sync_after_force_stop_cycle();
         "CORNER_MTS_090_idle_during_sclr_flush": do_corner_090_idle_during_sclr_flush();
+        "CORNER_MTS_091_single_channel_window_index0": do_corner_091_single_channel_window_index0();
+        "CORNER_MTS_092_single_channel_window_index3": do_corner_092_single_channel_window_index3();
+        "CORNER_MTS_093_middle_window_indexing": do_corner_093_middle_window_indexing();
+        "CORNER_MTS_094_packaged_div_pipeline_delay": do_corner_094_packaged_div_pipeline_delay();
+        "CORNER_MTS_095_rtl_div_pipeline_delay": do_corner_095_rtl_div_pipeline_delay();
+        "CORNER_MTS_096_zero_default_latency_generic": do_corner_096_zero_default_latency_generic();
+        "CORNER_MTS_097_one_tick_default_latency_generic": do_corner_097_one_tick_default_latency_generic();
+        "CORNER_MTS_098_remapped_hiterr_to_bit2": do_corner_098_remapped_hiterr_to_bit2();
+        "CORNER_MTS_099_frame_corrupt_bit_still_inert": do_corner_099_frame_corrupt_bit_still_inert();
+        "CORNER_MTS_100_padding_eop_wait_still_inert": do_corner_100_padding_eop_wait_still_inert();
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();

@@ -127,8 +127,8 @@
 - `E091 | CORNER_MTS_091_single_channel_window_index0`: Build with only channel 0 enabled; verify the start-of-run bookkeeping arrays index correctly. Covers the lower loop bound.
 - `E092 | CORNER_MTS_092_single_channel_window_index3`: Build with only channel 3 enabled; verify bookkeeping indexes correctly at the upper default bound. Covers the upper loop bound.
 - `E093 | CORNER_MTS_093_middle_window_indexing`: Build with only channels 1 and 2 enabled; verify bookkeeping ignores channels 0 and 3. Covers a shifted window.
-- `E094 | CORNER_MTS_094_packaged_div_pipeline_delay`: Build with `LPM_DIV_PIPELINE=2`; verify the terminating EOP delay becomes `6` cycles (`2 + 4`) and matches the scoreboard. Covers packaged-latency math.
-- `E095 | CORNER_MTS_095_rtl_div_pipeline_delay`: Build with `LPM_DIV_PIPELINE=4`; verify the terminating EOP delay becomes `8` cycles (`4 + 4`). Covers RTL-default latency math.
+- `E094 | CORNER_MTS_094_packaged_div_pipeline_delay`: Build with `LPM_DIV_PIPELINE=2`; verify the accepted terminating hit drains to the first empty close marker in `9` cycles (`2 + 7`) and matches the scoreboard. Covers packaged-latency math.
+- `E095 | CORNER_MTS_095_rtl_div_pipeline_delay`: Build with `LPM_DIV_PIPELINE=4`; verify the accepted terminating hit drains to the first empty close marker in `11` cycles (`4 + 7`). Covers RTL-default latency math.
 - `E096 | CORNER_MTS_096_zero_default_latency_generic`: Build with `MUTRIG_BUFFER_EXPECTED_LATENCY_8N=0`; verify power-on CSR readback and error-window behavior follow that generic. Covers the extreme generic default.
 - `E097 | CORNER_MTS_097_one_tick_default_latency_generic`: Build with `MUTRIG_BUFFER_EXPECTED_LATENCY_8N=1`; verify the narrow clean window behaves as expected. Covers the smallest positive generic default.
 - `E098 | CORNER_MTS_098_remapped_hiterr_to_bit2`: Build with `HITERR_BIT_LOC=2`; verify only error bit 2 controls discard. Covers error-bit relocation.

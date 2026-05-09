@@ -62,6 +62,38 @@ endif
 ifeq ($(CASE_ID),STD_MTS_120_debug_zero_is_functionally_equivalent)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DEBUG=0
 endif
+ifeq ($(CASE_ID),CORNER_MTS_091_single_channel_window_index0)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=0 -g/tb_top/dut/ENABLED_CHANNEL_HI=0
+endif
+ifeq ($(CASE_ID),CORNER_MTS_092_single_channel_window_index3)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=3 -g/tb_top/dut/ENABLED_CHANNEL_HI=3
+endif
+ifeq ($(CASE_ID),CORNER_MTS_093_middle_window_indexing)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=1 -g/tb_top/dut/ENABLED_CHANNEL_HI=2
+endif
+ifeq ($(CASE_ID),CORNER_MTS_094_packaged_div_pipeline_delay)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/LPM_DIV_PIPELINE=2
+endif
+ifeq ($(CASE_ID),CORNER_MTS_095_rtl_div_pipeline_delay)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/LPM_DIV_PIPELINE=4
+endif
+ifeq ($(CASE_ID),CORNER_MTS_096_zero_default_latency_generic)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/MUTRIG_BUFFER_EXPECTED_LATENCY_8N=0
+RESET_EXPECTED_LATENCY := 0
+endif
+ifeq ($(CASE_ID),CORNER_MTS_097_one_tick_default_latency_generic)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/MUTRIG_BUFFER_EXPECTED_LATENCY_8N=1
+RESET_EXPECTED_LATENCY := 1
+endif
+ifeq ($(CASE_ID),CORNER_MTS_098_remapped_hiterr_to_bit2)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/HITERR_BIT_LOC=2
+endif
+ifeq ($(CASE_ID),CORNER_MTS_099_frame_corrupt_bit_still_inert)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/FRAME_CORRPT_BIT_LOC=2
+endif
+ifeq ($(CASE_ID),CORNER_MTS_100_padding_eop_wait_still_inert)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/PADDING_EOP_WAIT_CYCLE=1
+endif
 
 RTL_SRC = $(if $(filter before,$(RTL_VARIANT)),$(BUILD_DIR)/mts_processor.vhd,$(IP_SRC)/mts_processor.vhd)
 RUN_ID  = $(if $(CASE_ID),$(CASE_ID),$(TEST))

@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-09, refreshed through 2026-05-10 01:09 CEST
+Date: 2026-05-09, refreshed through 2026-05-10 01:22 CEST
 
 ## Scope
 
@@ -8,17 +8,18 @@ This audit records the current plan-to-UVM execution state after enabling the
 dual normal/debug monitor path, replacing the old generic documented-case
 fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
 adding the first EDGE CSR/input-protocol, divider/ToT, and debug-threshold
-boundary batches, plus the EDGE reset and force-stop recovery batch.
+boundary batches, the EDGE reset and force-stop recovery batch, and the EDGE
+generic/configuration batch.
 
 ## Current Coverage Of Documented Cases
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
 | BASIC | 130 | 129 | 129 |
-| EDGE | 131 | 58 | 58 |
+| EDGE | 131 | 68 | 68 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 189 | 189 |
+| Total | 521 | 199 | 199 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -167,6 +168,14 @@ Notes:
   normal payload checks and debug trace pairing active where payloads are
   expected, and require no-payload evidence where reset or force-stop suppresses
   output.
+- `CORNER_MTS_091` through `CORNER_MTS_100` now cover enabled-channel window
+  generics, packaged/source divider pipeline variants, zero and one-tick
+  default latency generics, remapped hit-error handling, inert frame-corrupt
+  relocation, and inert `PADDING_EOP_WAIT_CYCLE`. The terminate-delay cases
+  use the observable accepted-hit-to-first-empty-close-marker contract:
+  `LPM_DIV_PIPELINE + 7` cycles, measured as 9 cycles for the packaged
+  `LPM_DIV_PIPELINE=2` override and 11 cycles for the RTL-default
+  `LPM_DIV_PIPELINE=4` build.
 
 ## Debug And RTL Findings From This Batch
 
@@ -180,6 +189,7 @@ Notes:
 | Termination cases needed the explicit upstream `endofrun` pulse required by current RTL. | `STD_MTS_077_terminating_input_eop_forwards_output_eop` | Cases and `DV_BASIC.md` now use payload drain plus `endofrun` before expecting close markers. |
 | A post-traffic SYNC reset cannot be driven as `RUNNING -> RUN_PREPARE -> SYNC`; current RTL only accepts `RUN_PREPARE` from `IDLE` or `FLUSHING`. | `STD_MTS_108_sync_clears_counters` | UVM now uses the legal `IDLE -> RUN_PREPARE -> SYNC` sequence before checking that counters clear in RESET/SYNC. |
 | `IDLE` could be decoded while `asi_ctrl_ready=0`, aborting close-marker generation. | `STD_MTS_129_upgrade_case_idle_after_boundary_only` | RTL fix `e61fc9f22e83` gates control decode on `asi_ctrl_valid && ctrl_ready_comb`; before fails and after passes under `prove_delta`. |
+| `DV_EDGE.md` documented E094/E095 terminate delay as `LPM_DIV_PIPELINE + 4`, but RTL emits close markers only after the full accepted payload path drains. | `CORNER_MTS_094_packaged_div_pipeline_delay` | No RTL change. The plan and checker now use the monitor-observable accepted-hit-to-first-empty-close-marker contract, `LPM_DIV_PIPELINE + 7`. |
 
 ## Submodule Freshness Check
 
@@ -242,6 +252,16 @@ make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E081-E090 case_id> SEE
 
 Result: all ten cases passed, then refreshed under the final full sweep.
 
+Focused EDGE generic/configuration batch:
+
+```bash
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E091-E100 case_id> SEED=1
+```
+
+Result: all ten cases passed after reviewing and correcting the E094/E095
+terminate-delay contract from `LPM_DIV_PIPELINE + 4` to the RTL-observable
+`LPM_DIV_PIPELINE + 7`; refreshed under the final full sweep.
+
 RTL before/after bug proof:
 
 ```bash
@@ -258,7 +278,7 @@ Final explicit-case sweep:
 make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=189`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=199`.
 
 Combo terminate contract:
 
@@ -277,12 +297,12 @@ make -C tb/uvm cov_report_total RTL_VARIANT=after
 
 Current merged report: `tb/uvm/cov_after/merged.txt`.
 
-Filtered instance coverage summary: `66.28%`.
+Filtered instance coverage summary: `66.31%`.
 
 Artifact check:
 
 ```text
-explicit_cases=189 missing_artifacts=0
+explicit_cases=199 missing_artifacts=0
 combo_pass=True
 ```
 
@@ -293,6 +313,7 @@ git diff --check
 ./tb/run_mts_processor_tb.sh
 python3 /home/yifeng/.codex/skills/rtl-writing/scripts/rtl_style_check.py mts_processor.vhd
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/bug_history_format_check.py BUG_HISTORY.md
+python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py tb
 ```
 
 Results:
@@ -302,15 +323,20 @@ Results:
   such as tabs, legacy `i_` ports, constant naming, and alignment. This batch
   did not attempt a broad file restyle.
 - `bug_history_format_check.py BUG_HISTORY.md`: pass.
+- `dv_bucket_format_check.py tb`: fail on 76 legacy bucket-format errors across
+  `tb/DV_BASIC.md`, `tb/DV_EDGE.md`, `tb/DV_PROF.md`, and `tb/DV_ERROR.md`
+  because those files still use the older bullet-list layout instead of the
+  canonical table/header format. This batch only corrected the E094/E095 timing
+  text inside the legacy EDGE file.
 
-Current evidenced explicit cases are the 189 handlers in
+Current evidenced explicit cases are the 199 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 332 uncovered BASIC, EDGE, PROF, and ERROR cases, including
+the remaining 322 uncovered BASIC, EDGE, PROF, and ERROR cases, including
 `STD_MTS_106_total_counter_hi_rollover` and
 `CORNER_MTS_018_counter_read_on_low_word_rollover`, plus the in-flight CSR
 mode-sampling cases `CORNER_MTS_057` and `CORNER_MTS_058`, then regenerate the
