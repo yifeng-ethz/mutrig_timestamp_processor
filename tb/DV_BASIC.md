@@ -13,7 +13,7 @@
 - `B005 | STD_MTS_005_sync_enters_reset_sync`: Follow `RUN_PREPARE` with `SYNC`; expect `reset_flow=SYNC`, input ready low, and the local counters held/reset. Verifies the second step of the standard sequence.
 - `B006 | STD_MTS_006_running_from_sync`: After `SYNC`, send `RUNNING`; expect `processor_state=RUNNING`, acceptance of fresh hits, and counter advancement. Confirms the legal arm-to-run transition.
 - `B007 | STD_MTS_007_terminating_enters_flushing`: From `RUNNING`, send `TERMINATING`; expect `processor_state=FLUSHING` and continued input readiness under the current contract. Proves the explicit stop-state entry.
-- `B008 | STD_MTS_008_idle_from_flushing`: From `FLUSHING`, send `IDLE`; expect quiescent outputs and no lingering debug activity. Verifies orderly return to idle.
+- `B008 | STD_MTS_008_idle_from_flushing`: From `FLUSHING`, assert upstream `endofrun`, wait for the close-marker train, then send `IDLE`; expect quiescent outputs and no lingering debug activity after the return. Verifies orderly return to idle under the stateful control-ready contract.
 - `B009 | STD_MTS_009_running_abort_to_idle`: From `RUNNING`, send `IDLE` directly; expect output silence and no further hit acceptance. Covers the direct abort path implemented in the FSM.
 - `B010 | STD_MTS_010_global_reset_during_flushing`: Assert `i_rst` while the DUT is in `FLUSHING`; expect all pipeline valids, marker pipes, and debug histories to clear immediately. Catches stuck in-flight state.
 
@@ -62,7 +62,7 @@
 - `B042 | STD_MTS_042_standard_prepare_sync_run`: Execute the full `RUN_PREPARE -> SYNC -> RUNNING` sequence and send one hit; expect the same functional output as the legacy path. Establishes the standard-sequence baseline.
 - `B043 | STD_MTS_043_run_prepare_without_sync`: Send `RUN_PREPARE` and hold there; expect `RESET/SCLR` behavior with no normal RUNNING output. Documents partial-sequence behavior.
 - `B044 | STD_MTS_044_repeated_sync_pulses`: Send repeated `SYNC` commands before `RUNNING`; expect the DUT to remain in the reset-sync hold state without emitting output. Covers control chatter in the arming phase.
-- `B045 | STD_MTS_045_terminating_without_eop_then_idle`: Enter `FLUSHING` with no accepted terminal EOP and then send `IDLE`; expect no output boundary under the current contract. Ties directly to the upgrade gap called out in the plan.
+- `B045 | STD_MTS_045_terminating_without_eop_then_idle`: Enter `FLUSHING` with no accepted payload EOP, assert upstream `endofrun`, and then send `IDLE` only after control ready returns; expect the empty close-marker boundary and no payload beats. Locks down the delivered terminal-boundary upgrade.
 - `B046 | STD_MTS_046_running_abort_no_flush`: From `RUNNING`, send `IDLE` without `TERMINATING`; expect immediate state drop and no further acceptance. Covers the explicit abort branch.
 - `B047 | STD_MTS_047_link_test_word_is_nonfunctional_today`: Drive the `LINK_TEST` control word; expect `run_state_cmd` to decode but no dedicated processor-state behavior. Documents current no-op semantics.
 - `B048 | STD_MTS_048_sync_test_word_is_nonfunctional_today`: Drive the `SYNC_TEST` control word; expect no dedicated processor-state behavior beyond the decoded command value. Documents current no-op semantics.
@@ -150,9 +150,9 @@
 ## 12. Parameter And Generic Baselines
 
 - `B111 | STD_MTS_111_compile_rtl_default_div_pipeline`: Build and run with the RTL default `LPM_DIV_PIPELINE=4`; expect the reference latency and the correct math. Establishes the source-file baseline.
-- `B112 | STD_MTS_112_compile_packaged_div_pipeline`: Build and run with the packaged default `LPM_DIV_PIPELINE=2`; expect the same math with a shorter pipeline delay. Covers the packaging-visible configuration.
-- `B113 | STD_MTS_113_single_enabled_channel_window`: Build with `ENABLED_CHANNEL_LO=0` and `ENABLED_CHANNEL_HI=0`; expect SOP bookkeeping only for channel 0. Covers the smallest enabled window.
-- `B114 | STD_MTS_114_upper_enabled_window`: Build with `ENABLED_CHANNEL_LO=2` and `ENABLED_CHANNEL_HI=3`; expect SOP bookkeeping only for channels 2 and 3. Covers an offset window.
+- `B112 | STD_MTS_112_compile_packaged_div_pipeline`: Build and run with the package-visible `LPM_DIV_PIPELINE=2` override; expect the same math with the shorter measured pipeline delay. The current packaged default is `4`, so this is a compatibility override rather than the default.
+- `B113 | STD_MTS_113_single_enabled_channel_window`: Build with `ENABLED_CHANNEL_LO=0` and `ENABLED_CHANNEL_HI=0`; expect packet-open bookkeeping to track sideband channel 0 and ignore an outside-window sideband lane. Covers the smallest enabled window.
+- `B114 | STD_MTS_114_upper_enabled_window`: Build with `ENABLED_CHANNEL_LO=2` and `ENABLED_CHANNEL_HI=3`; expect packet-open bookkeeping to track channels 2 and 3 and ignore a lower outside-window lane. Covers an offset window.
 - `B115 | STD_MTS_115_remapped_hiterr_bit`: Build with a remapped `HITERR_BIT_LOC` and drive the matching error bit; expect discard behavior to follow the remap. Proves that only the configured bit matters.
 - `B116 | STD_MTS_116_remapped_crcerr_still_inert`: Build with a remapped `CRCERR_BIT_LOC`; expect no functional change because the current RTL does not consume that bit. Documents a deliberate no-effect parameter.
 - `B117 | STD_MTS_117_remapped_frame_corrupt_still_inert`: Build with a remapped `FRAME_CORRPT_BIT_LOC`; expect no functional change. Documents another deliberate no-effect parameter.
@@ -163,12 +163,12 @@
 ## 13. Termination And Upgrade-Gating Basics
 
 - `B121 | STD_MTS_121_preterminate_hit_still_drains`: Accept a hit immediately before `TERMINATING`; expect it to continue through the pipeline and emerge during `FLUSHING`. Proves current drain behavior.
-- `B122 | STD_MTS_122_terminating_eop_and_hit_emit_final_boundary`: In `TERMINATING`, accept a hit carrying `endofpacket=1`; expect one final output beat with `endofpacket=1`. Proves the happy-path stop contract currently implemented.
+- `B122 | STD_MTS_122_terminating_eop_and_hit_emit_final_boundary`: In `TERMINATING`, accept a hit carrying `endofpacket=1` plus the upstream `endofrun`; expect payload drain followed by the empty close-marker train. Proves the happy-path stop contract currently implemented.
 - `B123 | STD_MTS_123_flushing_accepts_more_hits_today`: Continue driving clean hits in `FLUSHING`; expect them to be accepted under the current RTL. Documents the present post-stop openness.
 - `B124 | STD_MTS_124_flushing_quiet_without_hits`: Enter `FLUSHING` and stop all input traffic; expect no spontaneous output. Proves that flush does not invent traffic on its own.
-- `B125 | STD_MTS_125_ctrl_ready_high_through_terminate`: Observe `asi_ctrl_ready` across `RUNNING -> TERMINATING`; expect it to stay high continuously today. Documents the current handshake fact.
-- `B126 | STD_MTS_126_ctrl_ready_high_through_prepare_and_sync`: Observe `asi_ctrl_ready` in `RUN_PREPARE` and `SYNC`; expect it to stay high continuously today. Documents the current handshake fact.
-- `B127 | STD_MTS_127_upgrade_case_stateful_ready_on_terminate`: Mark the future case in which `asi_ctrl_ready` must remain low until local drain work finishes. This is a post-patch acceptance test derived from `RUN_SEQ_UPGRADE_PLAN.md`.
-- `B128 | STD_MTS_128_upgrade_case_terminal_boundary_without_extra_hits`: Mark the future case in which the terminate boundary must still be observable even when no fresh post-edge hits are accepted. This is the key packet-boundary upgrade target.
-- `B129 | STD_MTS_129_upgrade_case_idle_after_boundary_only`: Mark the future case in which `IDLE` is not acknowledged until the terminal boundary and local pipeline drain are complete. This is the key handshake upgrade target.
+- `B125 | STD_MTS_125_ctrl_ready_high_through_terminate`: Historical case name retained; current RTL must deassert `asi_ctrl_ready` during `RUNNING -> TERMINATING` and restore it only after the close-marker train. Documents the delivered stateful handshake.
+- `B126 | STD_MTS_126_ctrl_ready_high_through_prepare_and_sync`: Historical case name retained; current RTL must deassert `asi_ctrl_ready` during the `RUN_PREPARE` and `SYNC` local reset phases, then restore it at each phase completion.
+- `B127 | STD_MTS_127_upgrade_case_stateful_ready_on_terminate`: Prove the delivered upgrade behavior in which `asi_ctrl_ready` remains low until upstream `endofrun`, local drain, and close-marker generation finish.
+- `B128 | STD_MTS_128_upgrade_case_terminal_boundary_without_extra_hits`: Prove the delivered upgrade behavior in which the terminate boundary remains observable even when no fresh post-edge hits are accepted.
+- `B129 | STD_MTS_129_upgrade_case_idle_after_boundary_only`: Prove the delivered upgrade behavior in which a well-behaved `IDLE` command is not acknowledged until the terminal boundary and local drain are complete.
 - `B130 | STD_MTS_130_full_standard_sequence_baseline`: Use `RUN_PREPARE -> SYNC -> RUNNING -> TERMINATING -> IDLE` with one packet per enabled channel as the canonical baseline scenario for the later UVM harness. This is the primary signoff narrative for the IP.

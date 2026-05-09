@@ -26,6 +26,42 @@ VERBOSITY   ?= UVM_MEDIUM
 TB_TOP      := tb_top
 VCOM_COV    ?= -cover bcesft
 VLOG_COV    ?= +cover=bcesft
+DEBUG_PATH_REQUIRED ?= 1
+RESET_EXPECTED_LATENCY ?= 2000
+DUT_GENERIC_ARGS ?=
+CASE_VSIM_GENERIC_ARGS :=
+
+ifeq ($(CASE_ID),STD_MTS_111_compile_rtl_default_div_pipeline)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/LPM_DIV_PIPELINE=4
+endif
+ifeq ($(CASE_ID),STD_MTS_112_compile_packaged_div_pipeline)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/LPM_DIV_PIPELINE=2
+endif
+ifeq ($(CASE_ID),STD_MTS_113_single_enabled_channel_window)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=0 -g/tb_top/dut/ENABLED_CHANNEL_HI=0
+endif
+ifeq ($(CASE_ID),STD_MTS_114_upper_enabled_window)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=2 -g/tb_top/dut/ENABLED_CHANNEL_HI=3
+endif
+ifeq ($(CASE_ID),STD_MTS_115_remapped_hiterr_bit)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/HITERR_BIT_LOC=2
+endif
+ifeq ($(CASE_ID),STD_MTS_116_remapped_crcerr_still_inert)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/CRCERR_BIT_LOC=2
+endif
+ifeq ($(CASE_ID),STD_MTS_117_remapped_frame_corrupt_still_inert)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/FRAME_CORRPT_BIT_LOC=1
+endif
+ifeq ($(CASE_ID),STD_MTS_118_changed_latency_generic_at_power_on)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/MUTRIG_BUFFER_EXPECTED_LATENCY_8N=128
+RESET_EXPECTED_LATENCY := 128
+endif
+ifeq ($(CASE_ID),STD_MTS_119_bank_string_is_debug_only)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/BANK=DOWN
+endif
+ifeq ($(CASE_ID),STD_MTS_120_debug_zero_is_functionally_equivalent)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DEBUG=0
+endif
 
 RTL_SRC = $(if $(filter before,$(RTL_VARIANT)),$(BUILD_DIR)/mts_processor.vhd,$(IP_SRC)/mts_processor.vhd)
 RUN_ID  = $(if $(CASE_ID),$(CASE_ID),$(TEST))
@@ -81,7 +117,10 @@ run_sim:
 	  -dpicpppath $(DPI_CPP) -sv_lib $(UVM_DPI_LIB) \
 	  -sv_seed $(SEED) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(if $(CASE_ID),+MTSP_CASE_ID=$(CASE_ID),) \
+	  +MTSP_DEBUG_PATH_REQUIRED=$(DEBUG_PATH_REQUIRED) \
+	  +MTSP_EXPECTED_LATENCY_RESET=$(RESET_EXPECTED_LATENCY) \
 	  -suppress 3009 -suppress 3473 -voptargs="+acc" \
+	  $(CASE_VSIM_GENERIC_ARGS) $(DUT_GENERIC_ARGS) $(VSIM_GENERIC_ARGS) \
 	  work.$(TB_TOP) \
 	  -do "quietly set NumericStdNoWarnings 1; quietly set StdArithNoWarnings 1; coverage save -onexit $(COV_DIR)/$(RUN_ID)_s$(SEED).ucdb; run -all; quit -f" \
 	  | tee $(LOG_DIR)/$(RUN_ID)_$(RTL_VARIANT)_s$(SEED).log

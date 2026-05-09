@@ -767,7 +767,7 @@ begin
             run_state_cmd		<= IDLE;
         elsif (rising_edge(i_clk)) then
             decoded_run_state_v := run_state_cmd;
-            if (asi_ctrl_valid = '1') then 
+            if (asi_ctrl_valid = '1' and ctrl_ready_comb = '1') then
                 case asi_ctrl_data is 
                     when "000000001" =>
                         decoded_run_state_v := IDLE;

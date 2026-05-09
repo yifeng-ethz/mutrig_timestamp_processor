@@ -540,6 +540,7 @@ package mtsp_env_pkg;
     int unsigned dual_path_pair_count;
     int unsigned trace_seq;
     bit [31:0]   expected_latency;
+    bit          debug_path_required;
 
     time         last_eop_time_ps;
     bit          last_eop_empty;
@@ -561,6 +562,9 @@ package mtsp_env_pkg;
     endfunction
 
     function void build_phase(uvm_phase phase);
+      int debug_path_required_arg;
+      int expected_latency_arg;
+
       super.build_phase(phase);
       csr_imp          = new("csr_imp", this);
       hit0_imp         = new("hit0_imp", this);
@@ -578,6 +582,11 @@ package mtsp_env_pkg;
       dual_path_pair_count = 0;
       trace_seq        = 0;
       expected_latency = 32'd2000;
+      debug_path_required = 1'b1;
+      if ($value$plusargs("MTSP_EXPECTED_LATENCY_RESET=%d", expected_latency_arg))
+        expected_latency = expected_latency_arg[31:0];
+      if ($value$plusargs("MTSP_DEBUG_PATH_REQUIRED=%d", debug_path_required_arg))
+        debug_path_required = (debug_path_required_arg != 0);
       last_eop_time_ps = 0;
       last_eop_empty   = 1'b0;
       last_eop_data    = '0;
@@ -688,19 +697,19 @@ package mtsp_env_pkg;
     endfunction
 
     function void report_phase(uvm_phase phase);
-      if (payload_beat_count > 0 && debug_ts_count == 0)
+      if (debug_path_required && payload_beat_count > 0 && debug_ts_count == 0)
         `uvm_error("MTSP_DUAL_PATH",
           "Normal hit output was observed but the debug_ts analysis path reported no samples")
-      if (pending_hit1.size() != 0 || pending_debug_ts.size() != 0)
+      if (debug_path_required && (pending_hit1.size() != 0 || pending_debug_ts.size() != 0))
         `uvm_error("MTSP_DUAL_PATH",
           $sformatf("Unpaired normal/debug_ts samples remain: normal=%0d debug_ts=%0d",
             pending_hit1.size(), pending_debug_ts.size()))
 
       `uvm_info("MTSP_SCB",
-        $sformatf("csr=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d dual_path_pairs=%0d traces=%0d",
+        $sformatf("csr=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d dual_path_pairs=%0d traces=%0d debug_path_required=%0b expected_latency=%0d",
           csr_access_count, input_accept_count, beat_count, payload_beat_count, eop_count,
           empty_eop_count, debug_ts_count, debug_burst_count, ts_delta_count,
-          dual_path_pair_count, trace_history.size()),
+          dual_path_pair_count, trace_history.size(), debug_path_required, expected_latency),
         UVM_LOW)
     endfunction
   endclass
