@@ -107,6 +107,7 @@
 - `E078 | CORNER_MTS_078_debug_burst_positive_trim_edge`: Drive a positive timestamp delta right at the trim boundary used for debug-burst packing; verify the high bits are captured correctly. Covers trimming edges.
 - `E079 | CORNER_MTS_079_debug_burst_negative_trim_edge`: Do the same for a negative delta and verify sign handling remains correct. Covers trimming edges for the signed branch.
 - `E080 | CORNER_MTS_080_ts_delta_zero_boundary`: Drive repeated equal timestamps and verify `ts_delta` encodes a clean zero. Covers the sign-conversion zero point.
+- `E127 | CORNER_MTS_127_delay_error_sideband_tracks_hit`: Force one timestamp-delay error with `expected_latency=0`, restore the default window, then send a clean hit; verify the error sideband remains attached to the correct output beat. Covers stale error-pipeline bleed-through.
 
 ## 9. Reset / Force-Stop Edges
 

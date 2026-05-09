@@ -20,13 +20,7 @@ module tb_top;
   mtsp_ctrl_if ctrl_if(.clk(clk), .rst(rst));
   mtsp_hit0_if hit0_if(.clk(clk), .rst(rst));
   mtsp_hit1_if hit1_if(.clk(clk), .rst(rst));
-
-  logic        debug_ts_valid;
-  logic [15:0] debug_ts_data;
-  logic        debug_burst_valid;
-  logic [15:0] debug_burst_data;
-  logic        ts_delta_valid;
-  logic [15:0] ts_delta_data;
+  mtsp_dbg_if  dbg_if(.clk(clk), .rst(rst));
 
   assign hit1_if.ready = 1'b1;
 
@@ -56,12 +50,12 @@ module tb_top;
     .asi_ctrl_data               (ctrl_if.data),
     .asi_ctrl_valid              (ctrl_if.valid),
     .asi_ctrl_ready              (ctrl_if.ready),
-    .aso_debug_ts_valid          (debug_ts_valid),
-    .aso_debug_ts_data           (debug_ts_data),
-    .aso_debug_burst_valid       (debug_burst_valid),
-    .aso_debug_burst_data        (debug_burst_data),
-    .aso_ts_delta_valid          (ts_delta_valid),
-    .aso_ts_delta_data           (ts_delta_data),
+    .aso_debug_ts_valid          (dbg_if.debug_ts_valid),
+    .aso_debug_ts_data           (dbg_if.debug_ts_data),
+    .aso_debug_burst_valid       (dbg_if.debug_burst_valid),
+    .aso_debug_burst_data        (dbg_if.debug_burst_data),
+    .aso_ts_delta_valid          (dbg_if.ts_delta_valid),
+    .aso_ts_delta_data           (dbg_if.ts_delta_data),
     .i_rst                       (rst),
     .i_clk                       (clk)
   );
@@ -85,12 +79,18 @@ module tb_top;
   initial begin
     uvm_config_db#(virtual mtsp_csr_if.drv)::set(
       null, "uvm_test_top.m_env.m_csr_drv", "vif", csr_if);
+    uvm_config_db#(virtual mtsp_csr_if.mon)::set(
+      null, "uvm_test_top.m_env.m_csr_mon", "vif", csr_if);
     uvm_config_db#(virtual mtsp_ctrl_if.drv)::set(
       null, "uvm_test_top.m_env.m_ctrl_drv", "vif", ctrl_if);
     uvm_config_db#(virtual mtsp_hit0_if.drv)::set(
       null, "uvm_test_top.m_env.m_hit0_drv", "vif", hit0_if);
+    uvm_config_db#(virtual mtsp_hit0_if.mon)::set(
+      null, "uvm_test_top.m_env.m_hit0_mon", "vif", hit0_if);
     uvm_config_db#(virtual mtsp_hit1_if.mon)::set(
       null, "uvm_test_top.m_env.m_hit1_mon", "vif", hit1_if);
+    uvm_config_db#(virtual mtsp_dbg_if.mon)::set(
+      null, "uvm_test_top.m_env.m_dbg_mon", "vif", dbg_if);
     uvm_config_db#(virtual mtsp_ctrl_if.mon)::set(
       null, "uvm_test_top", "ctrl_vif", ctrl_if);
 

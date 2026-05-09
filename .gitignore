@@ -4,3 +4,7 @@ greybox_tmp/
 a5_pin_model_dump.txt
 syn/quartus/a5_pin_model_dump.txt
 tb/sim_work/
+.questa_static_screen/
+lpm/
+modelsim.ini
+work/

@@ -72,3 +72,19 @@ interface mtsp_hit1_if(input logic clk, input logic rst);
     input channel, sop, eop, data, valid, ready, empty, error, clk, rst
   );
 endinterface
+
+interface mtsp_dbg_if(input logic clk, input logic rst);
+  logic        debug_ts_valid;
+  logic [15:0] debug_ts_data;
+  logic        debug_burst_valid;
+  logic [15:0] debug_burst_data;
+  logic        ts_delta_valid;
+  logic [15:0] ts_delta_data;
+
+  modport mon (
+    input debug_ts_valid, debug_ts_data,
+          debug_burst_valid, debug_burst_data,
+          ts_delta_valid, ts_delta_data,
+          clk, rst
+  );
+endinterface

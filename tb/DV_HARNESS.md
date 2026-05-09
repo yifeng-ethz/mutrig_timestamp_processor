@@ -140,6 +140,10 @@ Responsibilities:
 - correlate side-stream timing with `hit_out.valid`
 - capture `debug_ts` range checks against programmed `expected_latency`
 - capture delta and sign behavior in `debug_burst` and `ts_delta`
+- publish a dedicated debug analysis stream into the scoreboard. This is not
+  optional bring-up logging; every payload hit observed on the normal
+  `hit_type1` path must have a matching `debug_ts` sample, and the scoreboard
+  treats missing or misaligned debug samples as a closure blocker.
 
 ## 4. Scoreboard Model
 
@@ -199,6 +203,18 @@ Mirror:
 - `aso_hit_type1_error` range check against `expected_latency`
 - `debug_burst` trimmed delta fields
 - `ts_delta` sign-magnitude to two's-complement conversion
+
+The implemented UVM scoreboard now runs a dual-path cross-check:
+- normal path: accepted `hit_type1` payload beats from the output monitor
+- debug path: `debug_ts`, `debug_burst`, and `ts_delta` observations from the
+  debug monitor
+- CSR path: writes to `EXPECTED_LATENCY` update the scoreboard math window
+- input path: accepted `hit_type0` beats provide the checkpoint count
+
+For each normal payload beat, the scoreboard pairs the next `debug_ts` sample
+at the same simulation time, records a per-hit trace entry, and recomputes the
+timestamp-delay error from `debug_ts` and the current latency CSR. A mismatch
+between that math result and `aso_hit_type1_error` is a `UVM_ERROR`.
 
 ### 4.7 Upgrade-gating model
 

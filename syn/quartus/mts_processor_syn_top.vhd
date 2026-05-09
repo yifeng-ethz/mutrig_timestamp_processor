@@ -114,9 +114,11 @@ begin
                 asi_hit_type0_channel       <= (others => '0');
                 asi_hit_type0_startofpacket <= '0';
                 asi_hit_type0_endofpacket   <= '0';
+                asi_hit_type0_endofrun      <= '0';
                 asi_hit_type0_error         <= (others => '0');
                 asi_hit_type0_data          <= (others => '0');
                 asi_hit_type0_valid         <= '0';
+                aso_hit_type1_ready         <= '1';
                 asi_ctrl_data               <= (others => '0');
                 asi_ctrl_valid              <= '0';
             else
@@ -144,7 +146,10 @@ begin
                     asi_hit_type0_channel       <= std_logic_vector(stim_ctr(5 downto 0));
                     asi_hit_type0_error         <= std_logic_vector(stim_ctr(10 downto 8));
                     asi_hit_type0_data          <= std_logic_vector(stim_ctr(12 downto 0)) & std_logic_vector(stim_ctr);
+                    asi_hit_type0_endofrun      <= '0';
                 end if;
+
+                aso_hit_type1_ready <= '1';
 
                 if (asi_ctrl_valid = '0') or (asi_ctrl_ready = '1') then
                     ctrl_state     := to_integer(stim_ctr(10 downto 7)) mod 9;

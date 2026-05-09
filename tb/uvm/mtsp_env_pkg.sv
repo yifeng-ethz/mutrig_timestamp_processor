@@ -4,7 +4,10 @@ package mtsp_env_pkg;
   import uvm_pkg::*;
   `include "uvm_macros.svh"
 
+  `uvm_analysis_imp_decl(_csr)
+  `uvm_analysis_imp_decl(_hit0)
   `uvm_analysis_imp_decl(_hit1)
+  `uvm_analysis_imp_decl(_dbg)
 
   localparam logic [8:0] CTRL_IDLE        = 9'b000000001;
   localparam logic [8:0] CTRL_RUN_PREPARE = 9'b000000010;
@@ -12,6 +15,12 @@ package mtsp_env_pkg;
   localparam logic [8:0] CTRL_RUNNING     = 9'b000001000;
   localparam logic [8:0] CTRL_TERMINATING = 9'b000010000;
   localparam time CLK_PERIOD_PS           = 8000ps;
+
+  typedef enum int unsigned {
+    MTSP_DBG_TS,
+    MTSP_DBG_BURST,
+    MTSP_DBG_TS_DELTA
+  } mtsp_dbg_kind_e;
 
   class mtsp_csr_item extends uvm_sequence_item;
     `uvm_object_utils(mtsp_csr_item)
@@ -50,6 +59,20 @@ package mtsp_env_pkg;
     endfunction
   endclass
 
+  class mtsp_csr_obs_item extends uvm_object;
+    `uvm_object_utils(mtsp_csr_obs_item)
+
+    bit        is_write;
+    bit [2:0]  address;
+    bit [31:0] writedata;
+    bit [31:0] readdata;
+    time       time_ps;
+
+    function new(string name = "mtsp_csr_obs_item");
+      super.new(name);
+    endfunction
+  endclass
+
   class mtsp_hit0_item extends uvm_sequence_item;
     `uvm_object_utils(mtsp_hit0_item)
 
@@ -73,6 +96,22 @@ package mtsp_env_pkg;
     endfunction
   endclass
 
+  class mtsp_hit0_obs_item extends uvm_object;
+    `uvm_object_utils(mtsp_hit0_obs_item)
+
+    bit [5:0]  channel;
+    bit        sop;
+    bit        eop;
+    bit        endofrun;
+    bit [2:0]  error;
+    bit [44:0] data;
+    time       time_ps;
+
+    function new(string name = "mtsp_hit0_obs_item");
+      super.new(name);
+    endfunction
+  endclass
+
   class mtsp_hit1_obs_item extends uvm_object;
     `uvm_object_utils(mtsp_hit1_obs_item)
 
@@ -86,6 +125,39 @@ package mtsp_env_pkg;
     time       time_ps;
 
     function new(string name = "mtsp_hit1_obs_item");
+      super.new(name);
+    endfunction
+  endclass
+
+  class mtsp_dbg_obs_item extends uvm_object;
+    `uvm_object_utils(mtsp_dbg_obs_item)
+
+    mtsp_dbg_kind_e kind;
+    bit [15:0]      data;
+    bit [31:0]      expected_latency;
+    time            time_ps;
+
+    function new(string name = "mtsp_dbg_obs_item");
+      super.new(name);
+      expected_latency = 32'd2000;
+    endfunction
+  endclass
+
+  class mtsp_hit_trace_item extends uvm_object;
+    `uvm_object_utils(mtsp_hit_trace_item)
+
+    int unsigned seq_id;
+    time         hit1_time_ps;
+    time         debug_time_ps;
+    bit [3:0]    channel;
+    bit [38:0]   data;
+    bit          hit1_error;
+    bit [15:0]   debug_ts;
+    int signed   debug_delta;
+    bit [31:0]   expected_latency;
+    bit          math_error;
+
+    function new(string name = "mtsp_hit_trace_item");
       super.new(name);
     endfunction
   endclass
@@ -143,6 +215,44 @@ package mtsp_env_pkg;
         vif.write     <= 1'b0;
         vif.writedata <= '0;
         seq_item_port.item_done();
+      end
+    endtask
+  endclass
+
+  class mtsp_csr_monitor extends uvm_monitor;
+    `uvm_component_utils(mtsp_csr_monitor)
+
+    virtual mtsp_csr_if.mon vif;
+    uvm_analysis_port #(mtsp_csr_obs_item) ap;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      ap = new("ap", this);
+      if (!uvm_config_db#(virtual mtsp_csr_if.mon)::get(this, "", "vif", vif))
+        `uvm_fatal("MTSP_CSR_MON", "Missing mtsp_csr_if.mon")
+    endfunction
+
+    task run_phase(uvm_phase phase);
+      mtsp_csr_obs_item obs;
+
+      forever begin
+        @(posedge vif.clk);
+        if (vif.rst === 1'b1)
+          continue;
+        if ((vif.write === 1'b1 || vif.read === 1'b1) &&
+            vif.waitrequest !== 1'b1) begin
+          obs           = mtsp_csr_obs_item::type_id::create("csr_obs");
+          obs.is_write  = vif.write;
+          obs.address   = vif.address;
+          obs.writedata = vif.writedata;
+          obs.readdata  = vif.readdata;
+          obs.time_ps   = $time;
+          ap.write(obs);
+        end
       end
     endtask
   endclass
@@ -265,6 +375,45 @@ package mtsp_env_pkg;
     endtask
   endclass
 
+  class mtsp_hit0_monitor extends uvm_monitor;
+    `uvm_component_utils(mtsp_hit0_monitor)
+
+    virtual mtsp_hit0_if.mon vif;
+    uvm_analysis_port #(mtsp_hit0_obs_item) ap;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      ap = new("ap", this);
+      if (!uvm_config_db#(virtual mtsp_hit0_if.mon)::get(this, "", "vif", vif))
+        `uvm_fatal("MTSP_HIT0_MON", "Missing mtsp_hit0_if.mon")
+    endfunction
+
+    task run_phase(uvm_phase phase);
+      mtsp_hit0_obs_item obs;
+
+      forever begin
+        @(posedge vif.clk);
+        if (vif.rst === 1'b1)
+          continue;
+        if (vif.valid === 1'b1 && vif.ready === 1'b1) begin
+          obs          = mtsp_hit0_obs_item::type_id::create("hit0_obs");
+          obs.channel  = vif.channel;
+          obs.sop      = vif.sop;
+          obs.eop      = vif.eop;
+          obs.endofrun = vif.endofrun;
+          obs.error    = vif.error;
+          obs.data     = vif.data;
+          obs.time_ps  = $time;
+          ap.write(obs);
+        end
+      end
+    endtask
+  endclass
+
   class mtsp_hit1_monitor extends uvm_monitor;
     `uvm_component_utils(mtsp_hit1_monitor)
 
@@ -305,20 +454,11 @@ package mtsp_env_pkg;
     endtask
   endclass
 
-  class mtsp_scoreboard extends uvm_component;
-    `uvm_component_utils(mtsp_scoreboard)
+  class mtsp_dbg_monitor extends uvm_monitor;
+    `uvm_component_utils(mtsp_dbg_monitor)
 
-    uvm_analysis_imp_hit1 #(mtsp_hit1_obs_item, mtsp_scoreboard) hit1_imp;
-
-    int unsigned beat_count;
-    int unsigned eop_count;
-    int unsigned empty_eop_count;
-
-    time         last_eop_time_ps;
-    bit          last_eop_empty;
-    bit [38:0]   last_eop_data;
-
-    mtsp_hit1_obs_item history[$];
+    virtual mtsp_dbg_if.mon vif;
+    uvm_analysis_port #(mtsp_dbg_obs_item) ap;
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -326,18 +466,173 @@ package mtsp_env_pkg;
 
     function void build_phase(uvm_phase phase);
       super.build_phase(phase);
+      ap = new("ap", this);
+      if (!uvm_config_db#(virtual mtsp_dbg_if.mon)::get(this, "", "vif", vif))
+        `uvm_fatal("MTSP_DBG_MON", "Missing mtsp_dbg_if.mon")
+    endfunction
+
+    task run_phase(uvm_phase phase);
+      mtsp_dbg_obs_item obs;
+
+      forever begin
+        @(posedge vif.clk);
+        if (vif.rst === 1'b1)
+          continue;
+
+        if (vif.debug_ts_valid === 1'b1) begin
+          obs         = mtsp_dbg_obs_item::type_id::create("dbg_ts_obs");
+          obs.kind    = MTSP_DBG_TS;
+          obs.data    = vif.debug_ts_data;
+          obs.time_ps = $time;
+          ap.write(obs);
+        end
+
+        if (vif.debug_burst_valid === 1'b1) begin
+          obs         = mtsp_dbg_obs_item::type_id::create("dbg_burst_obs");
+          obs.kind    = MTSP_DBG_BURST;
+          obs.data    = vif.debug_burst_data;
+          obs.time_ps = $time;
+          ap.write(obs);
+        end
+
+        if (vif.ts_delta_valid === 1'b1) begin
+          obs         = mtsp_dbg_obs_item::type_id::create("ts_delta_obs");
+          obs.kind    = MTSP_DBG_TS_DELTA;
+          obs.data    = vif.ts_delta_data;
+          obs.time_ps = $time;
+          ap.write(obs);
+        end
+      end
+    endtask
+  endclass
+
+  class mtsp_scoreboard extends uvm_component;
+    `uvm_component_utils(mtsp_scoreboard)
+
+    uvm_analysis_imp_csr  #(mtsp_csr_obs_item,  mtsp_scoreboard) csr_imp;
+    uvm_analysis_imp_hit0 #(mtsp_hit0_obs_item, mtsp_scoreboard) hit0_imp;
+    uvm_analysis_imp_hit1 #(mtsp_hit1_obs_item, mtsp_scoreboard) hit1_imp;
+    uvm_analysis_imp_dbg  #(mtsp_dbg_obs_item,  mtsp_scoreboard) dbg_imp;
+
+    int unsigned beat_count;
+    int unsigned payload_beat_count;
+    int unsigned input_accept_count;
+    int unsigned eop_count;
+    int unsigned empty_eop_count;
+    int unsigned debug_ts_count;
+    int unsigned debug_burst_count;
+    int unsigned ts_delta_count;
+    int unsigned dual_path_pair_count;
+    int unsigned trace_seq;
+    bit [31:0]   expected_latency;
+
+    time         last_eop_time_ps;
+    bit          last_eop_empty;
+    bit [38:0]   last_eop_data;
+
+    mtsp_hit1_obs_item history[$];
+    mtsp_hit0_obs_item hit0_history[$];
+    mtsp_dbg_obs_item  debug_ts_history[$];
+    mtsp_dbg_obs_item  debug_burst_history[$];
+    mtsp_dbg_obs_item  ts_delta_history[$];
+    mtsp_hit_trace_item trace_history[$];
+
+    mtsp_hit1_obs_item pending_hit1[$];
+    mtsp_dbg_obs_item  pending_debug_ts[$];
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      csr_imp          = new("csr_imp", this);
+      hit0_imp         = new("hit0_imp", this);
       hit1_imp         = new("hit1_imp", this);
+      dbg_imp          = new("dbg_imp", this);
       beat_count       = 0;
+      payload_beat_count = 0;
+      input_accept_count = 0;
       eop_count        = 0;
       empty_eop_count  = 0;
+      debug_ts_count   = 0;
+      debug_burst_count = 0;
+      ts_delta_count   = 0;
+      dual_path_pair_count = 0;
+      trace_seq        = 0;
+      expected_latency = 32'd2000;
       last_eop_time_ps = 0;
       last_eop_empty   = 1'b0;
       last_eop_data    = '0;
     endfunction
 
+    function automatic int signed signed16(bit [15:0] value);
+      bit signed [15:0] signed_value;
+      signed_value = value;
+      return signed_value;
+    endfunction
+
+    function automatic bit delay_math_error(bit [15:0] debug_ts,
+                                            bit [31:0] latency);
+      int signed delta;
+      delta = signed16(debug_ts);
+      return !((delta > 0) && (delta < int'(latency)));
+    endfunction
+
+    function void pair_debug_ts();
+      mtsp_hit1_obs_item  hit;
+      mtsp_dbg_obs_item   dbg;
+      mtsp_hit_trace_item trace;
+
+      while (pending_hit1.size() > 0 && pending_debug_ts.size() > 0) begin
+        hit = pending_hit1.pop_front();
+        dbg = pending_debug_ts.pop_front();
+
+        trace                  = mtsp_hit_trace_item::type_id::create("hit_trace");
+        trace.seq_id           = trace_seq++;
+        trace.hit1_time_ps     = hit.time_ps;
+        trace.debug_time_ps    = dbg.time_ps;
+        trace.channel          = hit.channel;
+        trace.data             = hit.data;
+        trace.hit1_error       = hit.error;
+        trace.debug_ts         = dbg.data;
+        trace.debug_delta      = signed16(dbg.data);
+        trace.expected_latency = dbg.expected_latency;
+        trace.math_error       = delay_math_error(dbg.data, dbg.expected_latency);
+        trace_history.push_back(trace);
+        dual_path_pair_count++;
+
+        if (hit.time_ps != dbg.time_ps)
+          `uvm_error("MTSP_DUAL_PATH",
+            $sformatf("hit/debug_ts alignment mismatch: hit_time=%0t debug_time=%0t seq=%0d",
+              hit.time_ps, dbg.time_ps, trace.seq_id))
+
+        if (hit.error !== trace.math_error)
+          `uvm_error("MTSP_DELAY_MATH",
+            $sformatf("hit_type1 error mismatch against debug_ts math: seq=%0d channel=%0h debug_ts=%0d expected_latency=%0d math_error=%0b hit_error=%0b data=0x%010h",
+              trace.seq_id, hit.channel, trace.debug_delta, trace.expected_latency,
+              trace.math_error, hit.error, hit.data))
+      end
+    endfunction
+
+    function void write_csr(mtsp_csr_obs_item item);
+      if (item.is_write && item.address == 3'd2)
+        expected_latency = item.writedata;
+    endfunction
+
+    function void write_hit0(mtsp_hit0_obs_item item);
+      hit0_history.push_back(item);
+      input_accept_count++;
+    endfunction
+
     function void write_hit1(mtsp_hit1_obs_item item);
       history.push_back(item);
       beat_count++;
+      if (!item.empty) begin
+        payload_beat_count++;
+        pending_hit1.push_back(item);
+        pair_debug_ts();
+      end
       if (item.eop) begin
         eop_count++;
         last_eop_time_ps = item.time_ps;
@@ -348,10 +643,43 @@ package mtsp_env_pkg;
       end
     endfunction
 
+    function void write_dbg(mtsp_dbg_obs_item item);
+      item.expected_latency = expected_latency;
+      case (item.kind)
+        MTSP_DBG_TS: begin
+          debug_ts_history.push_back(item);
+          debug_ts_count++;
+          pending_debug_ts.push_back(item);
+          pair_debug_ts();
+        end
+        MTSP_DBG_BURST: begin
+          debug_burst_history.push_back(item);
+          debug_burst_count++;
+        end
+        MTSP_DBG_TS_DELTA: begin
+          ts_delta_history.push_back(item);
+          ts_delta_count++;
+        end
+        default: begin
+          `uvm_error("MTSP_DBG", "Unknown debug observation kind")
+        end
+      endcase
+    endfunction
+
     function void report_phase(uvm_phase phase);
+      if (payload_beat_count > 0 && debug_ts_count == 0)
+        `uvm_error("MTSP_DUAL_PATH",
+          "Normal hit output was observed but the debug_ts analysis path reported no samples")
+      if (pending_hit1.size() != 0 || pending_debug_ts.size() != 0)
+        `uvm_error("MTSP_DUAL_PATH",
+          $sformatf("Unpaired normal/debug_ts samples remain: normal=%0d debug_ts=%0d",
+            pending_hit1.size(), pending_debug_ts.size()))
+
       `uvm_info("MTSP_SCB",
-        $sformatf("beats=%0d eops=%0d empty_eops=%0d",
-          beat_count, eop_count, empty_eop_count),
+        $sformatf("inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d dual_path_pairs=%0d traces=%0d",
+          input_accept_count, beat_count, payload_beat_count, eop_count,
+          empty_eop_count, debug_ts_count, debug_burst_count, ts_delta_count,
+          dual_path_pair_count, trace_history.size()),
         UVM_LOW)
     endfunction
   endclass
@@ -363,9 +691,12 @@ package mtsp_env_pkg;
     uvm_sequencer #(mtsp_ctrl_item) m_ctrl_sqr;
     uvm_sequencer #(mtsp_hit0_item) m_hit0_sqr;
     mtsp_csr_driver                 m_csr_drv;
+    mtsp_csr_monitor                m_csr_mon;
     mtsp_ctrl_driver                m_ctrl_drv;
     mtsp_hit0_driver                m_hit0_drv;
+    mtsp_hit0_monitor               m_hit0_mon;
     mtsp_hit1_monitor               m_hit1_mon;
+    mtsp_dbg_monitor                m_dbg_mon;
     mtsp_scoreboard                 m_scb;
 
     function new(string name, uvm_component parent);
@@ -378,9 +709,12 @@ package mtsp_env_pkg;
       m_ctrl_sqr = uvm_sequencer#(mtsp_ctrl_item)::type_id::create("m_ctrl_sqr", this);
       m_hit0_sqr = uvm_sequencer#(mtsp_hit0_item)::type_id::create("m_hit0_sqr", this);
       m_csr_drv  = mtsp_csr_driver::type_id::create("m_csr_drv", this);
+      m_csr_mon  = mtsp_csr_monitor::type_id::create("m_csr_mon", this);
       m_ctrl_drv = mtsp_ctrl_driver::type_id::create("m_ctrl_drv", this);
       m_hit0_drv = mtsp_hit0_driver::type_id::create("m_hit0_drv", this);
+      m_hit0_mon = mtsp_hit0_monitor::type_id::create("m_hit0_mon", this);
       m_hit1_mon = mtsp_hit1_monitor::type_id::create("m_hit1_mon", this);
+      m_dbg_mon  = mtsp_dbg_monitor::type_id::create("m_dbg_mon", this);
       m_scb      = mtsp_scoreboard::type_id::create("m_scb", this);
     endfunction
 
@@ -389,7 +723,10 @@ package mtsp_env_pkg;
       m_csr_drv.seq_item_port.connect(m_csr_sqr.seq_item_export);
       m_ctrl_drv.seq_item_port.connect(m_ctrl_sqr.seq_item_export);
       m_hit0_drv.seq_item_port.connect(m_hit0_sqr.seq_item_export);
+      m_csr_mon.ap.connect(m_scb.csr_imp);
+      m_hit0_mon.ap.connect(m_scb.hit0_imp);
       m_hit1_mon.ap.connect(m_scb.hit1_imp);
+      m_dbg_mon.ap.connect(m_scb.dbg_imp);
     endfunction
   endclass
 

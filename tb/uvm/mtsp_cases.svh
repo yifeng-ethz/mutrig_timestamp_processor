@@ -322,6 +322,37 @@
         `uvm_fatal("MTSP_CASE", "expected_latency=0 must force hit_type1 error high")
     endtask
 
+    task automatic do_corner_127_delay_error_sideband_tracks_hit();
+      int unsigned       base_beats;
+      int unsigned       base_history_size;
+      mtsp_hit1_obs_item err_obs;
+      mtsp_hit1_obs_item clean_obs;
+
+      wait_for_reset_release();
+      run_start();
+
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+
+      csr_write(3'd2, 32'h0000_0000);
+      wait_cycles(2);
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128, $sformatf("%s forced-error hit", case_id));
+
+      csr_write(3'd2, 32'd2000);
+      wait_cycles(2);
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b0, 1'b0);
+      wait_for_beat_count(base_beats + 2, 128, $sformatf("%s restored-clean hit", case_id));
+
+      err_obs   = m_env.m_scb.history[base_history_size];
+      clean_obs = m_env.m_scb.history[base_history_size + 1];
+
+      if (err_obs.error !== 1'b1)
+        `uvm_fatal("MTSP_CASE", "Forced-error hit must carry hit_type1 error high on its own beat")
+      if (clean_obs.error !== 1'b0)
+        `uvm_fatal("MTSP_CASE", "Clean hit after expected_latency restore must not inherit the prior error")
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -345,6 +376,7 @@
         "STD_MTS_077_terminating_input_eop_forwards_output_eop": do_std_077_terminating_input_eop_forwards_output_eop();
         "STD_MTS_078_nonterminating_eop_not_forwarded": do_std_078_nonterminating_eop_not_forwarded();
         "CORNER_MTS_011_expected_latency_zero": do_corner_011_expected_latency_zero();
+        "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();
         default: run_generic_case();
