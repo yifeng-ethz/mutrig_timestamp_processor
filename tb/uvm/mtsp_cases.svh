@@ -5,6 +5,8 @@
     localparam bit [31:0] CSR_CTRL_WRITE_DEFAULT = 32'h2000_0011;
     localparam bit [31:0] CSR_CTRL_READ_DEFAULT_IDLE = 32'h2000_0010;
     localparam bit [31:0] CSR_CTRL_MODE_MASK = 32'h7000_0000;
+    bit          raw_by_decoded_loaded;
+    int unsigned raw_by_decoded[int unsigned];
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -13,6 +15,7 @@
 
     function void build_phase(uvm_phase phase);
       super.build_phase(phase);
+      raw_by_decoded_loaded = 1'b0;
       if (!$value$plusargs("MTSP_CASE_ID=%s", case_id))
         `uvm_fatal("MTSP_CASE", "Missing +MTSP_CASE_ID=<doc_case_id>")
     endfunction
@@ -22,6 +25,65 @@
         return null;
       return m_env.m_scb.history[m_env.m_scb.history.size() - 1];
     endfunction
+
+    function automatic mtsp_hit_trace_item find_last_trace();
+      if (m_env.m_scb.trace_history.size() == 0)
+        return null;
+      return m_env.m_scb.trace_history[m_env.m_scb.trace_history.size() - 1];
+    endfunction
+
+    task automatic load_rom_inverse();
+      int          fd;
+      int          parsed;
+      string       line;
+      int unsigned raw_value;
+      bit [14:0]   decoded_value;
+
+      if (raw_by_decoded_loaded)
+        return;
+
+      fd = $fopen("dual_port_rom_init.txt", "r");
+      if (fd == 0)
+        `uvm_fatal("MTSP_ROM", "Could not open dual_port_rom_init.txt from simulation working directory")
+
+      raw_by_decoded.delete();
+      while ($fgets(line, fd)) begin
+        raw_value     = '0;
+        decoded_value = '0;
+        parsed = $sscanf(line, "@%h %b", raw_value, decoded_value);
+        if (parsed == 2)
+          raw_by_decoded[int'(decoded_value)] = raw_value;
+      end
+      $fclose(fd);
+
+      raw_by_decoded_loaded = 1'b1;
+      if (!raw_by_decoded.exists(0) || !raw_by_decoded.exists(80))
+        `uvm_fatal("MTSP_ROM", "ROM inverse table did not contain required decoded timestamp anchors")
+    endtask
+
+    task automatic lookup_raw_for_quotient(int unsigned quotient,
+                                           int unsigned remainder,
+                                           output int unsigned raw_value,
+                                           input string ctx);
+      int unsigned decoded_value;
+
+      if (remainder > 4)
+        `uvm_fatal("MTSP_ROM",
+          $sformatf("%s illegal divide-by-5 remainder %0d", ctx, remainder))
+
+      decoded_value = (quotient * 5) + remainder;
+      if (decoded_value > 32767)
+        `uvm_fatal("MTSP_ROM",
+          $sformatf("%s decoded timestamp %0d is outside the 15-bit ROM range",
+            ctx, decoded_value))
+
+      load_rom_inverse();
+      if (!raw_by_decoded.exists(decoded_value))
+        `uvm_fatal("MTSP_ROM",
+          $sformatf("%s no raw symbol found for decoded timestamp %0d",
+            ctx, decoded_value))
+      raw_value = raw_by_decoded[decoded_value];
+    endtask
 
     task automatic expect_last_payload_fields(int unsigned asic_value,
                                               int unsigned channel_value,
@@ -89,6 +151,67 @@
             ctx, expected_error, hit_obs.error, hit_obs.data))
     endtask
 
+    task automatic wait_for_trace_count(int unsigned expected_count,
+                                        int unsigned max_cycles,
+                                        string ctx);
+      repeat (max_cycles) begin
+        if (m_env.m_scb.trace_history.size() >= expected_count)
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+      `uvm_fatal("MTSP_TIMEOUT",
+        $sformatf("%s timed out waiting for trace_count=%0d, got %0d",
+          ctx, expected_count, m_env.m_scb.trace_history.size()))
+    endtask
+
+    task automatic expect_last_trace_delta(int signed min_delta,
+                                           int signed max_delta,
+                                           bit expected_error,
+                                           string ctx);
+      mtsp_hit_trace_item trace;
+
+      trace = find_last_trace();
+      if (trace == null)
+        `uvm_fatal("MTSP_CASE", $sformatf("%s expected a paired normal/debug trace", ctx))
+      if (trace.hit1_time_ps != trace.debug_time_ps)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected aligned normal/debug trace times, hit=%0t debug=%0t",
+            ctx, trace.hit1_time_ps, trace.debug_time_ps))
+      if (trace.debug_delta < min_delta || trace.debug_delta > max_delta)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected debug_delta in [%0d,%0d], got %0d",
+            ctx, min_delta, max_delta, trace.debug_delta))
+      if (trace.math_error !== expected_error || trace.hit1_error !== expected_error)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected error=%0b, got math_error=%0b hit_error=%0b debug_delta=%0d expected_latency=%0d",
+            ctx, expected_error, trace.math_error, trace.hit1_error,
+            trace.debug_delta, trace.expected_latency))
+      `uvm_info("MTSP_TRACE",
+        $sformatf("%s trace seq=%0d hit_time=%0t debug_time=%0t route=%0d debug_delta=%0d expected_latency=%0d error=%0b data=0x%010h",
+          ctx, trace.seq_id, trace.hit1_time_ps, trace.debug_time_ps,
+          trace.channel, trace.debug_delta, trace.expected_latency,
+          trace.hit1_error, trace.data),
+        UVM_LOW)
+    endtask
+
+    task automatic expect_last_trace_pair(string ctx);
+      mtsp_hit_trace_item trace;
+
+      trace = find_last_trace();
+      if (trace == null)
+        `uvm_fatal("MTSP_CASE", $sformatf("%s expected a paired normal/debug trace", ctx))
+      if (trace.hit1_time_ps != trace.debug_time_ps)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected aligned normal/debug trace times, hit=%0t debug=%0t",
+            ctx, trace.hit1_time_ps, trace.debug_time_ps))
+      `uvm_info("MTSP_TRACE",
+        $sformatf("%s trace seq=%0d hit_time=%0t debug_time=%0t route=%0d debug_delta=%0d expected_latency=%0d math_error=%0b hit_error=%0b data=0x%010h",
+          ctx, trace.seq_id, trace.hit1_time_ps, trace.debug_time_ps,
+          trace.channel, trace.debug_delta, trace.expected_latency,
+          trace.math_error, trace.hit1_error, trace.data),
+        UVM_LOW)
+    endtask
+
     task automatic expect_last_output_flags(bit expected_sop,
                                             bit expected_eop,
                                             bit expected_empty,
@@ -153,6 +276,57 @@
         tcc8n_value, tcc1n6_value, et1n6_value, ctx);
     endtask
 
+    task automatic send_quotient_hit_and_capture(int unsigned quotient,
+                                                 int unsigned remainder,
+                                                 int unsigned asic_value,
+                                                 int unsigned channel_value,
+                                                 int unsigned tfine_value,
+                                                 output int signed observed_delta,
+                                                 input string ctx);
+      int unsigned raw_value;
+      int unsigned base_beats;
+      int unsigned base_traces;
+      mtsp_hit_trace_item trace;
+
+      lookup_raw_for_quotient(quotient, remainder, raw_value, ctx);
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(asic_value, channel_value, raw_value, raw_value, 1'b0,
+        1'b1, 1'b0, '0, 1'b1, tfine_value);
+      wait_for_beat_count(base_beats + 1, 128, ctx);
+      wait_for_trace_count(base_traces + 1, 128, ctx);
+      expect_last_payload_math(asic_value, channel_value, tfine_value,
+        quotient, remainder, 9'd0, ctx);
+
+      trace = find_last_trace();
+      if (trace == null)
+        `uvm_fatal("MTSP_CASE", $sformatf("%s missing normal/debug trace", ctx))
+      observed_delta = trace.debug_delta;
+    endtask
+
+    task automatic calibrate_next_output_arrival(output int signed predicted_arrival,
+                                                 input string ctx);
+      int signed first_arrival;
+      int signed second_arrival;
+      int signed spacing;
+
+      send_quotient_hit_and_capture(0, 0, 2, 0, 0, first_arrival,
+        $sformatf("%s calibration hit 0", ctx));
+      send_quotient_hit_and_capture(0, 0, 2, 0, 1, second_arrival,
+        $sformatf("%s calibration hit 1", ctx));
+
+      spacing = second_arrival - first_arrival;
+      if (spacing <= 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected positive calibration spacing, first=%0d second=%0d",
+            ctx, first_arrival, second_arrival))
+      predicted_arrival = second_arrival + spacing;
+      `uvm_info("MTSP_TRACE",
+        $sformatf("%s calibrated next arrival=%0d from first=%0d second=%0d spacing=%0d",
+          ctx, predicted_arrival, first_arrival, second_arrival, spacing),
+        UVM_LOW)
+    endtask
+
     task automatic send_route_lane_hit_and_expect(int unsigned route_lane,
                                                   int unsigned payload_channel,
                                                   bit expected_sop,
@@ -160,36 +334,29 @@
       int unsigned tcc_raw_value;
       int unsigned tcc8n_value;
       int unsigned base_beats;
+      int unsigned base_traces;
 
       case (route_lane)
-        0: begin
-          tcc_raw_value = 15'h0001;
-          tcc8n_value   = 0;
-        end
-        1: begin
-          tcc_raw_value = 15'h7BBF;
-          tcc8n_value   = 16;
-        end
-        2: begin
-          tcc_raw_value = 15'h67AF;
-          tcc8n_value   = 32;
-        end
-        3: begin
-          tcc_raw_value = 15'h0005;
-          tcc8n_value   = 48;
-        end
+        0: tcc8n_value = 0;
+        1: tcc8n_value = 16;
+        2: tcc8n_value = 32;
+        3: tcc8n_value = 48;
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("%s unsupported route lane %0d", ctx, route_lane))
       endcase
 
-      base_beats = m_env.m_scb.beat_count;
+      lookup_raw_for_quotient(tcc8n_value, 0, tcc_raw_value, ctx);
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
       send_hit_beat(2, payload_channel, tcc_raw_value, tcc_raw_value, 1'b0,
         1'b1, 1'b0, '0, 1'b1, payload_channel[4:0]);
       wait_for_beat_count(base_beats + 1, 128, ctx);
+      wait_for_trace_count(base_traces + 1, 128, ctx);
       expect_last_payload_math(2, payload_channel, payload_channel,
         tcc8n_value, 3'd0, 9'd0, ctx);
       expect_last_output_flags(expected_sop, 1'b0, 1'b0, route_lane, ctx);
+      expect_last_trace_pair(ctx);
     endtask
 
     task automatic wait_inside_one_wrap_lookback(string ctx);
@@ -1349,6 +1516,155 @@
         $sformatf("%s FLUSHING output gate", case_id));
     endtask
 
+    task automatic do_std_081_route_lane0();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_route_lane_hit_and_expect(0, 0, 1'b1, case_id);
+    endtask
+
+    task automatic do_std_082_route_lane1();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_route_lane_hit_and_expect(1, 1, 1'b1, case_id);
+    endtask
+
+    task automatic do_std_083_route_lane2();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_route_lane_hit_and_expect(2, 2, 1'b1, case_id);
+    endtask
+
+    task automatic do_std_084_route_lane3();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      send_route_lane_hit_and_expect(3, 3, 1'b1, case_id);
+    endtask
+
+    task automatic do_std_085_error_low_in_range();
+      int signed observed_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_quotient_hit_and_capture(0, 0, 2, 0, 5'd2, observed_delta, case_id);
+      expect_last_payload_error(1'b0, case_id);
+      expect_last_trace_delta(1, 1999, 1'b0, case_id);
+    endtask
+
+    task automatic do_std_086_error_high_at_zero();
+      int signed   predicted_arrival;
+      int signed   observed_delta;
+      int unsigned target_quotient;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      calibrate_next_output_arrival(predicted_arrival, case_id);
+      if (predicted_arrival < 0 || predicted_arrival > 6553)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s calibrated quotient %0d is outside the ROM-backed range",
+            case_id, predicted_arrival))
+      target_quotient = predicted_arrival;
+      send_quotient_hit_and_capture(target_quotient, 0, 2, 1, 5'd3,
+        observed_delta, case_id);
+      expect_last_payload_error(1'b1, case_id);
+      expect_last_trace_delta(0, 0, 1'b1, case_id);
+    endtask
+
+    task automatic do_std_087_error_high_for_negative();
+      int signed   predicted_arrival;
+      int signed   observed_delta;
+      int unsigned target_quotient;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      calibrate_next_output_arrival(predicted_arrival, case_id);
+      if (predicted_arrival < 0 || predicted_arrival > 6537)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s calibrated quotient %0d leaves no room for ahead-of-arrival hit",
+            case_id, predicted_arrival))
+      target_quotient = predicted_arrival + 16;
+      send_quotient_hit_and_capture(target_quotient, 0, 2, 2, 5'd4,
+        observed_delta, case_id);
+      expect_last_payload_error(1'b1, case_id);
+      expect_last_trace_delta(-32768, -1, 1'b1, case_id);
+    endtask
+
+    task automatic do_std_088_error_high_at_or_above_limit();
+      int signed   predicted_arrival;
+      int signed   observed_delta;
+      int unsigned target_quotient;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd4);
+      wait_cycles(2);
+      run_start();
+      calibrate_next_output_arrival(predicted_arrival, case_id);
+      if (predicted_arrival < 4 || predicted_arrival > 6553)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s calibrated quotient %0d cannot produce the expected-latency edge",
+            case_id, predicted_arrival))
+      target_quotient = predicted_arrival - 4;
+      send_quotient_hit_and_capture(target_quotient, 0, 2, 3, 5'd5,
+        observed_delta, case_id);
+      expect_last_payload_error(1'b1, case_id);
+      expect_last_trace_delta(4, 32767, 1'b1, case_id);
+    endtask
+
+    task automatic do_std_089_debug_ts_valid_alignment();
+      int signed observed_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_quotient_hit_and_capture(0, 0, 2, 0, 5'd6, observed_delta, case_id);
+      expect_last_payload_error(1'b0, case_id);
+      expect_last_trace_delta(1, 1999, 1'b0, case_id);
+    endtask
+
+    task automatic do_std_090_delay_field_changes_error_source();
+      int unsigned t_raw;
+      int unsigned e_raw;
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      lookup_raw_for_quotient(0, 0, t_raw, $sformatf("%s T timestamp", case_id));
+      lookup_raw_for_quotient(2000, 0, e_raw, $sformatf("%s E timestamp", case_id));
+
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 4, t_raw, e_raw, 1'b1, 1'b1, 1'b0, '0, 1'b1, 5'd7);
+      wait_for_beat_count(base_beats + 1, 128, $sformatf("%s T-selected run", case_id));
+      wait_for_trace_count(base_traces + 1, 128, $sformatf("%s T-selected run", case_id));
+      expect_last_payload_math(2, 4, 5'd7, 13'd0, 3'd0, 9'd0,
+        $sformatf("%s T-selected run", case_id));
+      expect_last_payload_error(1'b0, $sformatf("%s T-selected run", case_id));
+      expect_last_trace_delta(1, 1999, 1'b0, $sformatf("%s T-selected run", case_id));
+
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(4);
+      configure_datapath_mode(1'b1, 1'b0, 1'b0);
+      run_start();
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 4, t_raw, e_raw, 1'b1, 1'b1, 1'b0, '0, 1'b1, 5'd8);
+      wait_for_beat_count(base_beats + 1, 128, $sformatf("%s E-selected run", case_id));
+      wait_for_trace_count(base_traces + 1, 128, $sformatf("%s E-selected run", case_id));
+      expect_last_payload_math(2, 4, 5'd8, 13'd0, 3'd0, 9'd0,
+        $sformatf("%s E-selected run", case_id));
+      expect_last_payload_error(1'b1, $sformatf("%s E-selected run", case_id));
+      expect_last_trace_delta(-32768, -1, 1'b1, $sformatf("%s E-selected run", case_id));
+    endtask
+
     task automatic do_corner_011_expected_latency_zero();
       int unsigned base_beats;
       mtsp_hit1_obs_item hit_obs;
@@ -1485,6 +1801,16 @@
         "STD_MTS_078_nonterminating_eop_not_forwarded": do_std_078_nonterminating_eop_not_forwarded();
         "STD_MTS_079_empty_stays_zero": do_std_079_empty_stays_zero();
         "STD_MTS_080_output_valid_only_in_run_or_flush": do_std_080_output_valid_only_in_run_or_flush();
+        "STD_MTS_081_route_lane0": do_std_081_route_lane0();
+        "STD_MTS_082_route_lane1": do_std_082_route_lane1();
+        "STD_MTS_083_route_lane2": do_std_083_route_lane2();
+        "STD_MTS_084_route_lane3": do_std_084_route_lane3();
+        "STD_MTS_085_error_low_in_range": do_std_085_error_low_in_range();
+        "STD_MTS_086_error_high_at_zero": do_std_086_error_high_at_zero();
+        "STD_MTS_087_error_high_for_negative": do_std_087_error_high_for_negative();
+        "STD_MTS_088_error_high_at_or_above_limit": do_std_088_error_high_at_or_above_limit();
+        "STD_MTS_089_debug_ts_valid_alignment": do_std_089_debug_ts_valid_alignment();
+        "STD_MTS_090_delay_field_changes_error_source": do_std_090_delay_field_changes_error_source();
         "CORNER_MTS_011_expected_latency_zero": do_corner_011_expected_latency_zero();
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
