@@ -150,15 +150,15 @@
 
 ## 12. Termination Edges
 
-- `E111 | CORNER_MTS_111_terminate_with_no_packet_open`: Enter `TERMINATING` when no packet is in transaction; verify no boundary appears unless a real terminating EOP is later accepted. Covers the empty-stop path.
-- `E112 | CORNER_MTS_112_terminate_one_cycle_before_eop`: Assert `TERMINATING` one cycle before a final accepted EOP beat; verify the delayed boundary is still created. Covers a near-stop race.
-- `E113 | CORNER_MTS_113_terminate_same_cycle_as_eop`: Assert `TERMINATING` on the same cycle as the accepted EOP beat; verify one delayed boundary is created. Covers a tighter race.
-- `E114 | CORNER_MTS_114_terminate_one_cycle_after_eop`: Assert `TERMINATING` one cycle after an EOP beat that was accepted in `RUNNING`; verify no output boundary is created. Documents the exact boundary condition.
-- `E115 | CORNER_MTS_115_idle_before_eop_delay_matures`: Send `IDLE` immediately after a terminating EOP is accepted; verify whether the current RTL suppresses the delayed boundary. Covers the known control race.
-- `E116 | CORNER_MTS_116_multiple_eops_in_flushing`: Accept multiple EOP-tagged beats in `FLUSHING`; verify whether multiple delayed boundary pulses can occur and capture the exact current behavior. Covers duplicate-boundary exposure.
-- `E117 | CORNER_MTS_117_packet_open_then_abort`: Accept SOP without a closing EOP, then force `IDLE`; verify packet bookkeeping clears on the next reset path. Covers incomplete-packet abort cleanup.
-- `E118 | CORNER_MTS_118_terminating_eop_disabled_sideband_channel`: Accept a terminating EOP on a sideband channel outside the enabled window; verify bookkeeping and boundary expectations match the configured loops. Covers sideband-window mismatch.
-- `E119 | CORNER_MTS_119_flushing_accepts_non_eop_hits`: Continue driving clean non-EOP hits in `FLUSHING`; verify the current RTL keeps accepting and emitting them. Documents the open-flush behavior precisely.
+- `E111 | CORNER_MTS_111_terminate_with_no_packet_open`: Enter `TERMINATING` when no packet is in transaction; verify no close marker appears before upstream `endofrun`, then verify the empty close-marker train. Covers the empty-stop path.
+- `E112 | CORNER_MTS_112_terminate_one_cycle_before_eop`: Assert `TERMINATING` one cycle before a final accepted EOP beat; verify the tail payload drains and the upstream `endofrun` produces the close-marker train. Covers a near-stop race.
+- `E113 | CORNER_MTS_113_terminate_same_cycle_as_eop`: Assert `TERMINATING` on the same cycle as the accepted EOP beat; verify the tail payload drains and the close-marker train is still created. Covers a tighter race.
+- `E114 | CORNER_MTS_114_terminate_one_cycle_after_eop`: Assert `TERMINATING` one cycle after an EOP beat that was accepted in `RUNNING`; verify no new payload/debug trace is created by the later terminate. Documents the exact boundary condition.
+- `E115 | CORNER_MTS_115_idle_before_eop_delay_matures`: Pulse `IDLE` while terminate work is still ready-low; verify the pulse is ignored and the tail payload plus close-marker train still complete. Covers the known control race.
+- `E116 | CORNER_MTS_116_multiple_eops_in_flushing`: Accept multiple EOP-tagged beats in `FLUSHING`; verify all tail payloads drain and the current RTL emits one close-marker train. Covers duplicate-boundary exposure.
+- `E117 | CORNER_MTS_117_packet_open_then_abort`: Accept SOP without a closing EOP, force `IDLE`, then re-arm and terminate; verify packet bookkeeping clears on the next reset path. Covers incomplete-packet abort cleanup.
+- `E118 | CORNER_MTS_118_terminating_eop_disabled_sideband_channel`: Accept a terminating EOP on a sideband channel outside the enabled window; verify payload drain and close-marker expectations match the configured loops. Covers sideband-window mismatch.
+- `E119 | CORNER_MTS_119_flushing_accepts_non_eop_hits`: Continue driving clean non-SOP/non-EOP hits in `FLUSHING`; verify the current RTL keeps accepting and emitting them before upstream `endofrun`. Documents the open-flush behavior precisely.
 - `E120 | CORNER_MTS_120_upgrade_ready_should_wait_for_drain`: Mark the future case in which control ready must remain low across local drain work. This is a boundary-focused upgrade gate.
 
 ## 13. Upgrade-Readiness Edges

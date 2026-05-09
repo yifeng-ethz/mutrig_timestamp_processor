@@ -3816,6 +3816,250 @@
       do_std_080_output_valid_only_in_run_or_flush();
     endtask
 
+    task automatic expect_empty_close_markers_sop_since(int unsigned base_history_size,
+                                                        bit          expected_sop,
+                                                        string       ctx);
+      int unsigned marker_count;
+
+      marker_count = 0;
+      for (int idx = base_history_size; idx < m_env.m_scb.history.size(); idx++) begin
+        mtsp_hit1_obs_item obs;
+        obs = m_env.m_scb.history[idx];
+        if (obs.empty && obs.eop) begin
+          marker_count++;
+          if (obs.sop !== expected_sop)
+            `uvm_fatal("MTSP_CASE",
+              $sformatf("%s close marker lane=%0d expected SOP=%0b got %0b",
+                ctx, obs.channel, expected_sop, obs.sop))
+        end
+      end
+      if (marker_count == 0)
+        `uvm_fatal("MTSP_CASE", $sformatf("%s expected close markers", ctx))
+    endtask
+
+    task automatic do_corner_111_terminate_with_no_packet_open();
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats        = m_env.m_scb.beat_count;
+      base_eops         = m_env.m_scb.eop_count;
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 32,
+        $sformatf("%s no close marker before upstream endofrun", case_id));
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s empty close marker train", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 0, case_id);
+      expect_empty_close_markers_sop_since(base_history_size, 1'b1, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_112_terminate_one_cycle_before_eop();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_cycles(1);
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", case_id));
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s one-cycle-before-eop payload trace", case_id));
+      expect_last_trace_pair($sformatf("%s one-cycle-before-eop payload trace", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s one-cycle-before-eop close markers", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_113_terminate_same_cycle_as_eop();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      fork
+        pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+        send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
+      join
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s same-cycle-eop payload trace", case_id));
+      expect_last_trace_pair($sformatf("%s same-cycle-eop payload trace", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s same-cycle-eop close markers", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_114_terminate_one_cycle_after_eop();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
+      wait_for_trace_count(m_env.m_scb.trace_history.size() + 1, 128,
+        $sformatf("%s pre-terminate eop payload trace", case_id));
+      wait_cycles(1);
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s post-eop terminate close markers", case_id));
+      if (m_env.m_scb.trace_history.size() != base_traces)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected no new payload trace after post-EOP terminate, got %0d from base %0d",
+            case_id, m_env.m_scb.trace_history.size(), base_traces))
+      expect_close_markers_since(base_history_size, 4'b1111, 0, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_115_idle_before_eop_delay_matures();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", case_id));
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
+      pulse_ctrl(CTRL_IDLE, "IDLE_before_eop_delay");
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s idle-before-delay payload trace", case_id));
+      expect_last_trace_pair($sformatf("%s idle-before-delay payload trace", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s idle-before-delay close markers", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_116_multiple_eops_in_flushing();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", case_id));
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
+      send_hit_beat(2, 1, 15'h0013, 15'h001F, 1'b1, 1'b0, 1'b1);
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 2, 128,
+        $sformatf("%s multi-eop payload traces", case_id));
+      expect_last_trace_pair($sformatf("%s multi-eop second payload", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s multi-eop close markers", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 2, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_117_packet_open_then_abort();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_trace_count(1, 128, $sformatf("%s open-packet payload", case_id));
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(2);
+      expect_hit0_ready(1'b0, $sformatf("%s aborted idle ready", case_id));
+
+      run_start();
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s post-abort close markers", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 0, case_id);
+      expect_empty_close_markers_sop_since(base_history_size, 1'b1, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_118_terminating_eop_disabled_sideband_channel();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", case_id));
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      send_hit_beat_with_sideband(5, 2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s outside-window eop payload trace", case_id));
+      expect_last_trace_pair($sformatf("%s outside-window eop payload trace", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s outside-window close markers", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_119_flushing_accepts_non_eop_hits();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", case_id));
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b0);
+      send_hit_beat(2, 1, 15'h0013, 15'h001F, 1'b1, 1'b0, 1'b0);
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 2, 128,
+        $sformatf("%s non-eop flushing payload traces", case_id));
+      expect_last_trace_pair($sformatf("%s non-eop flushing second payload", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s non-eop flushing close markers", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 2, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
     task automatic do_corner_127_delay_error_sideband_tracks_hit();
       int unsigned       base_beats;
       int unsigned       base_history_size;
@@ -4062,6 +4306,15 @@
         "CORNER_MTS_108_input_ready_high_in_reset_sclr": do_corner_108_input_ready_high_in_reset_sclr();
         "CORNER_MTS_109_input_ready_low_in_reset_sync": do_corner_109_input_ready_low_in_reset_sync();
         "CORNER_MTS_110_output_quiet_outside_running_flush": do_corner_110_output_quiet_outside_running_flush();
+        "CORNER_MTS_111_terminate_with_no_packet_open": do_corner_111_terminate_with_no_packet_open();
+        "CORNER_MTS_112_terminate_one_cycle_before_eop": do_corner_112_terminate_one_cycle_before_eop();
+        "CORNER_MTS_113_terminate_same_cycle_as_eop": do_corner_113_terminate_same_cycle_as_eop();
+        "CORNER_MTS_114_terminate_one_cycle_after_eop": do_corner_114_terminate_one_cycle_after_eop();
+        "CORNER_MTS_115_idle_before_eop_delay_matures": do_corner_115_idle_before_eop_delay_matures();
+        "CORNER_MTS_116_multiple_eops_in_flushing": do_corner_116_multiple_eops_in_flushing();
+        "CORNER_MTS_117_packet_open_then_abort": do_corner_117_packet_open_then_abort();
+        "CORNER_MTS_118_terminating_eop_disabled_sideband_channel": do_corner_118_terminating_eop_disabled_sideband_channel();
+        "CORNER_MTS_119_flushing_accepts_non_eop_hits": do_corner_119_flushing_accepts_non_eop_hits();
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();

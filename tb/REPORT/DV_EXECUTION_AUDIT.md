@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-09, refreshed through 2026-05-10 01:32 CEST
+Date: 2026-05-09, refreshed through 2026-05-10 01:45 CEST
 
 ## Scope
 
@@ -9,17 +9,17 @@ dual normal/debug monitor path, replacing the old generic documented-case
 fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
 adding the first EDGE CSR/input-protocol, divider/ToT, and debug-threshold
 boundary batches, the EDGE reset and force-stop recovery batch, and the EDGE
-generic/configuration and ready-edge batches.
+generic/configuration, ready-edge, and termination-edge batches.
 
 ## Current Coverage Of Documented Cases
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
 | BASIC | 130 | 129 | 129 |
-| EDGE | 131 | 77 | 77 |
+| EDGE | 131 | 86 | 86 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 208 | 208 |
+| Total | 521 | 217 | 217 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -184,6 +184,15 @@ Notes:
   `RUNNING`/`FLUSHING`. `CORNER_MTS_105` remains open because its intended
   result is an assertion/monitor trap for illegal `ready=X`, which needs a
   separate expected-error execution mode rather than a normal passing UVM run.
+- `CORNER_MTS_111` through `CORNER_MTS_119` now cover current termination
+  edges: no close markers before explicit upstream `endofrun`, tail EOP beats
+  accepted one cycle before or on the same cycle as `TERMINATING`, post-EOP
+  terminate with no extra payload/debug trace, ready-low `IDLE` pulse ignored
+  during terminate work, multiple EOP-tagged flushing beats, incomplete-packet
+  abort cleanup through IDLE/re-arm, outside-window terminating EOP sideband,
+  and non-SOP/non-EOP flushing tail hits. These cases bind every payload to a
+  normal/debug trace where a payload is expected and separately require the
+  close-marker train.
 
 ## Debug And RTL Findings From This Batch
 
@@ -280,6 +289,16 @@ Result: all nine implemented cases passed, then refreshed under the final full
 sweep. `CORNER_MTS_105_output_ready_unknown_monitor_trap` remains open pending
 an expected-error/SVA-trap regression mode.
 
+Focused EDGE termination batch:
+
+```bash
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E111-E119 case_id> SEED=1
+```
+
+Result: all nine cases passed, then refreshed under the final full sweep. The
+legacy EDGE text for E111-E119 was updated to the current explicit-upstream
+`endofrun` close-marker contract.
+
 RTL before/after bug proof:
 
 ```bash
@@ -296,7 +315,7 @@ Final explicit-case sweep:
 make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=208`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=217`.
 
 Combo terminate contract:
 
@@ -315,12 +334,12 @@ make -C tb/uvm cov_report_total RTL_VARIANT=after
 
 Current merged report: `tb/uvm/cov_after/merged.txt`.
 
-Filtered instance coverage summary: `66.34%`.
+Filtered instance coverage summary: `66.36%`.
 
 Artifact check:
 
 ```text
-explicit_cases=208 missing_artifacts=0
+explicit_cases=217 missing_artifacts=0
 combo_pass=True
 ```
 
@@ -344,17 +363,17 @@ Results:
 - `dv_bucket_format_check.py tb`: fail on 76 legacy bucket-format errors across
   `tb/DV_BASIC.md`, `tb/DV_EDGE.md`, `tb/DV_PROF.md`, and `tb/DV_ERROR.md`
   because those files still use the older bullet-list layout instead of the
-  canonical table/header format. This batch only corrected the E094/E095 timing
-  text inside the legacy EDGE file.
+  canonical table/header format. Recent batches corrected specific stale EDGE
+  timing and termination text inside the legacy EDGE file.
 
-Current evidenced explicit cases are the 208 handlers in
+Current evidenced explicit cases are the 217 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 313 uncovered BASIC, EDGE, PROF, and ERROR cases, including
+the remaining 304 uncovered BASIC, EDGE, PROF, and ERROR cases, including
 `STD_MTS_106_total_counter_hi_rollover` and
 `CORNER_MTS_018_counter_read_on_low_word_rollover`, plus the in-flight CSR
 mode-sampling cases `CORNER_MTS_057` and `CORNER_MTS_058`, the expected-error
