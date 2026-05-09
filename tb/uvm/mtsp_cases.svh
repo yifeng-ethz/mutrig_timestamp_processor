@@ -3287,6 +3287,233 @@
       expect_last_debug_burst_timestamp_hi(8'h00, case_id);
     endtask
 
+    task automatic do_corner_081_force_stop_same_cycle_as_valid();
+      int unsigned raw0;
+      int unsigned raw1;
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      lookup_raw_for_quotient(0, 0, raw0, $sformatf("%s first hit", case_id));
+      lookup_raw_for_quotient(1, 0, raw1, $sformatf("%s blocked hit", case_id));
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+
+      fork
+        csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0002);
+        send_hit_beat(2, 0, raw0, raw0, 1'b0, 1'b1, 1'b0);
+      join
+
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s same-cycle accepted hit", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s same-cycle accepted trace", case_id));
+      expect_last_payload_math(2, 0, 0, 0, 0, 0,
+        $sformatf("%s same-cycle accepted hit", case_id));
+      expect_last_payload_error(1'b0,
+        $sformatf("%s same-cycle accepted hit", case_id));
+      expect_csr_mask(3'd0, 32'h0000_0002, 32'h0000_0002,
+        $sformatf("%s force_stop set", case_id));
+
+      send_hit_beat(2, 1, raw1, raw1, 1'b0, 1'b0, 1'b0);
+      expect_no_new_beats(base_beats + 1, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 64, $sformatf("%s later force_stop block", case_id));
+      expect_total_count(48'd2, case_id);
+      expect_discard_count(32'd1, case_id);
+    endtask
+
+    task automatic do_corner_082_force_stop_clear_before_next_hit();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0002);
+      wait_cycles(2);
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 64, $sformatf("%s force_stop blocked", case_id));
+      expect_total_count(48'd1, $sformatf("%s blocked total", case_id));
+      expect_discard_count(32'd1, $sformatf("%s blocked discard", case_id));
+
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT);
+      wait_cycles(1);
+      send_hit_beat(2, 1, 15'h0003, 15'h0003, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s clear-before-hit payload", case_id));
+      expect_last_trace_pair($sformatf("%s clear-before-hit payload", case_id));
+      expect_total_count(48'd2, case_id);
+      expect_discard_count(32'd1, case_id);
+    endtask
+
+    task automatic do_corner_083_soft_reset_while_running_idle_pipe();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0004);
+      wait_cycles(3);
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0004,
+        $sformatf("%s soft_reset self-clear", case_id));
+      expect_total_count(48'd0, case_id);
+      expect_discard_count(32'd0, case_id);
+
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s post-soft-reset hit", case_id));
+      expect_last_trace_pair($sformatf("%s post-soft-reset hit", case_id));
+      expect_total_count(48'd1, case_id);
+    endtask
+
+    task automatic do_corner_084_soft_reset_with_inflight_beats();
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0004);
+      wait_cycles(2);
+      expect_total_count(48'd0, $sformatf("%s counter clear during in-flight payload", case_id));
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s in-flight payload still modeled", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s in-flight trace still modeled", case_id));
+      expect_last_trace_pair($sformatf("%s in-flight trace still modeled", case_id));
+
+      send_hit_beat(2, 1, 15'h0003, 15'h0003, 1'b0, 1'b0, 1'b0);
+      wait_for_beat_count(base_beats + 2, 128,
+        $sformatf("%s post-reset counter restart hit", case_id));
+      expect_total_count(48'd1, case_id);
+    endtask
+
+    task automatic do_corner_085_soft_reset_in_flushing();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+
+      wait_for_reset_release();
+      run_start();
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0004);
+      wait_cycles(2);
+      expect_total_count(48'd0, $sformatf("%s flushing soft reset total", case_id));
+      expect_discard_count(32'd0, $sformatf("%s flushing soft reset discard", case_id));
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s close markers after flushing soft reset", case_id));
+      wait_for_ctrl_ready_high(128, $sformatf("%s ready restore", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 0, case_id);
+    endtask
+
+    task automatic do_corner_086_global_reset_with_pending_term_eop();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b1);
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      drive_global_reset(5, 4);
+      expect_hit0_ready(1'b0, case_id);
+      expect_total_count(48'd0, case_id);
+      expect_discard_count(32'd0, case_id);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 64, case_id);
+    endtask
+
+    task automatic do_corner_087_global_reset_with_debug_history();
+      int signed   observed_delta;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_two_quotient_hits_and_expect_delta(0, 20, 20,
+        $sformatf("%s pre-reset history", case_id));
+      drive_global_reset(5, 4);
+
+      run_start();
+      base_ts_delta = m_env.m_scb.ts_delta_count;
+      send_quotient_hit_and_capture(0, 0, 2, 0, 5'd27, observed_delta,
+        $sformatf("%s post-reset first hit", case_id));
+      wait_for_ts_delta_count(base_ts_delta + 1, 64,
+        $sformatf("%s post-reset first delta", case_id));
+      expect_last_ts_delta_range(0, 0,
+        $sformatf("%s post-reset first delta", case_id));
+    endtask
+
+    task automatic do_corner_088_prepare_after_soft_reset();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(1, 128, $sformatf("%s pre-reset hit", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0004);
+      wait_cycles(3);
+      expect_total_count(48'd0, $sformatf("%s after soft reset", case_id));
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(2);
+
+      run_start();
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 15'h0003, 15'h0003, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s prepared after soft reset", case_id));
+      expect_last_trace_pair($sformatf("%s prepared after soft reset", case_id));
+      expect_total_count(48'd1, case_id);
+    endtask
+
+    task automatic do_corner_089_sync_after_force_stop_cycle();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0002);
+      wait_cycles(2);
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 32, $sformatf("%s force_stop blocked", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT);
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(2);
+
+      run_start();
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 15'h0003, 15'h0003, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s sync after force_stop hit", case_id));
+      expect_last_trace_pair($sformatf("%s sync after force_stop hit", case_id));
+      expect_total_count(48'd1, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_corner_090_idle_during_sclr_flush();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      base_beats = m_env.m_scb.beat_count;
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_cycles(1);
+      pulse_ctrl(CTRL_IDLE, "IDLE_while_sclr");
+      wait_cycles(4);
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(3);
+      expect_hit0_ready(1'b0, case_id);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 24, case_id);
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0001,
+        $sformatf("%s final IDLE status", case_id));
+    endtask
+
     task automatic do_corner_127_delay_error_sideband_tracks_hit();
       int unsigned       base_beats;
       int unsigned       base_history_size;
@@ -3504,6 +3731,16 @@
         "CORNER_MTS_078_debug_burst_positive_trim_edge": do_corner_078_debug_burst_positive_trim_edge();
         "CORNER_MTS_079_debug_burst_negative_trim_edge": do_corner_079_debug_burst_negative_trim_edge();
         "CORNER_MTS_080_ts_delta_zero_boundary": do_corner_080_ts_delta_zero_boundary();
+        "CORNER_MTS_081_force_stop_same_cycle_as_valid": do_corner_081_force_stop_same_cycle_as_valid();
+        "CORNER_MTS_082_force_stop_clear_before_next_hit": do_corner_082_force_stop_clear_before_next_hit();
+        "CORNER_MTS_083_soft_reset_while_running_idle_pipe": do_corner_083_soft_reset_while_running_idle_pipe();
+        "CORNER_MTS_084_soft_reset_with_inflight_beats": do_corner_084_soft_reset_with_inflight_beats();
+        "CORNER_MTS_085_soft_reset_in_flushing": do_corner_085_soft_reset_in_flushing();
+        "CORNER_MTS_086_global_reset_with_pending_term_eop": do_corner_086_global_reset_with_pending_term_eop();
+        "CORNER_MTS_087_global_reset_with_debug_history": do_corner_087_global_reset_with_debug_history();
+        "CORNER_MTS_088_prepare_after_soft_reset": do_corner_088_prepare_after_soft_reset();
+        "CORNER_MTS_089_sync_after_force_stop_cycle": do_corner_089_sync_after_force_stop_cycle();
+        "CORNER_MTS_090_idle_during_sclr_flush": do_corner_090_idle_during_sclr_flush();
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();

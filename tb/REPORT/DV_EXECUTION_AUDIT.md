@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-09, refreshed through 2026-05-10 00:58 Europe/Zurich
+Date: 2026-05-09, refreshed through 2026-05-10 01:09 CEST
 
 ## Scope
 
@@ -8,17 +8,17 @@ This audit records the current plan-to-UVM execution state after enabling the
 dual normal/debug monitor path, replacing the old generic documented-case
 fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
 adding the first EDGE CSR/input-protocol, divider/ToT, and debug-threshold
-boundary batches.
+boundary batches, plus the EDGE reset and force-stop recovery batch.
 
 ## Current Coverage Of Documented Cases
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
 | BASIC | 130 | 129 | 129 |
-| EDGE | 131 | 48 | 48 |
+| EDGE | 131 | 58 | 58 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 179 | 179 |
+| Total | 521 | 189 | 189 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -159,6 +159,14 @@ Notes:
 - `CORNER_MTS_078` through `CORNER_MTS_080` now check the signed timestamp
   delta boundary through both `ts_delta` and the trimmed high byte in
   `debug_burst` for positive, negative, and zero deltas.
+- `CORNER_MTS_081` through `CORNER_MTS_090` now cover same-cycle
+  `force_stop` writes, force-stop clear/restart, soft reset during idle,
+  soft reset with in-flight payload, soft reset while flushing, global reset
+  with pending terminate/EOP traffic, debug-history reset, prepare after soft
+  reset, sync after force-stop, and `IDLE` during SCLR flush. These cases keep
+  normal payload checks and debug trace pairing active where payloads are
+  expected, and require no-payload evidence where reset or force-stop suppresses
+  output.
 
 ## Debug And RTL Findings From This Batch
 
@@ -226,6 +234,14 @@ make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E071-E080 case_id> SEE
 
 Result: `EDGE_E071_E080_PASS`, then refreshed under the final full sweep.
 
+Focused EDGE reset/force-stop batch:
+
+```bash
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E081-E090 case_id> SEED=1
+```
+
+Result: all ten cases passed, then refreshed under the final full sweep.
+
 RTL before/after bug proof:
 
 ```bash
@@ -242,7 +258,7 @@ Final explicit-case sweep:
 make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=179`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=189`.
 
 Combo terminate contract:
 
@@ -261,12 +277,12 @@ make -C tb/uvm cov_report_total RTL_VARIANT=after
 
 Current merged report: `tb/uvm/cov_after/merged.txt`.
 
-Filtered instance coverage summary: `64.53%`.
+Filtered instance coverage summary: `66.28%`.
 
 Artifact check:
 
 ```text
-explicit_cases=179 missing_artifacts=0
+explicit_cases=189 missing_artifacts=0
 combo_pass=True
 ```
 
@@ -287,14 +303,14 @@ Results:
   did not attempt a broad file restyle.
 - `bug_history_format_check.py BUG_HISTORY.md`: pass.
 
-Current evidenced explicit cases are the 179 handlers in
+Current evidenced explicit cases are the 189 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 342 uncovered BASIC, EDGE, PROF, and ERROR cases, including
+the remaining 332 uncovered BASIC, EDGE, PROF, and ERROR cases, including
 `STD_MTS_106_total_counter_hi_rollover` and
 `CORNER_MTS_018_counter_read_on_low_word_rollover`, plus the in-flight CSR
 mode-sampling cases `CORNER_MTS_057` and `CORNER_MTS_058`, then regenerate the
