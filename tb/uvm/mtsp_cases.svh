@@ -302,6 +302,7 @@
       if (trace == null)
         `uvm_fatal("MTSP_CASE", $sformatf("%s missing normal/debug trace", ctx))
       observed_delta = trace.debug_delta;
+      expect_last_trace_pair(ctx);
     endtask
 
     task automatic calibrate_next_output_arrival(output int signed predicted_arrival,
@@ -378,6 +379,27 @@
           ctx, expected_count, m_env.m_scb.ts_delta_count))
     endtask
 
+    task automatic wait_for_debug_burst_count(int unsigned expected_count,
+                                              int unsigned max_cycles,
+                                              string ctx);
+      repeat (max_cycles) begin
+        if (m_env.m_scb.debug_burst_count >= expected_count)
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+      `uvm_fatal("MTSP_TIMEOUT",
+        $sformatf("%s timed out waiting for debug_burst_count=%0d, got %0d",
+          ctx, expected_count, m_env.m_scb.debug_burst_count))
+    endtask
+
+    task automatic expect_debug_valids_low(string ctx);
+      if (dbg_vif.debug_ts_valid || dbg_vif.debug_burst_valid || dbg_vif.ts_delta_valid)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected debug valids low, got debug_ts=%0b debug_burst=%0b ts_delta=%0b",
+            ctx, dbg_vif.debug_ts_valid, dbg_vif.debug_burst_valid,
+            dbg_vif.ts_delta_valid))
+    endtask
+
     task automatic expect_last_ts_delta_polarity(bit expect_negative,
                                                  string ctx);
       mtsp_dbg_obs_item obs;
@@ -397,6 +419,55 @@
         `uvm_fatal("MTSP_CASE",
           $sformatf("%s expected positive ts_delta, got %0d (0x%04h)",
             ctx, delta, obs.data))
+    endtask
+
+    task automatic expect_last_ts_delta_range(int signed min_delta,
+                                              int signed max_delta,
+                                              string ctx);
+      mtsp_dbg_obs_item obs;
+      int signed         delta;
+
+      if (m_env.m_scb.ts_delta_history.size() == 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected a ts_delta observation", ctx))
+      obs   = m_env.m_scb.ts_delta_history[m_env.m_scb.ts_delta_history.size() - 1];
+      delta = m_env.m_scb.signed16(obs.data);
+      if (delta < min_delta || delta > max_delta)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected ts_delta in [%0d,%0d], got %0d (0x%04h)",
+            ctx, min_delta, max_delta, delta, obs.data))
+    endtask
+
+    task automatic expect_last_debug_burst_arrival_min(int unsigned min_arrival_hi,
+                                                       string ctx);
+      mtsp_dbg_obs_item obs;
+      int unsigned       arrival_hi;
+
+      if (m_env.m_scb.debug_burst_history.size() == 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected a debug_burst observation", ctx))
+      obs        = m_env.m_scb.debug_burst_history[m_env.m_scb.debug_burst_history.size() - 1];
+      arrival_hi = obs.data[7:0];
+      if (arrival_hi < min_arrival_hi)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected debug_burst arrival high byte >= %0d, got %0d (0x%04h)",
+            ctx, min_arrival_hi, arrival_hi, obs.data))
+    endtask
+
+    task automatic send_two_quotient_hits_and_expect_delta(int unsigned first_quotient,
+                                                           int unsigned second_quotient,
+                                                           int signed expected_delta,
+                                                           string ctx);
+      int signed   observed_delta;
+      int unsigned base_ts_delta;
+
+      base_ts_delta = m_env.m_scb.ts_delta_count;
+      send_quotient_hit_and_capture(first_quotient, 0, 2, 0, 5'd9,
+        observed_delta, $sformatf("%s first hit", ctx));
+      send_quotient_hit_and_capture(second_quotient, 0, 2, 0, 5'd10,
+        observed_delta, $sformatf("%s second hit", ctx));
+      wait_for_ts_delta_count(base_ts_delta + 2, 64, ctx);
+      expect_last_ts_delta_range(expected_delta, expected_delta, ctx);
     endtask
 
     task automatic expect_no_new_beats(int unsigned base_beats,
@@ -1665,6 +1736,162 @@
       expect_last_trace_delta(-32768, -1, 1'b1, $sformatf("%s E-selected run", case_id));
     endtask
 
+    task automatic do_std_091_debug_burst_only_running();
+      int signed   observed_delta;
+      int unsigned base_debug_burst;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0, '0, 1'b0);
+      wait_cycles(8);
+      if (m_env.m_scb.debug_burst_count != base_debug_burst)
+        `uvm_fatal("MTSP_CASE", "IDLE must not emit debug_burst samples")
+
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_cycles(3);
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_cycles(32);
+      if (m_env.m_scb.debug_burst_count != base_debug_burst)
+        `uvm_fatal("MTSP_CASE", "RESET/SCLR flush traffic must not emit debug_burst samples")
+
+      send_ctrl(CTRL_SYNC, "SYNC");
+      send_ctrl(CTRL_RUNNING, "RUNNING");
+      wait_for_running_status(64, case_id);
+      wait_for_hit0_ready(1'b1, 16, case_id);
+      send_quotient_hit_and_capture(0, 0, 2, 0, 5'd11, observed_delta,
+        $sformatf("%s RUNNING debug_burst hit", case_id));
+      wait_for_debug_burst_count(base_debug_burst + 1, 64, case_id);
+    endtask
+
+    task automatic do_std_092_ts_delta_only_running();
+      int signed   observed_delta;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      base_ts_delta = m_env.m_scb.ts_delta_count;
+
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0, '0, 1'b0);
+      wait_cycles(8);
+      if (m_env.m_scb.ts_delta_count != base_ts_delta)
+        `uvm_fatal("MTSP_CASE", "IDLE must not emit ts_delta samples")
+
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_cycles(3);
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_cycles(32);
+      if (m_env.m_scb.ts_delta_count != base_ts_delta)
+        `uvm_fatal("MTSP_CASE", "RESET/SCLR flush traffic must not emit ts_delta samples")
+
+      send_ctrl(CTRL_SYNC, "SYNC");
+      send_ctrl(CTRL_RUNNING, "RUNNING");
+      wait_for_running_status(64, case_id);
+      wait_for_hit0_ready(1'b1, 16, case_id);
+      send_quotient_hit_and_capture(0, 0, 2, 0, 5'd12, observed_delta,
+        $sformatf("%s RUNNING ts_delta hit", case_id));
+      wait_for_ts_delta_count(base_ts_delta + 1, 64, case_id);
+    endtask
+
+    task automatic do_std_093_first_running_hit_warms_history();
+      int signed   observed_delta;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_ts_delta = m_env.m_scb.ts_delta_count;
+      send_quotient_hit_and_capture(0, 0, 2, 0, 5'd13, observed_delta, case_id);
+      wait_for_ts_delta_count(base_ts_delta + 1, 64, case_id);
+      expect_last_ts_delta_range(0, 0, case_id);
+    endtask
+
+    task automatic do_std_094_positive_timestamp_delta();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_two_quotient_hits_and_expect_delta(0, 20, 20, case_id);
+    endtask
+
+    task automatic do_std_095_negative_timestamp_delta();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_two_quotient_hits_and_expect_delta(20, 0, -20, case_id);
+    endtask
+
+    task automatic do_std_096_zero_timestamp_delta();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_two_quotient_hits_and_expect_delta(20, 20, 0, case_id);
+    endtask
+
+    task automatic do_std_097_positive_signmag_conversion();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_two_quotient_hits_and_expect_delta(0, 25, 25, case_id);
+    endtask
+
+    task automatic do_std_098_negative_signmag_conversion();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_two_quotient_hits_and_expect_delta(25, 0, -25, case_id);
+    endtask
+
+    task automatic do_std_099_arrival_delta_uses_gts();
+      int signed   observed_delta;
+      int unsigned base_ts_delta;
+      int unsigned base_debug_burst;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      send_quotient_hit_and_capture(20, 0, 2, 0, 5'd14, observed_delta,
+        $sformatf("%s first equal-timestamp hit", case_id));
+      wait_cycles(80);
+      send_quotient_hit_and_capture(20, 0, 2, 0, 5'd15, observed_delta,
+        $sformatf("%s delayed equal-timestamp hit", case_id));
+      wait_for_ts_delta_count(base_ts_delta + 2, 64, case_id);
+      wait_for_debug_burst_count(base_debug_burst + 2, 64, case_id);
+      expect_last_ts_delta_range(0, 0, case_id);
+      expect_last_debug_burst_arrival_min(4, case_id);
+    endtask
+
+    task automatic do_std_100_debug_streams_clear_outside_running();
+      int signed   observed_delta;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_quotient_hit_and_capture(0, 0, 2, 0, 5'd16, observed_delta,
+        $sformatf("%s first running hit", case_id));
+      send_quotient_hit_and_capture(20, 0, 2, 0, 5'd17, observed_delta,
+        $sformatf("%s second running hit", case_id));
+      wait_for_ts_delta_count(2, 64, case_id);
+
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(4);
+      expect_debug_valids_low(case_id);
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      wait_cycles(16);
+      expect_debug_valids_low(case_id);
+      if (m_env.m_scb.debug_ts_count != base_debug_ts ||
+          m_env.m_scb.debug_burst_count != base_debug_burst ||
+          m_env.m_scb.ts_delta_count != base_ts_delta)
+        `uvm_fatal("MTSP_CASE", "Debug streams must not advance after leaving RUNNING")
+    endtask
+
     task automatic do_corner_011_expected_latency_zero();
       int unsigned base_beats;
       mtsp_hit1_obs_item hit_obs;
@@ -1811,6 +2038,16 @@
         "STD_MTS_088_error_high_at_or_above_limit": do_std_088_error_high_at_or_above_limit();
         "STD_MTS_089_debug_ts_valid_alignment": do_std_089_debug_ts_valid_alignment();
         "STD_MTS_090_delay_field_changes_error_source": do_std_090_delay_field_changes_error_source();
+        "STD_MTS_091_debug_burst_only_running": do_std_091_debug_burst_only_running();
+        "STD_MTS_092_ts_delta_only_running": do_std_092_ts_delta_only_running();
+        "STD_MTS_093_first_running_hit_warms_history": do_std_093_first_running_hit_warms_history();
+        "STD_MTS_094_positive_timestamp_delta": do_std_094_positive_timestamp_delta();
+        "STD_MTS_095_negative_timestamp_delta": do_std_095_negative_timestamp_delta();
+        "STD_MTS_096_zero_timestamp_delta": do_std_096_zero_timestamp_delta();
+        "STD_MTS_097_positive_signmag_conversion": do_std_097_positive_signmag_conversion();
+        "STD_MTS_098_negative_signmag_conversion": do_std_098_negative_signmag_conversion();
+        "STD_MTS_099_arrival_delta_uses_gts": do_std_099_arrival_delta_uses_gts();
+        "STD_MTS_100_debug_streams_clear_outside_running": do_std_100_debug_streams_clear_outside_running();
         "CORNER_MTS_011_expected_latency_zero": do_corner_011_expected_latency_zero();
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
