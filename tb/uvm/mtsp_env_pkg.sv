@@ -35,11 +35,13 @@ package mtsp_env_pkg;
     bit [31:0] readdata;
     int unsigned timeout_cycles;
     time       complete_time_ps;
+    bit        hold_bus_after;
 
     function new(string name = "mtsp_csr_item");
       super.new(name);
       timeout_cycles   = 1000;
       complete_time_ps = 0;
+      hold_bus_after   = 1'b0;
     endfunction
   endclass
 
@@ -186,16 +188,21 @@ package mtsp_env_pkg;
     task run_phase(uvm_phase phase);
       mtsp_csr_item item;
       int unsigned  wait_cycles;
+      bit           bus_held_for_next;
 
       vif.address   <= '0;
       vif.read      <= 1'b0;
       vif.write     <= 1'b0;
       vif.writedata <= '0;
+      bus_held_for_next = 1'b0;
 
       forever begin
         seq_item_port.get_next_item(item);
 
-        @(negedge vif.clk);
+        if (bus_held_for_next)
+          bus_held_for_next = 1'b0;
+        else
+          @(negedge vif.clk);
         vif.address   <= item.address;
         vif.writedata <= item.writedata;
         vif.write     <= item.is_write;
@@ -217,11 +224,15 @@ package mtsp_env_pkg;
         end
         item.complete_time_ps = $time;
 
-        @(negedge vif.clk);
-        vif.address   <= '0;
-        vif.read      <= 1'b0;
-        vif.write     <= 1'b0;
-        vif.writedata <= '0;
+        if (item.hold_bus_after) begin
+          bus_held_for_next = 1'b1;
+        end else begin
+          @(negedge vif.clk);
+          vif.address   <= '0;
+          vif.read      <= 1'b0;
+          vif.write     <= 1'b0;
+          vif.writedata <= '0;
+        end
         seq_item_port.item_done();
       end
     endtask
@@ -765,9 +776,11 @@ package mtsp_env_pkg;
 
     bit [2:0]  addr;
     bit [31:0] data;
+    bit        hold_bus_after;
 
     function new(string name = "mtsp_csr_write_seq");
       super.new(name);
+      hold_bus_after = 1'b0;
     endfunction
 
     task body();
@@ -777,6 +790,7 @@ package mtsp_env_pkg;
       item.is_write  = 1'b1;
       item.address   = addr;
       item.writedata = data;
+      item.hold_bus_after = hold_bus_after;
       finish_item(item);
     endtask
   endclass
@@ -939,6 +953,25 @@ package mtsp_env_pkg;
       data = seq.data;
     endtask
 
+    task automatic csr_write_then_read_no_idle(bit [2:0] wr_addr,
+                                               bit [31:0] wr_data,
+                                               bit [2:0] rd_addr,
+                                               output bit [31:0] rd_data);
+      mtsp_csr_write_seq wr_seq;
+      mtsp_csr_read_seq  rd_seq;
+
+      wr_seq                = mtsp_csr_write_seq::type_id::create($sformatf("csr_wr_hold_%0t", $time));
+      wr_seq.addr           = wr_addr;
+      wr_seq.data           = wr_data;
+      wr_seq.hold_bus_after = 1'b1;
+      wr_seq.start(m_env.m_csr_sqr);
+
+      rd_seq      = mtsp_csr_read_seq::type_id::create($sformatf("csr_rd_no_idle_%0t", $time));
+      rd_seq.addr = rd_addr;
+      rd_seq.start(m_env.m_csr_sqr);
+      rd_data = rd_seq.data;
+    endtask
+
     task automatic expect_csr_mask(bit [2:0] addr,
                                    bit [31:0] expected,
                                    bit [31:0] mask,
@@ -1047,16 +1080,17 @@ package mtsp_env_pkg;
       wait_cycles(1);
     endtask
 
-    task automatic send_hit_beat(int unsigned asic_value,
-                                 int unsigned channel_value,
-                                 int unsigned tcc_raw_value,
-                                 int unsigned ecc_raw_value,
-                                 bit eflag_value,
-                                 bit sop_value,
-                                 bit eop_value,
-                                 bit [2:0] error_value = '0,
-                                 bit wait_for_ready = 1'b1,
-                                 int unsigned tfine_value = 0);
+    task automatic send_hit_beat_with_sideband(int unsigned sideband_channel,
+                                               int unsigned asic_value,
+                                               int unsigned channel_value,
+                                               int unsigned tcc_raw_value,
+                                               int unsigned ecc_raw_value,
+                                               bit eflag_value,
+                                               bit sop_value,
+                                               bit eop_value,
+                                               bit [2:0] error_value = '0,
+                                               bit wait_for_ready = 1'b1,
+                                               int unsigned tfine_value = 0);
       mtsp_hit0_seq seq;
       bit [44:0]    hit_word;
 
@@ -1069,7 +1103,7 @@ package mtsp_env_pkg;
       hit_word[0]          = eflag_value;
 
       seq                  = mtsp_hit0_seq::type_id::create($sformatf("hit0_seq_%0t", $time));
-      seq.channel          = {2'b00, asic_value[3:0]};
+      seq.channel          = sideband_channel[5:0];
       seq.sop              = sop_value;
       seq.eop              = eop_value;
       seq.endofrun         = 1'b0;
@@ -1078,6 +1112,22 @@ package mtsp_env_pkg;
       seq.valid            = 1'b1;
       seq.wait_for_ready   = wait_for_ready;
       seq.start(m_env.m_hit0_sqr);
+    endtask
+
+    task automatic send_hit_beat(int unsigned asic_value,
+                                 int unsigned channel_value,
+                                 int unsigned tcc_raw_value,
+                                 int unsigned ecc_raw_value,
+                                 bit eflag_value,
+                                 bit sop_value,
+                                 bit eop_value,
+                                 bit [2:0] error_value = '0,
+                                 bit wait_for_ready = 1'b1,
+                                 int unsigned tfine_value = 0);
+      send_hit_beat_with_sideband({2'b00, asic_value[3:0]},
+        asic_value, channel_value, tcc_raw_value, ecc_raw_value,
+        eflag_value, sop_value, eop_value, error_value, wait_for_ready,
+        tfine_value);
     endtask
 
     task automatic send_endofrun_pulse();
