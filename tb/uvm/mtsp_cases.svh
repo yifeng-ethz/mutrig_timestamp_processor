@@ -460,6 +460,27 @@
         UVM_LOW)
     endtask
 
+    task automatic send_hit_for_debug_delta(int signed target_delta,
+                                            bit expected_error,
+                                            string ctx);
+      int signed   predicted_arrival;
+      int signed   target_quotient_signed;
+      int unsigned target_quotient;
+      int signed   observed_delta;
+
+      calibrate_next_output_arrival(predicted_arrival,
+        $sformatf("%s calibration", ctx));
+      target_quotient_signed = predicted_arrival - target_delta;
+      if (target_quotient_signed < 0 || target_quotient_signed > 6553)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s target quotient %0d is outside ROM-backed range for target_delta=%0d predicted_arrival=%0d",
+            ctx, target_quotient_signed, target_delta, predicted_arrival))
+      target_quotient = target_quotient_signed;
+      send_quotient_hit_and_capture(target_quotient, 0, 2, 0, 5'd26,
+        observed_delta, ctx);
+      expect_last_trace_delta(target_delta, target_delta, expected_error, ctx);
+    endtask
+
     task automatic send_route_lane_hit_and_expect(int unsigned route_lane,
                                                   int unsigned payload_channel,
                                                   bit expected_sop,
@@ -585,6 +606,22 @@
         `uvm_fatal("MTSP_CASE",
           $sformatf("%s expected debug_burst arrival high byte >= %0d, got %0d (0x%04h)",
             ctx, min_arrival_hi, arrival_hi, obs.data))
+    endtask
+
+    task automatic expect_last_debug_burst_timestamp_hi(bit [7:0] expected_ts_hi,
+                                                        string ctx);
+      mtsp_dbg_obs_item obs;
+      bit [7:0]         timestamp_hi;
+
+      if (m_env.m_scb.debug_burst_history.size() == 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected a debug_burst observation", ctx))
+      obs          = m_env.m_scb.debug_burst_history[m_env.m_scb.debug_burst_history.size() - 1];
+      timestamp_hi = obs.data[15:8];
+      if (timestamp_hi !== expected_ts_hi)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected debug_burst timestamp high byte 0x%02h, got 0x%02h (data=0x%04h)",
+            ctx, expected_ts_hi, timestamp_hi, obs.data))
     endtask
 
     task automatic send_two_quotient_hits_and_expect_delta(int unsigned first_quotient,
@@ -3162,6 +3199,94 @@
         $sformatf("%s tfine max", case_id));
     endtask
 
+    task automatic do_corner_071_debug_ts_minus_one();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd4);
+      run_start();
+      send_hit_for_debug_delta(-1, 1'b1, case_id);
+    endtask
+
+    task automatic do_corner_072_debug_ts_zero();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd4);
+      run_start();
+      send_hit_for_debug_delta(0, 1'b1, case_id);
+    endtask
+
+    task automatic do_corner_073_debug_ts_plus_one();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd4);
+      run_start();
+      send_hit_for_debug_delta(1, 1'b0, case_id);
+    endtask
+
+    task automatic do_corner_074_debug_ts_expected_minus_one();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd4);
+      run_start();
+      send_hit_for_debug_delta(3, 1'b0, case_id);
+    endtask
+
+    task automatic do_corner_075_debug_ts_expected_exact();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd4);
+      run_start();
+      send_hit_for_debug_delta(4, 1'b1, case_id);
+    endtask
+
+    task automatic do_corner_076_debug_ts_expected_plus_one();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd4);
+      run_start();
+      send_hit_for_debug_delta(5, 1'b1, case_id);
+    endtask
+
+    task automatic do_corner_077_t_vs_e_path_error_flip();
+      do_std_090_delay_field_changes_error_source();
+    endtask
+
+    task automatic do_corner_078_debug_burst_positive_trim_edge();
+      int unsigned base_debug_burst;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      send_two_quotient_hits_and_expect_delta(0, 16, 16, case_id);
+      wait_for_debug_burst_count(base_debug_burst + 2, 64, case_id);
+      expect_last_debug_burst_timestamp_hi(8'h01, case_id);
+    endtask
+
+    task automatic do_corner_079_debug_burst_negative_trim_edge();
+      int unsigned base_debug_burst;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      send_two_quotient_hits_and_expect_delta(16, 0, -16, case_id);
+      wait_for_debug_burst_count(base_debug_burst + 2, 64, case_id);
+      expect_last_debug_burst_timestamp_hi(8'h81, case_id);
+    endtask
+
+    task automatic do_corner_080_ts_delta_zero_boundary();
+      int unsigned base_debug_burst;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      send_two_quotient_hits_and_expect_delta(20, 20, 0, case_id);
+      wait_for_debug_burst_count(base_debug_burst + 2, 64, case_id);
+      expect_last_debug_burst_timestamp_hi(8'h00, case_id);
+    endtask
+
     task automatic do_corner_127_delay_error_sideband_tracks_hit();
       int unsigned       base_beats;
       int unsigned       base_history_size;
@@ -3369,6 +3494,16 @@
         "CORNER_MTS_056_tot_mode_negative_delta_case": do_corner_056_tot_mode_negative_delta_case();
         "CORNER_MTS_059_toggle_eflag_between_hits": do_corner_059_toggle_eflag_between_hits();
         "CORNER_MTS_060_tfine_extremes": do_corner_060_tfine_extremes();
+        "CORNER_MTS_071_debug_ts_minus_one": do_corner_071_debug_ts_minus_one();
+        "CORNER_MTS_072_debug_ts_zero": do_corner_072_debug_ts_zero();
+        "CORNER_MTS_073_debug_ts_plus_one": do_corner_073_debug_ts_plus_one();
+        "CORNER_MTS_074_debug_ts_expected_minus_one": do_corner_074_debug_ts_expected_minus_one();
+        "CORNER_MTS_075_debug_ts_expected_exact": do_corner_075_debug_ts_expected_exact();
+        "CORNER_MTS_076_debug_ts_expected_plus_one": do_corner_076_debug_ts_expected_plus_one();
+        "CORNER_MTS_077_t_vs_e_path_error_flip": do_corner_077_t_vs_e_path_error_flip();
+        "CORNER_MTS_078_debug_burst_positive_trim_edge": do_corner_078_debug_burst_positive_trim_edge();
+        "CORNER_MTS_079_debug_burst_negative_trim_edge": do_corner_079_debug_burst_negative_trim_edge();
+        "CORNER_MTS_080_ts_delta_zero_boundary": do_corner_080_ts_delta_zero_boundary();
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();

@@ -1,23 +1,24 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-09, refreshed through 2026-05-10 00:47 Europe/Zurich
+Date: 2026-05-09, refreshed through 2026-05-10 00:58 Europe/Zurich
 
 ## Scope
 
 This audit records the current plan-to-UVM execution state after enabling the
 dual normal/debug monitor path, replacing the old generic documented-case
 fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
-adding the first EDGE CSR/input-protocol and divider/ToT boundary batches.
+adding the first EDGE CSR/input-protocol, divider/ToT, and debug-threshold
+boundary batches.
 
 ## Current Coverage Of Documented Cases
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
 | BASIC | 130 | 129 | 129 |
-| EDGE | 131 | 38 | 38 |
+| EDGE | 131 | 48 | 48 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 169 | 169 |
+| Total | 521 | 179 | 179 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -150,6 +151,14 @@ Notes:
   extremes. `CORNER_MTS_057` and `CORNER_MTS_058` are intentionally not
   implemented by these helpers because their documented per-accepted-hit CSR
   mode sampling needs a separate RTL/harness decision.
+- `CORNER_MTS_071` through `CORNER_MTS_076` now calibrate exact debug-delay
+  targets and prove the error flag at `-1`, `0`, `+1`, `expected_latency-1`,
+  `expected_latency`, and `expected_latency+1`.
+- `CORNER_MTS_077` reuses the explicit T-vs-E delay-source flip sequence so
+  both path selections are required to agree with payload and debug math.
+- `CORNER_MTS_078` through `CORNER_MTS_080` now check the signed timestamp
+  delta boundary through both `ts_delta` and the trimmed high byte in
+  `debug_burst` for positive, negative, and zero deltas.
 
 ## Debug And RTL Findings From This Batch
 
@@ -209,6 +218,14 @@ make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E041-E056,E059-E060 ca
 Result: `EDGE_E041_E056_E059_E060_PASS`, then refreshed under the final full
 sweep.
 
+Focused EDGE debug-threshold batch:
+
+```bash
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E071-E080 case_id> SEED=1
+```
+
+Result: `EDGE_E071_E080_PASS`, then refreshed under the final full sweep.
+
 RTL before/after bug proof:
 
 ```bash
@@ -225,7 +242,7 @@ Final explicit-case sweep:
 make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=169`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=179`.
 
 Combo terminate contract:
 
@@ -249,7 +266,7 @@ Filtered instance coverage summary: `64.53%`.
 Artifact check:
 
 ```text
-explicit_cases=169 missing_artifacts=0
+explicit_cases=179 missing_artifacts=0
 combo_pass=True
 ```
 
@@ -270,14 +287,14 @@ Results:
   did not attempt a broad file restyle.
 - `bug_history_format_check.py BUG_HISTORY.md`: pass.
 
-Current evidenced explicit cases are the 169 handlers in
+Current evidenced explicit cases are the 179 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 352 uncovered BASIC, EDGE, PROF, and ERROR cases, including
+the remaining 342 uncovered BASIC, EDGE, PROF, and ERROR cases, including
 `STD_MTS_106_total_counter_hi_rollover` and
 `CORNER_MTS_018_counter_read_on_low_word_rollover`, plus the in-flight CSR
 mode-sampling cases `CORNER_MTS_057` and `CORNER_MTS_058`, then regenerate the
