@@ -47,8 +47,44 @@ Historical formal note:
 | [BUG-010-H](#bug-010-h-profile-helper-forced-zero-delay-error-on-valid-route-jump) | H | non-datapath-refactor | `directed-only (profile route-jump delay sanity)` | fixed | `STRESS_MTS_021_round_robin_enabled_channels` | `39fa9c0` | Profile helper forced zero delay-error even when normal output and debug math correctly agreed on a negative-delta route jump. |
 | [BUG-011-R](#bug-011-r-csr-soft-reset-left-timing-datapath-and-debug-history-live) | R | soft error | `occasional (routine CSR soft-reset recovery)` | fixed | `STRESS_MTS_035_soft_reset_every_10k_cycles` | `b1d45ba` | CSR soft reset cleared visible counters without clearing local timing, datapath, output, and debug history. |
 | [BUG-012-R](#bug-012-r-illegal-run-control-error-state-could-wedge-ctrl-ready-low) | R | hard stuck error | `directed-only (illegal control injection)` | fixed | `STRESS_MTS_070_interspersed_illegal_ctrl_words` | `a975fe1` | An illegal run-control word decoded to `ERROR` and left `asi_ctrl_ready` low, blocking later legal recovery commands. |
+| [BUG-013-H](#bug-013-h-inert-parameter-terminate-stimulus-left-input-packet-open) | H | non-datapath-refactor | `directed-only (parameter-sweep terminate stimulus)` | fixed | `STRESS_MTS_090_inert_parameter_sweep_compare` | `c2789b0` | P090 opened an input packet on one sideband channel and placed the terminal EOP on another, so the legal RTL drain held close markers off. |
 
 ## 2026-05-10
+
+### BUG-013-H: Inert parameter terminate stimulus left input packet open
+
+- First seen:
+  - UVM case `STRESS_MTS_090_inert_parameter_sweep_compare`
+  - The first focused P081-P090 batch stopped after the 64 payload math/trace checks with `MTSP_TIMEOUT` waiting for `empty_eop_count=4`, while the scoreboard had not observed any close markers
+- Symptom:
+  - normal payload math and normal/debug trace pairing were already correct for all 64 inert-parameter payloads
+  - after `TERMINATING` and upstream `endofrun`, the DUT did not emit the expected empty close-marker train
+  - reviewing the RTL packet-drain condition showed `packet_in_transaction` could not clear because the test opened input sideband channel 0 with the first SOP but drove the final EOP on sideband channel 31
+- Root cause:
+  - the stress helper used `idx % 32` for the input sideband channel and only set one global SOP and one global EOP
+  - that pattern is useful for payload channel coverage, but it is not a legal packet-close sequence for a testcase that requires terminate close markers from the RTL reference contract
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - P090 now uses a channel-override stress helper so payload math remains stress-indexed while packet sideband lanes stay within enabled channels 0 through 3
+    - the stimulus opens all four enabled input lanes with SOP on the first four beats and closes those same lanes with EOP on the final four beats before `TERMINATING` and upstream `endofrun`
+    - the checker still requires all 64 payload math/trace pairs, zero discards, and four empty close markers after termination
+  - before_fix_outcome:
+    - `STRESS_MTS_090_inert_parameter_sweep_compare` timed out at `4932 ns` waiting for `empty_eop_count=4`, got `0`
+  - after_fix_outcome:
+    - `STRESS_MTS_090_inert_parameter_sweep_compare` passes with `csr=5 inputs=64 beats=68 payloads=64 eops=4 empty_eops=4 debug_ts=64 debug_burst=64 ts_delta=64 dual_path_pairs=64 traces=64`
+    - the focused P081-P090 batch passes with `STRESS_P081_P090_BATCH_PASS count=10`
+    - the ordered documented-case rerun passes with `FULL_EXPLICIT_353_RERUN_PASS cases=353`
+  - potential_hazard:
+    - fixed for terminate-capable parameter-sweep stress. The generic stress helper still supports wide sideband-channel sweeps for non-terminate cases where no packet-close train is required
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - the artifact audit passed with `explicit_cases=353 missing_artifacts=0 failed_or_incomplete_logs=0`
+  - the source-homogeneous explicit-only coverage merge reported filtered instance coverage `71.10%`; DUT statement `97.04%`, branch `95.49%`, condition `83.92%`, expression `100.00%`, FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.65%`
+- Commit:
+  - `c2789b0` (`[PATCH] Add MTSP parameter sweep stress cases`)
 
 ### BUG-012-R: Illegal run-control ERROR state could wedge ctrl ready low
 

@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 07:41 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 08:18 CEST
 
 ## Scope
 
@@ -17,12 +17,15 @@ the PROF/STRESS long-run mode stress batch, and the PROF/STRESS high-variance
 input-pattern batch, the PROF/STRESS counter/reset/control-poll batch, and the
 PROF/STRESS overflow-window stress batch, and the PROF/STRESS debug-stream
 stress batch, the PROF/STRESS repeated run-control/CSR-chatter batch, and the
-PROF/STRESS termination/drain stress batch.
+PROF/STRESS termination/drain stress batch, and the PROF/STRESS
+parameter-sweep-under-load batch.
 This refresh also records the `bypass_lapse` per-hit RTL fix, the hit0 monitor
 timing fix required for input analysis-port evidence, and the `csr.soft_reset`
 RTL fix that clears local timing, datapath, output, and debug history. It also
 records the illegal-control recovery RTL fix: unsupported control words still
-decode to `ERROR`, but no longer leave `asi_ctrl_ready` stuck low forever.
+decode to `ERROR`, but no longer leave `asi_ctrl_ready` stuck low forever. The
+latest refresh also records `BUG-013-H`, a P090 terminate-stimulus packet-close
+bug found and fixed while bringing up the inert parameter sweep.
 
 ## Current Coverage Of Documented Cases
 
@@ -30,9 +33,9 @@ decode to `ERROR`, but no longer leave `asi_ctrl_ready` stuck low forever.
 |---|---:|---:|---:|
 | BASIC | 130 | 130 | 130 |
 | EDGE | 131 | 131 | 131 |
-| PROF | 130 | 80 | 80 |
+| PROF | 130 | 90 | 90 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 343 | 343 |
+| Total | 521 | 353 | 353 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -40,8 +43,8 @@ Notes:
 - The old generic smoke fallback is no longer counted as evidence.
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
-- `DV_PROF.md` has explicit UVM handlers for P001 through P080; the remaining
-  50 PROF stress cases still require real stimuli.
+- `DV_PROF.md` has explicit UVM handlers for P001 through P090; the remaining
+  40 PROF stress cases still require real stimuli.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -361,6 +364,16 @@ Notes:
   and P077 intentionally observe zero `debug_burst`/`ts_delta` entries because
   their payloads are accepted in `FLUSHING`; the normal/debug trace pairs still
   prove the dual monitor path.
+- `STRESS_MTS_081` through `STRESS_MTS_090` cover parameter sweeps under load:
+  divider pipeline depth 2 and 4 latency, single/two/four enabled-channel
+  windows, remapped `HITERR_BIT_LOC`, custom default expected latency,
+  `DEBUG=0`, `BANK=DOWN`, and inert padding/CRC/frame-corrupt generic
+  combinations. P081/P082 require exact accepted-hit-to-observed-output
+  latencies of 8 and 10 cycles. P086 requires the old hiterr bit to pass and
+  the remapped bit to discard 16 of 128 hits. P087 requires CSR and trace
+  metadata to report default latency 128. P090 requires all inert error-bit
+  payloads to pass, then proves the legal four-marker terminate train after
+  all enabled input lanes have been closed.
 
 ## Debug And RTL Findings From This Batch
 
@@ -389,9 +402,10 @@ Notes:
 | Repeated RUNNING-exit cleanup checked debug sideband counters before the final debug pipeline sample settled. | `STRESS_MTS_060_debug_streams_clear_after_running` | No RTL change was accepted. The case now uses bounded waits for `debug_ts`, `debug_burst`, and `ts_delta` before checking exact per-iteration counts and idle quiescence. |
 | Repeated standard-run stress initially expected `total_hit_cnt` to accumulate across `RUN_PREPARE -> SYNC`, but the documented standard sequence clears counters in RESET/SYNC. | `STRESS_MTS_062_hundred_single_packet_runs` | No RTL change was accepted. P062-P064 and P068-P070 now check per-run and final post-reset totals, while P066/P070 separately assert legacy direct-start accumulation. |
 | A legacy direct `RUNNING` start was expected to clear counters like the standard sequence. | `STRESS_MTS_066_alternate_standard_and_legacy_starts` | No RTL change was accepted. The testcase now expects direct-start iterations to accumulate to two hits after the preceding standard run, proving the difference between canonical and backward-compatible bring-up. |
-| An illegal multi-hot control word decoded to `ERROR`, after which `asi_ctrl_ready` stayed low forever and blocked later legal recovery commands. | `STRESS_MTS_070_interspersed_illegal_ctrl_words` | RTL now keeps `ERROR` observable but asserts control ready in that state so the next legal command can recover. The fixed RTL passed P070 and the current full 343-case rerun. |
+| An illegal multi-hot control word decoded to `ERROR`, after which `asi_ctrl_ready` stayed low forever and blocked later legal recovery commands. | `STRESS_MTS_070_interspersed_illegal_ctrl_words` | RTL now keeps `ERROR` observable but asserts control ready in that state so the next legal command can recover. The fixed RTL passed P070 and the current full 353-case rerun. |
 | Dense terminate stress initially expected SOP only on the first global payload beat, but output SOP is generated by the first beat on each route lane. | `STRESS_MTS_072_terminate_after_dense_burst` | No RTL change was accepted. The case now expects SOP on the first payload per route lane and still requires normal/debug trace pairing plus close-marker evidence. |
 | Overflow-window termination initially tried to stop after an overflow-corrected SOP-only payload, leaving the input packet open and preventing legal close markers. | `STRESS_MTS_079_terminate_near_overflow_window` | No RTL change was accepted. The stimulus now terminates after an overflow-corrected EOP hit, preserving overflow math checks before requiring terminal close markers. |
+| Inert parameter termination initially opened an input packet on sideband channel 0 but placed the terminal EOP on sideband channel 31, leaving `packet_in_transaction` open and correctly suppressing close markers. | `STRESS_MTS_090_inert_parameter_sweep_compare` | No RTL change was accepted. P090 now opens and closes the same four enabled sideband lanes while preserving 64 payload math/debug trace checks, then requires four terminal close markers. Recorded as `BUG-013-H`. |
 
 ## Submodule Freshness Check
 
@@ -405,12 +419,12 @@ the current termination/drain DV checkpoint:
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
 | `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | `codex/opq-feb-swb-parent-20260508`, `origin/codex/opq-feb-swb-parent-20260508` |
 | `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
-| `mutrig_timestamp_processor` | local `master` with the P071-P080 termination/drain DV checkpoint beginning at `6b02500` | pushed to `origin/master` for parent/top pointer publication |
+| `mutrig_timestamp_processor` | local `master` with the P081-P090 parameter-sweep DV checkpoint beginning at `c2789b0` | source for `origin/master` and parent/top pointer publication |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
-`packet_scheduler 245eb93` plus the local MTSP termination/drain checkpoint.
-The P071-P080 checkpoint is pushed on MTSP `master` and is the source for the
-parent and top-level gitlink commits.
+`packet_scheduler 245eb93` plus the local MTSP parameter-sweep checkpoint.
+The P081-P090 checkpoint is the source for the parent and top-level gitlink
+commits.
 
 ## Evidence Commands
 
@@ -668,7 +682,7 @@ make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<P031-P040 case_id> 
 ```
 
 Result: `STRESS_P031_P040_BATCH_PASS count=10`, then refreshed under the
-final current-source 343-case sweep. Every case ran with
+final current-source 353-case sweep. Every case ran with
 `MTSP_DEBUG_PATH_REQUIRED=1` and required scoreboard analysis-port summaries.
 Representative summaries:
 - P031 discard-counter monotonic all-hiterr run: `csr=14 inputs=1024 beats=0
@@ -763,7 +777,7 @@ make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<P061-P070 case_id> 
 ```
 
 Result: `STRESS_P061_P070_BATCH_PASS count=10`, then refreshed under the
-final current-source 343-case rerun. Every case ran with
+final current-source 353-case rerun. Every case ran with
 `MTSP_DEBUG_PATH_REQUIRED=1`; payload-bearing cases require input
 analysis-port observations, normal output monitoring, debug-path monitoring,
 trace metadata checks, and scoreboard summaries. Representative summaries:
@@ -805,7 +819,7 @@ make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<P071-P080 case_id> 
 ```
 
 Result: `STRESS_P071_P080_BATCH_PASS count=10`, then refreshed under the
-final current-source 343-case rerun. Every case ran with
+final current-source 353-case rerun. Every case ran with
 `MTSP_DEBUG_PATH_REQUIRED=1`; payload-bearing cases require input
 analysis-port observations, normal output monitoring, debug-path monitoring,
 trace metadata checks, close-marker checks, and scoreboard summaries.
@@ -841,6 +855,53 @@ Representative summaries:
   payloads=16 eops=4 empty_eops=4 debug_ts=16 debug_burst=16 ts_delta=16
   dual_path_pairs=16 traces=16 expected_latency=2000`.
 
+Focused PROF/STRESS parameter-sweep batch:
+
+```bash
+make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<P081-P090 case_id> SEED=1
+```
+
+Result: `STRESS_P081_P090_BATCH_PASS count=10`, then refreshed under the
+final current-source 353-case rerun. Every case ran with
+`MTSP_DEBUG_PATH_REQUIRED=1`; payload-bearing cases require input
+analysis-port observations, normal output monitoring, debug-path monitoring,
+trace metadata checks, and scoreboard summaries.
+Representative summaries:
+- P081 divider pipeline 2 under load: latency checker
+  `latency_samples=96 min_cycles=8 max_cycles=8`; scoreboard `csr=6
+  inputs=96 beats=96 payloads=96 eops=0 empty_eops=0 debug_ts=96
+  debug_burst=96 ts_delta=96 dual_path_pairs=96 traces=96
+  expected_latency=2000`.
+- P082 divider pipeline 4 under load: latency checker
+  `latency_samples=96 min_cycles=10 max_cycles=10`; scoreboard `csr=6
+  inputs=96 beats=96 payloads=96 eops=0 empty_eops=0 debug_ts=96
+  debug_burst=96 ts_delta=96 dual_path_pairs=96 traces=96
+  expected_latency=2000`.
+- P083 single enabled-channel soak: `csr=6 inputs=128 beats=128
+  payloads=128 eops=0 empty_eops=0 debug_ts=128 debug_burst=128
+  ts_delta=128 dual_path_pairs=128 traces=128 expected_latency=2000`.
+- P084 two enabled-channel soak: `csr=6 inputs=128 beats=128 payloads=128
+  eops=0 empty_eops=0 debug_ts=128 debug_burst=128 ts_delta=128
+  dual_path_pairs=128 traces=128 expected_latency=2000`.
+- P085 four enabled-channel soak: `csr=6 inputs=256 beats=256 payloads=256
+  eops=0 empty_eops=0 debug_ts=256 debug_burst=256 ts_delta=256
+  dual_path_pairs=256 traces=256 expected_latency=2000`.
+- P086 remapped hiterr soak: `csr=5 inputs=128 beats=112 payloads=112
+  eops=0 empty_eops=0 debug_ts=112 debug_burst=112 ts_delta=112
+  dual_path_pairs=112 traces=112 expected_latency=2000`.
+- P087 custom default latency soak: `csr=7 inputs=64 beats=64 payloads=64
+  eops=0 empty_eops=0 debug_ts=64 debug_burst=64 ts_delta=64
+  dual_path_pairs=64 traces=64 expected_latency=128`.
+- P088 DEBUG=0 soak: `csr=6 inputs=128 beats=128 payloads=128 eops=0
+  empty_eops=0 debug_ts=128 debug_burst=128 ts_delta=128
+  dual_path_pairs=128 traces=128 expected_latency=2000`.
+- P089 BANK=DOWN compare: `csr=6 inputs=128 beats=128 payloads=128
+  eops=0 empty_eops=0 debug_ts=128 debug_burst=128 ts_delta=128
+  dual_path_pairs=128 traces=128 expected_latency=2000`.
+- P090 inert parameter sweep compare: `csr=5 inputs=64 beats=68
+  payloads=64 eops=4 empty_eops=4 debug_ts=64 debug_burst=64 ts_delta=64
+  dual_path_pairs=64 traces=64 expected_latency=2000`.
+
 RTL before/after bug proof:
 
 ```bash
@@ -857,10 +918,10 @@ Final explicit-case sweep:
 make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_343_RERUN_PASS cases=343` on the final current RTL
-source after the termination/drain stress additions. The per-case artifact
+Result: `FULL_EXPLICIT_353_RERUN_PASS cases=353` on the final current RTL
+source after the parameter-sweep stress additions. The per-case artifact
 audit reports
-`explicit_cases=343 missing_artifacts=0 failed_or_incomplete_logs=0`.
+`explicit_cases=353 missing_artifacts=0 failed_or_incomplete_logs=0`.
 
 Combo terminate contract:
 
@@ -883,13 +944,13 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_343.ucdb <343 dispatcher UCDBs>
-/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_343.ucdb
+/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_353.ucdb <353 dispatcher UCDBs>
+/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_353.ucdb
 ```
 
 The merge used QuestaSim-64 `vcover` 2026.1_1 to match the UCDB generation
 version; the older Quartus-bundled 2022.4 `vcover` rejected the files as newer
-UCDBs. Filtered instance coverage summary: `70.87%`. The DUT instance summary is
+UCDBs. Filtered instance coverage summary: `71.10%`. The DUT instance summary is
 statement `97.04%`, branch `95.49%`, condition `83.92%`, expression `100.00%`,
 FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.65%`.
 The merge log was checked for source mismatch and reported none; the only
@@ -898,20 +959,20 @@ reported warning was the local missing `vcovkill` helper.
 Artifact check:
 
 ```text
-explicit_cases=343 missing_artifacts=0 failed_or_incomplete_logs=0
+explicit_cases=353 missing_artifacts=0 failed_or_incomplete_logs=0
 ```
 
-Additional checks through this PROF/STRESS termination/drain batch:
+Additional checks through this PROF/STRESS parameter-sweep batch:
 
 ```bash
-git diff --check -- tb/DV_PROF.md tb/uvm/mtsp_cases.svh tb/REPORT/DV_EXECUTION_AUDIT.md
+git diff --check -- BUG_HISTORY.md tb/uvm/Makefile tb/uvm/mtsp_cases.svh tb/REPORT/DV_EXECUTION_AUDIT.md
 python3 /home/yifeng/.codex/skills/rtl-doc-style/scripts/rtl_doc_style_check.py .
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/bug_history_format_check.py BUG_HISTORY.md
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py tb
 ```
 
 Results:
-- `git diff --check -- tb/DV_PROF.md tb/uvm/mtsp_cases.svh tb/REPORT/DV_EXECUTION_AUDIT.md`:
+- `git diff --check -- BUG_HISTORY.md tb/uvm/Makefile tb/uvm/mtsp_cases.svh tb/REPORT/DV_EXECUTION_AUDIT.md`:
   pass.
 - `rtl_doc_style_check.py .`: fail on the legacy `tb/` documentation layout,
   including missing `tb/README.md`, `tb/DV_REPORT.json`, and canonical
@@ -922,20 +983,20 @@ Results:
   `tb/DV_BASIC.md`, `tb/DV_EDGE.md`, `tb/DV_PROF.md`, and `tb/DV_ERROR.md`
   because those files still use the older bullet-list layout instead of the
   canonical table/header format. Recent batches corrected specific stale EDGE
-  timing plus P071-P080 PROF termination/drain text inside the legacy bucket
-  files, and this audit now records the termination/drain evidence separately.
-- No RTL source changed in the P071-P080 batch. The last RTL-changing batch
+  timing plus PROF termination/drain text inside the legacy bucket files, and
+  this audit now records the parameter-sweep evidence separately.
+- No RTL source changed in the P081-P090 batch. The last RTL-changing batch
   remains covered by the passing static screen transcript
   `/tmp/mtsp_static_p061_p070/questa_static_screen.log`.
 
-Current evidenced explicit cases are the 343 handlers in
+Current evidenced explicit cases are the 353 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 178 uncovered cases (50 PROF/STRESS and 128 ERROR/NEG), then
+the remaining 168 uncovered cases (40 PROF/STRESS and 128 ERROR/NEG), then
 regenerate the ordered coverage/report dashboard from current artifacts instead
 of relying on stale proxy rows. EDGE is now fully dispatched and evidenced;
-PROF has 80 evidenced stress handlers.
+PROF has 90 evidenced stress handlers.
