@@ -42,8 +42,83 @@ Historical formal note:
 | [BUG-005-R](#bug-005-r-control-commands-could-be-decoded-while-asi-ctrl-ready-0) | R | hard stuck error | `common (routine terminate-to-idle control)` | fixed | `STD_MTS_129_upgrade_case_idle_after_boundary_only` | `e61fc9f` | Control words could be decoded while `asi_ctrl_ready=0`, allowing premature IDLE acceptance before close markers. |
 | [BUG-006-H](#bug-006-h-counter-debug-report-saturated-near-rollover) | H | non-datapath-refactor | `directed-only (rollover debug observability)` | fixed | `STD_MTS_106_total_counter_hi_rollover` | `94d6320` | Counter debug report text truncated `total_pre` through an integer conversion near rollover. |
 | [BUG-007-R](#bug-007-r-csr-mode-fields-were-live-for-in-flight-hits) | R | soft error | `corner-only (CSR mode toggle while datapath pipeline is active)` | fixed | `CORNER_MTS_057_toggle_derive_tot_between_hits`, `CORNER_MTS_058_toggle_delay_field_between_hits` | `1e0d0cb` | CSR mode writes could reinterpret hits already accepted into the pipeline. |
+| [BUG-008-R](#bug-008-r-bypass-lapse-was-live-for-in-flight-hits) | R | soft error | `corner-only (CSR bypass toggle while datapath pipeline is active)` | fixed | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | `6f4bf95` | A CSR write to `bypass_lapse` could reinterpret the divider numerator source for a hit already accepted into the pipeline. |
+| [BUG-009-H](#bug-009-h-hit0-monitor-sampled-after-one-cycle-valid-deassert) | H | non-datapath-refactor | `directed-only (adjacent accepted hit0 visibility)` | fixed | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | `6f4bf95` | The hit0 monitor could miss a one-cycle accepted beat, weakening input-analysis-port evidence for dual normal/debug checks. |
 
 ## 2026-05-10
+
+### BUG-009-H: hit0 monitor sampled after one-cycle valid deassert
+
+- First seen:
+  - UVM case `CORNER_MTS_039_bypass_toggle_after_hit_accept` after the RTL bypass fix was applied and the case required `hit0_history` to show both accepted inputs
+- Symptom:
+  - the DUT accepted two adjacent hit0 beats and produced two normal payloads plus two debug trace pairs
+  - the scoreboard summary still reported `inputs=1 beats=2 payloads=2 dual_path_pairs=2`
+  - after adding the required input-analysis-port wait, the case failed with `timed out waiting for input_count=2, got 1`
+- Root cause:
+  - `mtsp_hit0_monitor` used the same `#1ps` post-edge sampling as DUT-output monitors
+  - the hit0 driver deasserts a one-cycle `valid` with a nonblocking assignment on the accepted clock edge, so the delayed monitor sample could see `valid=0` after a real accepted transfer
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - the hit0 monitor now samples the accepted ready/valid handshake on the clock edge before the driver deassert lands
+    - the monitor records hit0 timestamps in the same `+1ps` reporting domain as the normal-output and debug monitors so latency checks compare like-for-like observation times
+    - direct payload latency checks were reconciled to the actual accepted-hit-to-observed-output path: `10` cycles for `LPM_DIV_PIPELINE=4` and `8` cycles for `LPM_DIV_PIPELINE=2`
+  - before_fix_outcome:
+    - `CORNER_MTS_039_bypass_toggle_after_hit_accept` showed `inputs=1` despite two accepted DUT hits and two paired normal/debug outputs
+    - after the input-count guard was added, E039 failed until the monitor timing was fixed
+    - the first full sweep stopped at `STD_MTS_111_compile_rtl_default_div_pipeline` because the old launch-edge latency expectation was one cycle too long
+  - after_fix_outcome:
+    - E039 passes with `inputs=2 beats=2 payloads=2 debug_ts=2 dual_path_pairs=2 traces=2`
+    - B111 passes with `latency_cycles=10`; B112 passes with `latency_cycles=8`
+    - the final explicit sweep passes with `FULL_EXPLICIT_SWEEP_PASS count=241`
+  - potential_hazard:
+    - fixed for the current one-cycle hit0 driver and single-clock monitor contract; output and debug monitors intentionally keep post-edge sampling because those signals are DUT-driven
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - the artifact audit passed with `explicit_cases=241 missing_artifacts=0`
+  - the explicit-only coverage merge reported filtered instance coverage `65.86%`
+  - the legacy VHDL smoke bench `./tb/run_mts_processor_tb.sh` passed
+- Commit:
+  - `6f4bf95` (`[PATCH] Sample MTSP bypass mode per hit`)
+
+### BUG-008-R: bypass_lapse was live for in-flight hits
+
+- First seen:
+  - UVM case `CORNER_MTS_039_bypass_toggle_after_hit_accept`
+- Symptom:
+  - the first hit was accepted while `bypass_lapse=1`
+  - the test then wrote `bypass_lapse=0` before the accepted hit reached the divider-numerator selection stage
+  - the before-fix RTL emitted `TCC_8N/TCC_1N6=6555/2` for the first hit instead of preserving the sampled bypass-on result `2/0`
+- Root cause:
+  - `csr.bypass_lapse` was read live in the `hit_padding -> hit_prediv` stage
+  - unlike `derive_tot` and `delay_ts_field_use_t`, the bypass control bit was not carried with the accepted hit, so a later CSR write could change math for in-flight data
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - RTL now latches `bypass_lapse` on `asi_hit_type0_accept && hit_in_ok`
+    - the sampled field is carried through `hit_in` and `hit_padding`
+    - divider numerator source selection now uses `hit_padding.bypass_lapse`, and VHDL debug reports print the sampled value at the padding checkpoint
+  - before_fix_outcome:
+    - `make -C tb/uvm prove_delta TEST=mtsp_doc_case_test CASE_ID=CORNER_MTS_039_bypass_toggle_after_hit_accept SEED=1` fails on the before RTL
+    - the before run reports `expected TCC_8N=2 got 6555` for the first accepted hit
+  - after_fix_outcome:
+    - the same `prove_delta` command passes on the after RTL
+    - the VHDL trace shows the first hit padding checkpoint with `bypass='1'` and the second with `bypass='0'`
+    - the normal/debug trace pair evidence shows first hit `2/0` and second hit `6555/2`
+  - potential_hazard:
+    - fixed for the current single-clock CSR/data pipeline; `expected_latency` remains a live delay-threshold CSR by the documented E040 contract, not a timestamp-padding control
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - the focused `CORNER_MTS_031` through `CORNER_MTS_040` batch passed with the required normal/debug scoreboard summaries
+  - the final explicit sweep passed with `FULL_EXPLICIT_SWEEP_PASS count=241`
+  - the artifact audit passed with `explicit_cases=241 missing_artifacts=0`
+- Commit:
+  - `6f4bf95` (`[PATCH] Sample MTSP bypass mode per hit`)
 
 ### BUG-007-R: CSR mode fields were live for in-flight hits
 
