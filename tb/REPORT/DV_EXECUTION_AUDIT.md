@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 04:55 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 05:09 CEST
 
 ## Scope
 
@@ -13,7 +13,8 @@ the EDGE reset and force-stop recovery batch, the EDGE
 generic/configuration, ready-edge, termination-edge, ready-X monitor-trap, and
 upgrade-readiness batches, plus the counter-rollover seed/readout, sampled CSR
 mode, output-marker batches, the first PROF/STRESS throughput and soak batch,
-and the PROF/STRESS long-run mode stress batch.
+the PROF/STRESS long-run mode stress batch, and the PROF/STRESS high-variance
+input-pattern batch.
 This refresh also records the `bypass_lapse` per-hit RTL fix and the hit0
 monitor timing fix required for input analysis-port evidence.
 
@@ -23,9 +24,9 @@ monitor timing fix required for input analysis-port evidence.
 |---|---:|---:|---:|
 | BASIC | 130 | 130 | 130 |
 | EDGE | 131 | 131 | 131 |
-| PROF | 130 | 20 | 20 |
+| PROF | 130 | 30 | 30 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 283 | 283 |
+| Total | 521 | 293 | 293 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -33,8 +34,8 @@ Notes:
 - The old generic smoke fallback is no longer counted as evidence.
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
-- `DV_PROF.md` has explicit UVM handlers for P001 through P020; the remaining
-  110 PROF stress cases still require real stimuli.
+- `DV_PROF.md` has explicit UVM handlers for P001 through P030; the remaining
+  100 PROF stress cases still require real stimuli.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -271,6 +272,32 @@ Notes:
 - `STRESS_MTS_020` rewrites `expected_latency` through phases `1`, `4096`, `2`,
   and `4096`. The scoreboard checks normal payload math, debug trace pairing,
   per-hit expected-latency metadata, and the error sideband for every phase.
+- `STRESS_MTS_021` through `STRESS_MTS_030` add high-variance input-pattern
+  evidence. P021-P027 and P030 use the profile-variance helper to check the
+  input analysis-port sideband, SOP/EOP/error metadata, output route and SOP,
+  payload math, normal/debug trace pairing, and trace math self-consistency for
+  every accepted payload.
+- `STRESS_MTS_021` intentionally allows delay-error sideband high when the
+  route-round-robin timestamp quotient jumps fast enough to make
+  `debug_delta` negative. This is not an RTL mismatch: the scoreboard requires
+  the normal output error bit to match the debug-derived math error.
+- `STRESS_MTS_022` and `STRESS_MTS_023` hold traffic on route 0 and route 3
+  respectively, proving hot-spot traffic with exactly one output SOP per route
+  after reset.
+- `STRESS_MTS_024` sweeps payload channel values 0 through 31 under load, and
+  `STRESS_MTS_025` sweeps ASIC IDs 0 through 15 while keeping sideband packet
+  tracking active.
+- `STRESS_MTS_026` drives SOP+EOP single-beat input packets, and
+  `STRESS_MTS_027` drives four-beat input packets with SOP on the first beat
+  and EOP on the last. The current output reference remains payload SOP plus
+  no payload EOP outside the legal terminate close-marker path.
+- `STRESS_MTS_028` injects every 16th beat as `hiterr` with discard enabled:
+  the scoreboard observes 256 input beats, 240 payloads/debug traces, and 16
+  discarded beats by counter check. `STRESS_MTS_029` repeats the pattern with
+  discard disabled and observes all 256 payload/debug trace pairs.
+- `STRESS_MTS_030` drives nonzero high mux bits in the 6-bit sideband channel
+  under load. The hit0 input analysis port checks the full sideband value while
+  output routing remains derived from the decoded quotient route.
 
 ## Debug And RTL Findings From This Batch
 
@@ -292,24 +319,26 @@ Notes:
 | The hit0 input monitor sampled after the one-cycle driver deassert, so adjacent accepted hits could be missing from `hit0_history`. | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | UVM fix `6f4bf95` samples hit0 accepts at the clock edge and records timestamps in the same monitor reporting domain as output/debug paths. E039 now requires `inputs=2 beats=2 payloads=2 dual_path_pairs=2`. |
 | Direct payload latency checks used the old launch-edge hit0 timestamp convention. | `STD_MTS_111_compile_rtl_default_div_pipeline`, `STD_MTS_112_compile_packaged_div_pipeline` | The accepted-hit-to-observed-output reference is now 10 cycles for `LPM_DIV_PIPELINE=4` and 8 cycles for `LPM_DIV_PIPELINE=2`; terminate close-marker latency remains separately covered by E094/E095. |
 | Initial output-marker harness attempts expected terminal close markers while an input packet was still open, using SOP-only or no-EOP payload traffic. | `CORNER_MTS_069_sop_and_eop_same_output_beat`, `CORNER_MTS_070_empty_zero_on_all_output_classes` | No RTL change was accepted. The sequences now legally close the input packet before requiring empty terminal markers, while preserving payload SOP/empty checks and normal/debug trace pairing. |
+| Profile-variance helper forced no delay error even when a legal route timestamp jump made `debug_delta` negative. | `STRESS_MTS_021_round_robin_enabled_channels` | No RTL change was accepted. The helper now requires normal/debug trace math self-consistency for profile-variance cases while explicit delay-error cases still require exact expected values. |
 
 ## Submodule Freshness Check
 
 The OPQ IP-core chain requested on 2026-05-09 was fetched and the parent
 pointers were advanced through the MTSP EDGE-completion checkpoint before this
-PROF/STRESS batch:
+PROF/STRESS high-variance checkpoint. The OPQ packet-scheduler chain remains
+on the requested leading commit while MTSP advances independently:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mutrig_timestamp_processor` | `8fa6a00` `[PATCH] Add MTSP stress throughput cases` | `origin/master` |
-| `mu3e-ip-cores` | `07afa74` `[PATCH] Advance MTSP stress DV pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
-| `musip` | `3648acb` `[PATCH] Advance Mu3e IP cores MTSP stress pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
+| `mutrig_timestamp_processor` | `a833ea0` `[PATCH] Add MTSP long-run stress cases` | `origin/master` |
+| `mu3e-ip-cores` | `17233bd` `[PATCH] Advance MTSP long-run stress pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
+| `musip` | `a791f08` `[PATCH] Advance Mu3e IP cores MTSP long-run pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
-`musip 3648acb` -> `external/mu3e-ip-cores 07afa74` ->
-`packet_scheduler 245eb93` and `mutrig_timestamp_processor 8fa6a00` before the
-current P011-P020 commit is published through the parent pointers.
+`musip a791f08` -> `external/mu3e-ip-cores 17233bd` ->
+`packet_scheduler 245eb93` and `mutrig_timestamp_processor a833ea0` before the
+current P021-P030 commit is published through the parent pointers.
 
 ## Evidence Commands
 
@@ -534,6 +563,32 @@ and a scoreboard analysis-port summary. Representative summaries:
   `2`, and `4096`, with error high for phases `1` and `2` and low for the
   `4096` phases.
 
+Focused PROF/STRESS high-variance input-pattern batch:
+
+```bash
+make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<P021-P030 case_id> SEED=1
+```
+
+Result: `STRESS_P021_P030_BATCH_PASS count=10`. Every case ran with
+`MTSP_DEBUG_PATH_REQUIRED=1`, input analysis-port monitoring, normal output
+monitoring, debug-path monitoring, and a scoreboard summary. Representative
+summaries:
+- P021 balanced route-round-robin load: `inputs=128 beats=128 payloads=128
+  debug_ts=128 debug_burst=128 ts_delta=128 dual_path_pairs=128 traces=128`.
+- P022/P023 hot-spot route runs: `inputs=64 beats=64 payloads=64 debug_ts=64
+  debug_burst=64 ts_delta=64 dual_path_pairs=64 traces=64`.
+- P024/P025 dense payload-channel and ASIC-ID sweeps: `inputs=128 beats=128
+  payloads=128 debug_ts=128 debug_burst=128 ts_delta=128
+  dual_path_pairs=128 traces=128`.
+- P026/P027 packet-shape streams: `inputs=64 beats=64 payloads=64 debug_ts=64
+  debug_burst=64 ts_delta=64 dual_path_pairs=64 traces=64`.
+- P028 periodic hiterr discard: `inputs=256 beats=240 payloads=240
+  debug_ts=240 debug_burst=240 ts_delta=240 dual_path_pairs=240 traces=240`.
+- P029 periodic hiterr keep mode: `csr=7 inputs=256 beats=256 payloads=256
+  debug_ts=256 debug_burst=256 ts_delta=256 dual_path_pairs=256 traces=256`.
+- P030 nonzero sideband mux bits: `inputs=64 beats=64 payloads=64
+  debug_ts=64 debug_burst=64 ts_delta=64 dual_path_pairs=64 traces=64`.
+
 RTL before/after bug proof:
 
 ```bash
@@ -551,8 +606,8 @@ make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
 Result from the previous EDGE checkpoint: `FULL_EXPLICIT_SWEEP_PASS
-count=263`. The current 283-case evidence is that sweep plus the focused
-P001-P020 stress batches above; a new all-283 ordered sweep is still useful
+count=263`. The current 293-case evidence is that sweep plus the focused
+P001-P030 stress batches above; a new all-293 ordered sweep is still useful
 before final closure.
 
 Combo terminate contract:
@@ -576,18 +631,18 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-vcover merge /tmp/mtsp_explicit_283.ucdb <283 dispatcher UCDBs>
-vcover report -details -code bcesft /tmp/mtsp_explicit_283.ucdb
+vcover merge /tmp/mtsp_explicit_293.ucdb <293 dispatcher UCDBs>
+vcover report -details -code bcesft /tmp/mtsp_explicit_293.ucdb
 ```
 
-Filtered instance coverage summary: `66.54%`. The DUT instance summary is
+Filtered instance coverage summary: `58.77%`. The DUT instance summary is
 statement `95.81%`, branch `94.60%`, condition `79.79%`, expression `100.00%`,
-FSM state `100.00%`, FSM transition `77.77%`, and toggle `53.13%`.
+FSM state `100.00%`, FSM transition `77.77%`, and toggle `53.23%`.
 
 Artifact check:
 
 ```text
-explicit_cases=283 missing_artifacts=0
+explicit_cases=293 missing_artifacts=0
 ```
 
 Additional checks through this PROF/STRESS batch:
@@ -617,14 +672,14 @@ Results:
 - `rtl_style_check.py mts_processor.vhd`: fail on 948 legacy alignment issues.
 - `./tb/run_mts_processor_tb.sh`: pass with `mts_processor_tb PASSED`.
 
-Current evidenced explicit cases are the 283 handlers in
+Current evidenced explicit cases are the 293 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 238 uncovered cases (110 PROF/STRESS and 128 ERROR/NEG), then
+the remaining 228 uncovered cases (100 PROF/STRESS and 128 ERROR/NEG), then
 regenerate the ordered coverage/report dashboard from current artifacts instead
 of relying on stale proxy rows. EDGE is now fully dispatched and evidenced;
-PROF has 20 evidenced stress handlers.
+PROF has 30 evidenced stress handlers.

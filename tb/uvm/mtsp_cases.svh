@@ -268,6 +268,22 @@
             trace.debug_delta, trace.expected_latency))
     endtask
 
+    task automatic expect_trace_math_self_consistent_at(int unsigned trace_idx,
+                                                        string ctx);
+      mtsp_hit_trace_item trace;
+
+      if (trace_idx >= m_env.m_scb.trace_history.size())
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected trace index %0d, size=%0d",
+            ctx, trace_idx, m_env.m_scb.trace_history.size()))
+      trace = m_env.m_scb.trace_history[trace_idx];
+      if (trace.math_error !== trace.hit1_error)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected trace math/hit error agreement, got math_error=%0b hit_error=%0b debug_delta=%0d expected_latency=%0d",
+            ctx, trace.math_error, trace.hit1_error, trace.debug_delta,
+            trace.expected_latency))
+    endtask
+
     task automatic expect_trace_expected_latency_at(int unsigned trace_idx,
                                                     int unsigned expected_latency,
                                                     string ctx);
@@ -5898,6 +5914,235 @@
       expect_discard_count(32'd0, ctx);
     endtask
 
+    localparam int unsigned PROFILE_PATTERN_RR_ENABLED    = 0;
+    localparam int unsigned PROFILE_PATTERN_HOT_CH0       = 1;
+    localparam int unsigned PROFILE_PATTERN_HOT_CH3       = 2;
+    localparam int unsigned PROFILE_PATTERN_PAYLOAD_SWEEP = 3;
+    localparam int unsigned PROFILE_PATTERN_ASIC_SWEEP    = 4;
+    localparam int unsigned PROFILE_PATTERN_SINGLE_PACKET = 5;
+    localparam int unsigned PROFILE_PATTERN_MULTI_PACKET  = 6;
+    localparam int unsigned PROFILE_PATTERN_MUX_BITS      = 7;
+
+    function automatic int unsigned profile_route_from_q(int unsigned quotient);
+      return (quotient >> 4) & 3;
+    endfunction
+
+    function automatic int unsigned profile_route_quotient(int unsigned route,
+                                                           int unsigned idx);
+      return ((route & 3) * 16) + (idx % 16);
+    endfunction
+
+    task automatic profile_pattern_fields(int unsigned pattern,
+                                          int unsigned idx,
+                                          output int unsigned sideband_channel,
+                                          output int unsigned asic_value,
+                                          output int unsigned channel_value,
+                                          output int unsigned quotient,
+                                          output int unsigned remainder,
+                                          output bit sop_value,
+                                          output bit eop_value,
+                                          output int unsigned tfine_value,
+                                          string ctx);
+      sideband_channel = 0;
+      asic_value       = 2;
+      channel_value    = idx % 32;
+      quotient         = idx % 64;
+      remainder        = idx % 5;
+      sop_value        = (idx == 0);
+      eop_value        = 1'b0;
+      tfine_value      = idx % 32;
+
+      case (pattern)
+        PROFILE_PATTERN_RR_ENABLED: begin
+          sideband_channel = idx % 4;
+          channel_value    = idx % 4;
+          quotient         = profile_route_quotient(idx % 4, idx / 4);
+          sop_value        = (idx < 4);
+        end
+        PROFILE_PATTERN_HOT_CH0: begin
+          sideband_channel = 0;
+          channel_value    = 0;
+          quotient         = profile_route_quotient(0, idx);
+        end
+        PROFILE_PATTERN_HOT_CH3: begin
+          sideband_channel = 3;
+          channel_value    = 3;
+          quotient         = profile_route_quotient(3, idx);
+        end
+        PROFILE_PATTERN_PAYLOAD_SWEEP: begin
+          sideband_channel = 2;
+          asic_value       = 2;
+          channel_value    = idx % 32;
+        end
+        PROFILE_PATTERN_ASIC_SWEEP: begin
+          sideband_channel = 0;
+          asic_value       = idx % 16;
+          channel_value    = 7;
+        end
+        PROFILE_PATTERN_SINGLE_PACKET: begin
+          sideband_channel = idx % 4;
+          channel_value    = idx % 4;
+          sop_value        = 1'b1;
+          eop_value        = 1'b1;
+        end
+        PROFILE_PATTERN_MULTI_PACKET: begin
+          sideband_channel = (idx / 4) % 4;
+          channel_value    = sideband_channel;
+          sop_value        = ((idx % 4) == 0);
+          eop_value        = ((idx % 4) == 3);
+        end
+        PROFILE_PATTERN_MUX_BITS: begin
+          sideband_channel = 6'b10_0000 | (idx % 4);
+          channel_value    = idx % 4;
+          sop_value        = (idx == 0);
+        end
+        default:
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s unsupported profile pattern %0d", ctx, pattern))
+      endcase
+    endtask
+
+    task automatic send_profile_hit(int unsigned sideband_channel,
+                                    int unsigned asic_value,
+                                    int unsigned channel_value,
+                                    int unsigned quotient,
+                                    int unsigned remainder,
+                                    bit sop_value,
+                                    bit eop_value,
+                                    bit [2:0] error_value,
+                                    int unsigned tfine_value,
+                                    string ctx);
+      int unsigned raw_value;
+
+      lookup_raw_for_quotient(quotient, remainder, raw_value, ctx);
+      send_hit_beat_with_sideband(sideband_channel, asic_value, channel_value,
+        raw_value, raw_value, 1'b0, sop_value, eop_value, error_value, 1'b1,
+        tfine_value);
+    endtask
+
+    task automatic expect_hit0_fields_at(int unsigned input_idx,
+                                         int unsigned sideband_channel,
+                                         bit sop_value,
+                                         bit eop_value,
+                                         bit [2:0] error_value,
+                                         string ctx);
+      mtsp_hit0_obs_item hit_obs;
+
+      if (input_idx >= m_env.m_scb.hit0_history.size())
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected input index %0d, size=%0d",
+            ctx, input_idx, m_env.m_scb.hit0_history.size()))
+      hit_obs = m_env.m_scb.hit0_history[input_idx];
+      if (hit_obs.channel !== sideband_channel[5:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected sideband channel=0x%02h got 0x%02h",
+            ctx, sideband_channel[5:0], hit_obs.channel))
+      if (hit_obs.sop !== sop_value || hit_obs.eop !== eop_value ||
+          hit_obs.error !== error_value)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected input sop/eop/error=%0b/%0b/%0h got %0b/%0b/%0h",
+            ctx, sop_value, eop_value, error_value, hit_obs.sop, hit_obs.eop,
+            hit_obs.error))
+    endtask
+
+    task automatic expect_profile_payload_at(int unsigned history_idx,
+                                             int unsigned trace_idx,
+                                             int unsigned asic_value,
+                                             int unsigned channel_value,
+                                             int unsigned tfine_value,
+                                             int unsigned quotient,
+                                             int unsigned remainder,
+                                             int unsigned route_value,
+                                             bit expected_sop,
+                                             string ctx);
+      mtsp_hit1_obs_item hit_obs;
+
+      expect_payload_math_at(history_idx, asic_value, channel_value,
+        tfine_value, quotient, remainder, 0, ctx);
+      hit_obs = m_env.m_scb.history[history_idx];
+      if (hit_obs.channel !== route_value[3:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected route=%0d got %0d data=0x%010h",
+            ctx, route_value[3:0], hit_obs.channel, hit_obs.data))
+      if (hit_obs.sop !== expected_sop || hit_obs.eop !== 1'b0 ||
+          hit_obs.empty !== 1'b0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected output sop/eop/empty=%0b/0/0 got %0b/%0b/%0b",
+            ctx, expected_sop, hit_obs.sop, hit_obs.eop, hit_obs.empty))
+      expect_trace_pair_at(trace_idx, ctx);
+      expect_trace_math_self_consistent_at(trace_idx, ctx);
+    endtask
+
+    task automatic run_profile_variance_case(int unsigned hit_count,
+                                             int unsigned pattern,
+                                             string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      bit          route_seen[4];
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned sideband_channel;
+        int unsigned asic_value;
+        int unsigned channel_value;
+        int unsigned quotient;
+        int unsigned remainder;
+        int unsigned tfine_value;
+        bit          sop_value;
+        bit          eop_value;
+
+        profile_pattern_fields(pattern, idx, sideband_channel, asic_value,
+          channel_value, quotient, remainder, sop_value, eop_value,
+          tfine_value, ctx);
+        send_profile_hit(sideband_channel, asic_value, channel_value,
+          quotient, remainder, sop_value, eop_value, '0, tfine_value,
+          $sformatf("%s profile hit idx=%0d", ctx, idx));
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 1024, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 2048, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 2048, ctx);
+
+      foreach (route_seen[route])
+        route_seen[route] = 1'b0;
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned sideband_channel;
+        int unsigned asic_value;
+        int unsigned channel_value;
+        int unsigned quotient;
+        int unsigned remainder;
+        int unsigned route_value;
+        int unsigned tfine_value;
+        bit          sop_value;
+        bit          eop_value;
+        bit          expected_sop;
+
+        profile_pattern_fields(pattern, idx, sideband_channel, asic_value,
+          channel_value, quotient, remainder, sop_value, eop_value,
+          tfine_value, ctx);
+        route_value  = profile_route_from_q(quotient);
+        expected_sop = !route_seen[route_value];
+        route_seen[route_value] = 1'b1;
+        expect_hit0_fields_at(base_inputs + idx, sideband_channel, sop_value,
+          eop_value, '0, $sformatf("%s input idx=%0d", ctx, idx));
+        expect_profile_payload_at(base_history_size + idx, base_traces + idx,
+          asic_value, channel_value, tfine_value, quotient, remainder,
+          route_value, expected_sop, $sformatf("%s payload idx=%0d", ctx, idx));
+      end
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
     task automatic do_stress_001_line_rate_short_mode();
       run_stress_stream_case(64, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
         1'b0, case_id);
@@ -6028,6 +6273,48 @@
 
     task automatic do_stress_020_rewrite_expected_latency_mid_run();
       run_stress_latency_rewrite_case(16, case_id);
+    endtask
+
+    task automatic do_stress_021_round_robin_enabled_channels();
+      run_profile_variance_case(128, PROFILE_PATTERN_RR_ENABLED, case_id);
+    endtask
+
+    task automatic do_stress_022_hotspot_channel0();
+      run_profile_variance_case(64, PROFILE_PATTERN_HOT_CH0, case_id);
+    endtask
+
+    task automatic do_stress_023_hotspot_channel3();
+      run_profile_variance_case(64, PROFILE_PATTERN_HOT_CH3, case_id);
+    endtask
+
+    task automatic do_stress_024_dense_payload_channel_sweep();
+      run_profile_variance_case(128, PROFILE_PATTERN_PAYLOAD_SWEEP, case_id);
+    endtask
+
+    task automatic do_stress_025_dense_asic_id_sweep();
+      run_profile_variance_case(128, PROFILE_PATTERN_ASIC_SWEEP, case_id);
+    endtask
+
+    task automatic do_stress_026_single_beat_packet_stream();
+      run_profile_variance_case(64, PROFILE_PATTERN_SINGLE_PACKET, case_id);
+    endtask
+
+    task automatic do_stress_027_multi_beat_packet_stream();
+      run_profile_variance_case(64, PROFILE_PATTERN_MULTI_PACKET, case_id);
+    endtask
+
+    task automatic do_stress_028_periodic_hiterr_every_16th();
+      run_stress_stream_case(256, 0, 1'b0, 1'b1, 1'b1, 0, 0, 16, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_029_periodic_hiterr_keep_mode();
+      run_stress_stream_case(256, 0, 1'b0, 1'b1, 1'b1, 0, 0, 16, 1'b0,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_030_nonzero_mux_bits_under_load();
+      run_profile_variance_case(64, PROFILE_PATTERN_MUX_BITS, case_id);
     endtask
 
     task automatic do_neg_021_hiterr_rejected_running();
@@ -6323,6 +6610,16 @@
         "STRESS_MTS_018_long_run_bypass_on": do_stress_018_long_run_bypass_on();
         "STRESS_MTS_019_toggle_bypass_between_packets": do_stress_019_toggle_bypass_between_packets();
         "STRESS_MTS_020_rewrite_expected_latency_mid_run": do_stress_020_rewrite_expected_latency_mid_run();
+        "STRESS_MTS_021_round_robin_enabled_channels": do_stress_021_round_robin_enabled_channels();
+        "STRESS_MTS_022_hotspot_channel0": do_stress_022_hotspot_channel0();
+        "STRESS_MTS_023_hotspot_channel3": do_stress_023_hotspot_channel3();
+        "STRESS_MTS_024_dense_payload_channel_sweep": do_stress_024_dense_payload_channel_sweep();
+        "STRESS_MTS_025_dense_asic_id_sweep": do_stress_025_dense_asic_id_sweep();
+        "STRESS_MTS_026_single_beat_packet_stream": do_stress_026_single_beat_packet_stream();
+        "STRESS_MTS_027_multi_beat_packet_stream": do_stress_027_multi_beat_packet_stream();
+        "STRESS_MTS_028_periodic_hiterr_every_16th": do_stress_028_periodic_hiterr_every_16th();
+        "STRESS_MTS_029_periodic_hiterr_keep_mode": do_stress_029_periodic_hiterr_keep_mode();
+        "STRESS_MTS_030_nonzero_mux_bits_under_load": do_stress_030_nonzero_mux_bits_under_load();
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("No explicit UVM stimulus handler for documented case '%s'", case_id))

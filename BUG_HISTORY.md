@@ -44,8 +44,41 @@ Historical formal note:
 | [BUG-007-R](#bug-007-r-csr-mode-fields-were-live-for-in-flight-hits) | R | soft error | `corner-only (CSR mode toggle while datapath pipeline is active)` | fixed | `CORNER_MTS_057_toggle_derive_tot_between_hits`, `CORNER_MTS_058_toggle_delay_field_between_hits` | `1e0d0cb` | CSR mode writes could reinterpret hits already accepted into the pipeline. |
 | [BUG-008-R](#bug-008-r-bypass-lapse-was-live-for-in-flight-hits) | R | soft error | `corner-only (CSR bypass toggle while datapath pipeline is active)` | fixed | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | `6f4bf95` | A CSR write to `bypass_lapse` could reinterpret the divider numerator source for a hit already accepted into the pipeline. |
 | [BUG-009-H](#bug-009-h-hit0-monitor-sampled-after-one-cycle-valid-deassert) | H | non-datapath-refactor | `directed-only (adjacent accepted hit0 visibility)` | fixed | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | `6f4bf95` | The hit0 monitor could miss a one-cycle accepted beat, weakening input-analysis-port evidence for dual normal/debug checks. |
+| [BUG-010-H](#bug-010-h-profile-helper-forced-zero-delay-error-on-valid-route-jump) | H | non-datapath-refactor | `directed-only (profile route-jump delay sanity)` | fixed | `STRESS_MTS_021_round_robin_enabled_channels` | `pending current checkpoint` | Profile helper forced zero delay-error even when normal output and debug math correctly agreed on a negative-delta route jump. |
 
 ## 2026-05-10
+
+### BUG-010-H: Profile helper forced zero delay-error on valid route jump
+
+- First seen:
+  - UVM case `STRESS_MTS_021_round_robin_enabled_channels`
+- Symptom:
+  - the first P021 bring-up stopped at payload index 1 with `expected error=0, got math_error=1 hit_error=1 debug_delta=-3 expected_latency=2000`
+  - the scoreboard trace showed that the normal output error bit and the debug-derived math error agreed; the failing assertion was the profile helper's hard-coded no-error expectation
+- Root cause:
+  - the high-variance profile helper reused a zero-delay-error assertion even for route-round-robin traffic
+  - that stimulus can legally jump from quotient route 0 to route 1 on adjacent accepted hits, so the selected timestamp can be later than the output observation point and produce a mathematically valid negative `debug_delta`
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - the profile payload checker still verifies payload math, output route, SOP/EOP/empty, and normal/debug trace pairing
+    - for profile-variance cases it now requires `trace.math_error` and `trace.hit1_error` to match instead of forcing both low
+    - explicit delay-threshold cases continue to use `expect_trace_error_at` with an exact expected value
+  - before_fix_outcome:
+    - `STRESS_MTS_021_round_robin_enabled_channels` failed at the first adjacent route jump even though normal and debug paths agreed on the delay error
+  - after_fix_outcome:
+    - `STRESS_MTS_021_round_robin_enabled_channels` passes with `inputs=128 beats=128 payloads=128 debug_ts=128 debug_burst=128 ts_delta=128 dual_path_pairs=128 traces=128`
+    - the focused `STRESS_MTS_021` through `STRESS_MTS_030` batch passes with no UVM errors or fatals
+  - potential_hazard:
+    - fixed for the profile-variance reference helper; this does not weaken explicit no-error, equality, or out-of-window delay cases because those still assert exact delay-error values
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - the artifact audit passed with `explicit_cases=293 missing_artifacts=0`
+  - the explicit-only coverage merge reported DUT statement `95.81%`, branch `94.60%`, condition `79.79%`, expression `100.00%`, FSM state `100.00%`, FSM transition `77.77%`, and toggle `53.23%`
+- Commit:
+  - pending current checkpoint
 
 ### BUG-009-H: hit0 monitor sampled after one-cycle valid deassert
 
