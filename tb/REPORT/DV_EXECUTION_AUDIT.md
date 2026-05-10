@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 02:07 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 02:35 CEST
 
 ## Scope
 
@@ -9,28 +9,23 @@ dual normal/debug monitor path, replacing the old generic documented-case
 fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
 adding the first EDGE CSR/input-protocol, divider/ToT, and debug-threshold
 boundary batches, the EDGE reset and force-stop recovery batch, and the EDGE
-generic/configuration, ready-edge, termination-edge, and counter-rollover
-seed/readout batches.
+generic/configuration, ready-edge, termination-edge, counter-rollover
+seed/readout, and sampled CSR mode batches.
 
 ## Current Coverage Of Documented Cases
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
 | BASIC | 130 | 130 | 130 |
-| EDGE | 131 | 87 | 87 |
+| EDGE | 131 | 89 | 89 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 219 | 219 |
+| Total | 521 | 221 | 221 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
   `No explicit UVM stimulus handler`.
 - The old generic smoke fallback is no longer counted as evidence.
-- `CORNER_MTS_057_toggle_derive_tot_between_hits` and
-  `CORNER_MTS_058_toggle_delay_field_between_hits` remain open until the
-  in-flight CSR mode-sampling contract is resolved. A weak post-output toggle
-  check is not counted as evidence for the documented accepted-hit sampling
-  requirement.
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
 - `DV_PROF.md` has no explicit UVM handlers yet.
@@ -150,10 +145,12 @@ Notes:
   `CORNER_MTS_053` bring-up exposed a test-vector unit mismatch: ToT is in
   decoded 1.6 ns ticks, not quotient steps. The stimulus was corrected before
   evidence was accepted.
-- `CORNER_MTS_059` and `CORNER_MTS_060` now cover EFlag toggling and TFine
-  extremes. `CORNER_MTS_057` and `CORNER_MTS_058` are intentionally not
-  implemented by these helpers because their documented per-accepted-hit CSR
-  mode sampling needs a separate RTL/harness decision.
+- `CORNER_MTS_057` and `CORNER_MTS_058` now prove that `derive_tot` and
+  `delay_ts_field_use_t` are sampled with each accepted hit. The before RTL
+  failed these cases because later CSR writes could reinterpret already
+  accepted hits; the current RTL carries the sampled mode bits through the
+  ToT, delay-error, `debug_ts`, and `debug_burst` paths. `CORNER_MTS_059` and
+  `CORNER_MTS_060` cover EFlag toggling and TFine extremes.
 - `CORNER_MTS_071` through `CORNER_MTS_076` now calibrate exact debug-delay
   targets and prove the error flag at `-1`, `0`, `+1`, `expected_latency-1`,
   `expected_latency`, and `expected_latency+1`.
@@ -211,26 +208,26 @@ Notes:
 | `DV_EDGE.md` documented E094/E095 terminate delay as `LPM_DIV_PIPELINE + 4`, but RTL emits close markers only after the full accepted payload path drains. | `CORNER_MTS_094_packaged_div_pipeline_delay` | No RTL change. The plan and checker now use the monitor-observable accepted-hit-to-first-empty-close-marker contract, `LPM_DIV_PIPELINE + 7`. |
 | Counter preload before `run_start()` was cleared by the legal `RUN_PREPARE -> SYNC` sequence, so the rollover stimulus never reached the intended boundary. | `STD_MTS_106_total_counter_hi_rollover` | No carry RTL bug was accepted. The DV-only seed is applied after standard run bring-up, and default CSR writes to counter words remain inert when the generic is zero. |
 | The VHDL debug report printed `total_pre` through a truncated integer conversion, which saturated the human trace near rollover. | `STD_MTS_106_total_counter_hi_rollover` | RTL report text now prints the full 48-bit counter in hex so rollover bring-up traces match CSR and scoreboard math. |
+| `derive_tot` and `delay_ts_field_use_t` were read live after hit acceptance, so a CSR write could reinterpret an in-flight hit. | `CORNER_MTS_057_toggle_derive_tot_between_hits`, `CORNER_MTS_058_toggle_delay_field_between_hits` | RTL now latches these mode fields on accepted hits and carries them through the ToT, delay-error, `debug_ts`, and `debug_burst` paths; before/after `prove_delta` fails on the old RTL and passes on the fixed RTL. |
 
 ## Submodule Freshness Check
 
 The OPQ IP-core chain requested on 2026-05-09 was fetched and the parent
-pointers were advanced through the previous MTSP DV checkpoint before this
-rollover batch:
+pointers were advanced through the previous MTSP rollover DV checkpoint before
+this sampled-mode batch:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mu3e-ip-cores` | `9aec359` `[PATCH] Advance MTSP DV package pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
-| `musip` | `31a3d58` `[PATCH] Advance Mu3e IP cores MTSP DV pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
+| `mu3e-ip-cores` | `ba9e742` `[PATCH] Advance MTSP rollover DV pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
+| `musip` | `0bf0c1a` `[PATCH] Advance Mu3e IP cores rollover DV pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
 
-`/home/yifeng/packages/musip_2604/external` contains the clean chain:
-`musip 31a3d58` -> `external/mu3e-ip-cores 9aec359` ->
-`packet_scheduler 245eb93` and `mutrig_timestamp_processor 47d47fa`. The active
-`/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores` and
-`packet_scheduler` worktrees were dirty and divergent from those branch tips, so
-no in-place checkout or pull was performed there. This new MTSP rollover
-checkpoint still requires a follow-up parent gitlink update after it is pushed.
+`/home/yifeng/packages/musip_2604/external` contains the parent chain:
+`musip 0bf0c1a` -> `external/mu3e-ip-cores ba9e742` ->
+`packet_scheduler 245eb93` and `mutrig_timestamp_processor 2c65008`. The active
+`/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores` worktree remains separate
+from the published parent chain, so this new MTSP sampled-mode checkpoint still
+requires a follow-up parent gitlink update after it is pushed.
 
 ## Evidence Commands
 
@@ -330,6 +327,20 @@ done
 Result: both cases passed, proving CSR words 3 and 4 remain inert write targets
 when `DV_COUNTER_SEED_ENABLE=0`.
 
+Focused CSR mode-sampling batch:
+
+```bash
+make -C tb/uvm prove_delta TEST=mtsp_doc_case_test CASE_ID=CORNER_MTS_057_toggle_derive_tot_between_hits SEED=1
+make -C tb/uvm prove_delta TEST=mtsp_doc_case_test CASE_ID=CORNER_MTS_058_toggle_delay_field_between_hits SEED=1
+```
+
+Result: the before RTL failed `CORNER_MTS_057` because the first accepted hit
+was recomputed with the later ToT CSR setting and produced `ET_1N6=4` instead
+of the sampled short-mode `ET_1N6=0`. The before RTL failed
+`CORNER_MTS_058` because the first accepted hit inherited the later E-path
+delay source and asserted the error sideband. After the RTL fix both cases pass
+with two payloads, two debug traces, and two normal/debug trace pairs.
+
 RTL before/after bug proof:
 
 ```bash
@@ -346,7 +357,7 @@ Final explicit-case sweep:
 make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=219`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=221`.
 
 Combo terminate contract:
 
@@ -365,12 +376,12 @@ make -C tb/uvm cov_report_total RTL_VARIANT=after
 
 Current merged report: `tb/uvm/cov_after/merged.txt`.
 
-Filtered instance coverage summary: `66.51%`.
+Filtered instance coverage summary: `66.26%`.
 
 Artifact check:
 
 ```text
-explicit_cases=219 missing_artifacts=0
+explicit_cases=221 missing_artifacts=0
 combo_pass=True
 ```
 
@@ -380,6 +391,7 @@ Additional checks:
 git diff --check
 ./tb/run_mts_processor_tb.sh
 python3 /home/yifeng/.codex/skills/rtl-writing/scripts/rtl_style_check.py mts_processor.vhd
+python3 /home/yifeng/.codex/skills/rtl-doc-style/scripts/rtl_doc_style_check.py .
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/bug_history_format_check.py BUG_HISTORY.md
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py tb
 ```
@@ -387,25 +399,29 @@ python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py
 Results:
 - `git diff --check`: pass.
 - `./tb/run_mts_processor_tb.sh`: `mts_processor_tb PASSED`.
-- `rtl_style_check.py`: fail on 965 legacy style issues in `mts_processor.vhd`
+- `rtl_style_check.py`: fail on 948 legacy style issues in `mts_processor.vhd`
   such as tabs, legacy `i_` ports, constant naming, and alignment. This batch
   did not attempt a broad file restyle.
+- `rtl_doc_style_check.py .`: fail on the legacy `tb/` documentation layout,
+  including missing `tb/README.md`, `tb/DV_REPORT.json`, and canonical
+  companion/header/footer sections. This batch updated the execution audit but
+  did not migrate the whole documentation tree.
 - `bug_history_format_check.py BUG_HISTORY.md`: pass.
 - `dv_bucket_format_check.py tb`: fail on 76 legacy bucket-format errors across
   `tb/DV_BASIC.md`, `tb/DV_EDGE.md`, `tb/DV_PROF.md`, and `tb/DV_ERROR.md`
   because those files still use the older bullet-list layout instead of the
   canonical table/header format. Recent batches corrected specific stale EDGE
-  timing and termination text inside the legacy EDGE file.
+  timing and termination text inside the legacy EDGE file, and this audit now
+  records the sampled-mode evidence separately.
 
-Current evidenced explicit cases are the 219 handlers in
+Current evidenced explicit cases are the 221 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 302 uncovered EDGE, PROF, and ERROR cases, including the
-in-flight CSR mode-sampling cases `CORNER_MTS_057` and `CORNER_MTS_058`, the
-expected-error ready trap `CORNER_MTS_105`, then regenerate the ordered
-coverage/report dashboard from current artifacts instead of relying on stale
-proxy rows.
+the remaining 300 uncovered EDGE, PROF, and ERROR cases, including the
+expected-error ready trap `CORNER_MTS_105`, the still-open EDGE protocol/math
+gaps, then regenerate the ordered coverage/report dashboard from current
+artifacts instead of relying on stale proxy rows.

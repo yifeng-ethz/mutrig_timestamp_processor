@@ -302,6 +302,10 @@ architecture rtl of mts_processor is
         t_fine          : std_logic_vector(4 downto 0);  --T-Trigger fine time value
         e_cc            : std_logic_vector(14 downto 0); --Energy coarse time value (in units of 1.6ns)
         e_flag          : std_logic;                     --E-Flag valid flag
+
+        derive_tot              : std_logic;    -- Mode sampled with accepted hit
+        delay_ts_field_use_t    : std_logic;    -- Delay-source mode sampled with accepted hit
+
         valid           : std_logic;                     --data word valid flag
         hiterr			: std_logic;
     end record;
@@ -317,6 +321,10 @@ architecture rtl of mts_processor is
         t_fine          : std_logic_vector(4 downto 0);  --T-Trigger fine time value
         e_cc            : std_logic_vector(14 downto 0); --Energy coarse time value (in units of 1.6ns)
         e_flag          : std_logic;                     --E-Flag valid flag
+
+        derive_tot              : std_logic;    -- Mode sampled with accepted hit
+        delay_ts_field_use_t    : std_logic;    -- Delay-source mode sampled with accepted hit
+
         valid           : std_logic;                     --data word valid flag
         hiterr			: std_logic;
     end record;
@@ -330,6 +338,9 @@ architecture rtl of mts_processor is
         e_cc            : std_logic_vector(14 downto 0); --Energy coarse time value (in units of 1.6ns)
         et_1n6			: std_logic_vector(8 downto 0); -- E-T part (calculated with 50 bits)
         e_flag          : std_logic;                     --E-Flag valid flag
+
+        delay_ts_field_use_t    : std_logic;    -- Delay-source mode sampled with accepted hit
+
         valid           : std_logic;                     --data word valid flag
         hiterr			: std_logic;
     end record;
@@ -518,6 +529,10 @@ architecture rtl of mts_processor is
         e_flag          : std_logic;
         hiterr          : std_logic;
         valid           : std_logic;
+
+        derive_tot              : std_logic;
+        delay_ts_field_use_t    : std_logic;
+
         tcc_div_numer   : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
         ecc_div_numer   : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
     end record;
@@ -1249,6 +1264,10 @@ begin
             hit_in.t_fine   <= (others => '0');
             hit_in.e_cc     <= (others => '0');
             hit_in.e_flag   <= '0';
+
+            hit_in.derive_tot              <= '0';
+            hit_in.delay_ts_field_use_t    <= '1';
+
             hit_in.valid    <= '0';
             hit_in.hiterr   <= '0';
 
@@ -1261,6 +1280,10 @@ begin
             hit_padding.t_fine       <= (others => '0');
             hit_padding.e_cc         <= (others => '0');
             hit_padding.e_flag       <= '0';
+
+            hit_padding.derive_tot              <= '0';
+            hit_padding.delay_ts_field_use_t    <= '1';
+
             hit_padding.valid        <= '0';
             hit_padding.hiterr       <= '0';
 
@@ -1270,6 +1293,10 @@ begin
             hit_prediv.e_flag        <= '0';
             hit_prediv.hiterr        <= '0';
             hit_prediv.valid         <= '0';
+
+            hit_prediv.derive_tot              <= '0';
+            hit_prediv.delay_ts_field_use_t    <= '1';
+
             hit_prediv.tcc_div_numer <= (others => '0');
             hit_prediv.ecc_div_numer <= (others => '0');
             hit_totcalc.asic         <= (others => '0');
@@ -1278,6 +1305,10 @@ begin
             hit_totcalc.e_flag       <= '0';
             hit_totcalc.hiterr       <= '0';
             hit_totcalc.valid        <= '0';
+
+            hit_totcalc.derive_tot              <= '0';
+            hit_totcalc.delay_ts_field_use_t    <= '1';
+
             hit_totcalc.tcc_div_numer <= (others => '0');
             hit_totcalc.ecc_div_numer <= (others => '0');
 
@@ -1295,6 +1326,9 @@ begin
                 hit_div(i).e_cc    <= (others => '0');
                 hit_div(i).et_1n6  <= (others => '0');
                 hit_div(i).e_flag  <= '0';
+
+                hit_div(i).delay_ts_field_use_t <= '1';
+
                 hit_div(i).valid   <= '0';
                 hit_div(i).hiterr  <= '0';
             end loop;
@@ -1317,6 +1351,10 @@ begin
             hit_in.t_fine	<= (others => '0');
             hit_in.e_cc		<= (others => '0');
             hit_in.e_flag	<= '0';
+
+            hit_in.derive_tot              <= '0';
+            hit_in.delay_ts_field_use_t    <= '1';
+
             hit_in.valid	<= '0';
             hit_in.hiterr	<= '0';
             
@@ -1329,6 +1367,10 @@ begin
             hit_padding.t_fine	<= (others => '0');
             hit_padding.e_cc	<= (others => '0');
             hit_padding.e_flag	<= '0';
+
+            hit_padding.derive_tot              <= '0';
+            hit_padding.delay_ts_field_use_t    <= '1';
+
             hit_padding.valid	<= '0';
             hit_padding.hiterr	<= '0';
 
@@ -1338,6 +1380,10 @@ begin
             hit_prediv.e_flag     <= '0';
             hit_prediv.hiterr     <= '0';
             hit_prediv.valid      <= '0';
+
+            hit_prediv.derive_tot              <= '0';
+            hit_prediv.delay_ts_field_use_t    <= '1';
+
             hit_prediv.tcc_div_numer <= (others => '0');
             hit_prediv.ecc_div_numer <= (others => '0');
             hit_totcalc.asic      <= (others => '0');
@@ -1346,6 +1392,10 @@ begin
             hit_totcalc.e_flag    <= '0';
             hit_totcalc.hiterr    <= '0';
             hit_totcalc.valid     <= '0';
+
+            hit_totcalc.derive_tot              <= '0';
+            hit_totcalc.delay_ts_field_use_t    <= '1';
+
             hit_totcalc.tcc_div_numer <= (others => '0');
             hit_totcalc.ecc_div_numer <= (others => '0');
             
@@ -1364,6 +1414,9 @@ begin
                 hit_div(i).e_cc			<= (others => '0');
                 hit_div(i).et_1n6       <= (others => '0');
                 hit_div(i).e_flag		<= '0';
+
+                hit_div(i).delay_ts_field_use_t <= '1';
+
                 hit_div(i).valid		<= '0';
                 hit_div(i).hiterr		<= '0';
             end loop;
@@ -1387,6 +1440,10 @@ begin
                 hit_in.channel	<= asi_hit_type0_data(I_CHANNEL_HI downto I_CHANNEL_LO);
                 hit_in.t_fine	<= asi_hit_type0_data(I_TFINE_HI downto I_TFINE_LO);
                 hit_in.e_flag   <= asi_hit_type0_data(I_EFLAG_BIT_LOC);
+
+                hit_in.derive_tot              <= csr.derive_tot;
+                hit_in.delay_ts_field_use_t    <= csr.delay_ts_field_use_t;
+
                 hit_in.valid	<= '1';
                 hit_in.hiterr	<= asi_hit_type0_error(HITERR_BIT_LOC);
             end if;
@@ -1400,6 +1457,10 @@ begin
                 hit_padding.tot_t_adjust <= overflow_adjust_active;
                 hit_padding.tot_e_adjust <= overflow_adjust_active;
                 hit_padding.e_flag		<= hit_in.e_flag;
+
+                hit_padding.derive_tot              <= hit_in.derive_tot;
+                hit_padding.delay_ts_field_use_t    <= hit_in.delay_ts_field_use_t;
+
                 hit_padding.t_fine		<= hit_in.t_fine;
                 hit_padding.valid		<= '1';
                 hit_padding.hiterr		<= hit_in.hiterr;
@@ -1410,6 +1471,10 @@ begin
                 hit_prediv.channel      <= hit_padding.channel;
                 hit_prediv.t_fine       <= hit_padding.t_fine;
                 hit_prediv.e_flag       <= hit_padding.e_flag;
+
+                hit_prediv.derive_tot              <= hit_padding.derive_tot;
+                hit_prediv.delay_ts_field_use_t    <= hit_padding.delay_ts_field_use_t;
+
                 hit_prediv.hiterr       <= hit_padding.hiterr;
                 hit_prediv.valid        <= '1';
                 if (csr.bypass_lapse = '0') then  -- mts -> gts transformation enable 
@@ -1433,6 +1498,10 @@ begin
                 hit_totcalc.channel     <= hit_prediv.channel;
                 hit_totcalc.t_fine      <= hit_prediv.t_fine;
                 hit_totcalc.e_flag      <= hit_prediv.e_flag;
+
+                hit_totcalc.derive_tot              <= hit_prediv.derive_tot;
+                hit_totcalc.delay_ts_field_use_t    <= hit_prediv.delay_ts_field_use_t;
+
                 hit_totcalc.hiterr      <= hit_prediv.hiterr;
                 hit_totcalc.valid       <= '1';
                 hit_totcalc.tcc_div_numer <= hit_prediv.tcc_div_numer;
@@ -1445,9 +1514,12 @@ begin
                 hit_div(0).t_fine       <= hit_totcalc.t_fine;
                 hit_div(0).valid        <= '1';
                 hit_div(0).hiterr       <= hit_totcalc.hiterr;
+
+                hit_div(0).delay_ts_field_use_t <= hit_totcalc.delay_ts_field_use_t;
+
                 -- eflag[8] + ToT[8:0]
                 -- Q: seems eflag=1 is bad, which is inverted? A: no, flag=1 is good, it was a misunderstanding with BadHit bit
-                if csr.derive_tot = '1' then
+                if hit_totcalc.derive_tot = '1' then
                     if (hit_totcalc.e_flag = '0') then -- if no eflag, mask the ToT value to 0 (dec)
                         hit_div(0).et_1n6       <= (others => '0');
                     elsif (unsigned(hit_totcalc.ecc_div_numer) < unsigned(hit_totcalc.tcc_div_numer)) then -- if negative, underflow, mask the ToT to 0 (dec)
@@ -1477,7 +1549,7 @@ begin
 
                 hit_delay_arrival_v          := resize(counter_gts_8n, hit_delay_arrival_v'length);
                 hit_delay_expected_latency_v := resize(unsigned(csr.expected_latency), hit_delay_expected_latency_v'length);
-                if (csr.delay_ts_field_use_t = '1') then
+                if (hit_div(LPM_DIV_PIPELINE).delay_ts_field_use_t = '1') then
                     hit_delay_selected_ts_v := unsigned(tcc_div_quotient_d);
                 else
                     hit_delay_selected_ts_v := unsigned(ecc_div_quotient_d);
@@ -1664,7 +1736,7 @@ begin
                 and (processor_state = RUNNING or processor_state = FLUSHING)
                 and hit_div(LPM_DIV_PIPELINE).valid = '1'
             ) then -- 48 bit - 48 bit (no of/df)
-                if (csr.delay_ts_field_use_t = '1') then  
+                if (hit_div(LPM_DIV_PIPELINE).delay_ts_field_use_t = '1') then
                     int_aso_debug_ts_data <= debug_delay_delta16(counter_gts_8n, unsigned(tcc_div_quotient_d));
                 else 
                     int_aso_debug_ts_data <= debug_delay_delta16(counter_gts_8n, unsigned(ecc_div_quotient_d));
@@ -1701,7 +1773,7 @@ begin
                 -- --------------
                 if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- 48 bit - 48 bit
                     -- timestamp
-                    if (csr.delay_ts_field_use_t = '1') then  
+                    if (hit_div(LPM_DIV_PIPELINE).delay_ts_field_use_t = '1') then
                         egress_timestamp(0)         <= tcc_div_quotient_d(egress_timestamp(0)'high downto 0);
                     else 
                         egress_timestamp(0)         <= ecc_div_quotient_d(egress_timestamp(0)'high downto 0);

@@ -218,6 +218,112 @@
         UVM_LOW)
     endtask
 
+    task automatic expect_trace_pair_at(int unsigned trace_idx, string ctx);
+      mtsp_hit_trace_item trace;
+
+      if (trace_idx >= m_env.m_scb.trace_history.size())
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected trace index %0d, size=%0d",
+            ctx, trace_idx, m_env.m_scb.trace_history.size()))
+      trace = m_env.m_scb.trace_history[trace_idx];
+      if (trace.hit1_time_ps != trace.debug_time_ps)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected aligned normal/debug trace times, hit=%0t debug=%0t",
+            ctx, trace.hit1_time_ps, trace.debug_time_ps))
+      `uvm_info("MTSP_TRACE",
+        $sformatf("%s trace seq=%0d hit_time=%0t debug_time=%0t route=%0d debug_delta=%0d expected_latency=%0d math_error=%0b hit_error=%0b data=0x%010h",
+          ctx, trace.seq_id, trace.hit1_time_ps, trace.debug_time_ps,
+          trace.channel, trace.debug_delta, trace.expected_latency,
+          trace.math_error, trace.hit1_error, trace.data),
+        UVM_LOW)
+    endtask
+
+    task automatic expect_trace_error_at(int unsigned trace_idx,
+                                         bit expected_error,
+                                         string ctx);
+      mtsp_hit_trace_item trace;
+
+      if (trace_idx >= m_env.m_scb.trace_history.size())
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected trace index %0d, size=%0d",
+            ctx, trace_idx, m_env.m_scb.trace_history.size()))
+      trace = m_env.m_scb.trace_history[trace_idx];
+      if (trace.math_error !== expected_error || trace.hit1_error !== expected_error)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected error=%0b, got math_error=%0b hit_error=%0b debug_delta=%0d expected_latency=%0d",
+            ctx, expected_error, trace.math_error, trace.hit1_error,
+            trace.debug_delta, trace.expected_latency))
+    endtask
+
+    task automatic expect_payload_math_at(int unsigned history_idx,
+                                          int unsigned asic_value,
+                                          int unsigned channel_value,
+                                          int unsigned tfine_value,
+                                          int unsigned tcc8n_value,
+                                          int unsigned tcc1n6_value,
+                                          int unsigned et1n6_value,
+                                          string ctx);
+      mtsp_hit1_obs_item hit_obs;
+      bit [12:0] expected_tcc8n;
+      bit [2:0]  expected_tcc1n6;
+      bit [8:0]  expected_et1n6;
+
+      if (history_idx >= m_env.m_scb.history.size())
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected history index %0d, size=%0d",
+            ctx, history_idx, m_env.m_scb.history.size()))
+      hit_obs = m_env.m_scb.history[history_idx];
+      if (hit_obs.empty)
+        `uvm_fatal("MTSP_CASE", $sformatf("%s expected payload beat", ctx))
+
+      expected_tcc8n  = tcc8n_value[12:0];
+      expected_tcc1n6 = tcc1n6_value[2:0];
+      expected_et1n6  = et1n6_value[8:0];
+
+      if (hit_obs.data[38:35] !== asic_value[3:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected ASIC=%0d got %0d data=0x%010h",
+            ctx, asic_value[3:0], hit_obs.data[38:35], hit_obs.data))
+      if (hit_obs.data[34:30] !== channel_value[4:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected channel=%0d got %0d data=0x%010h",
+            ctx, channel_value[4:0], hit_obs.data[34:30], hit_obs.data))
+      if (hit_obs.data[13:9] !== tfine_value[4:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected TFine=%0d got %0d data=0x%010h",
+            ctx, tfine_value[4:0], hit_obs.data[13:9], hit_obs.data))
+      if (hit_obs.data[29:17] !== expected_tcc8n)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected TCC_8N=%0d got %0d data=0x%010h",
+            ctx, expected_tcc8n, hit_obs.data[29:17], hit_obs.data))
+      if (hit_obs.data[16:14] !== expected_tcc1n6)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected TCC_1N6=%0d got %0d data=0x%010h",
+            ctx, expected_tcc1n6, hit_obs.data[16:14], hit_obs.data))
+      if (hit_obs.data[8:0] !== expected_et1n6)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected ET_1N6=%0d got %0d data=0x%010h",
+            ctx, expected_et1n6, hit_obs.data[8:0], hit_obs.data))
+    endtask
+
+    task automatic expect_payload_error_at(int unsigned history_idx,
+                                           bit expected_error,
+                                           string ctx);
+      mtsp_hit1_obs_item hit_obs;
+
+      if (history_idx >= m_env.m_scb.history.size())
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected history index %0d, size=%0d",
+            ctx, history_idx, m_env.m_scb.history.size()))
+      hit_obs = m_env.m_scb.history[history_idx];
+      if (hit_obs.empty)
+        `uvm_fatal("MTSP_CASE", $sformatf("%s expected payload beat", ctx))
+      if (hit_obs.error !== expected_error)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected hit_type1 error=%0b got %0b data=0x%010h",
+            ctx, expected_error, hit_obs.error, hit_obs.data))
+    endtask
+
     task automatic expect_last_output_flags(bit expected_sop,
                                             bit expected_eop,
                                             bit expected_empty,
@@ -318,6 +424,14 @@
     task automatic configure_datapath_mode(bit bypass_lapse,
                                            bit derive_tot,
                                            bit delay_ts_field_use_t = 1'b1);
+      csr_write(3'd0, datapath_mode_word(bypass_lapse, derive_tot,
+        delay_ts_field_use_t));
+      wait_cycles(2);
+    endtask
+
+    function automatic bit [31:0] datapath_mode_word(bit bypass_lapse,
+                                                     bit derive_tot,
+                                                     bit delay_ts_field_use_t);
       bit [31:0] csr_word;
 
       csr_word = 32'h0000_0001 | 32'h0000_0010;
@@ -327,9 +441,8 @@
         csr_word |= 32'h2000_0000;
       if (derive_tot)
         csr_word |= 32'h4000_0000;
-      csr_write(3'd0, csr_word);
-      wait_cycles(2);
-    endtask
+      return csr_word;
+    endfunction
 
     task automatic send_hit_and_expect_math(int unsigned asic_value,
                                             int unsigned channel_value,
@@ -3243,6 +3356,86 @@
       expect_last_payload_error(1'b0, case_id);
     endtask
 
+    task automatic do_corner_057_toggle_derive_tot_between_hits();
+      int unsigned t_raw_value;
+      int unsigned e_raw_value;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      lookup_raw_for_quotient(0, 0, t_raw_value,
+        $sformatf("%s T symbol", case_id));
+      lookup_raw_for_quotient(0, 4, e_raw_value,
+        $sformatf("%s E symbol", case_id));
+
+      base_beats   = m_env.m_scb.beat_count;
+      base_history = m_env.m_scb.history.size();
+      base_traces  = m_env.m_scb.trace_history.size();
+
+      send_hit_beat(2, 11, t_raw_value, e_raw_value, 1'b1, 1'b1, 1'b0,
+        '0, 1'b1, 5'd13);
+      csr_write(3'd0, datapath_mode_word(1'b1, 1'b1, 1'b1));
+      send_hit_beat(2, 12, t_raw_value, e_raw_value, 1'b1, 1'b1, 1'b0,
+        '0, 1'b1, 5'd14);
+
+      wait_for_beat_count(base_beats + 2, 256, case_id);
+      wait_for_trace_count(base_traces + 2, 256, case_id);
+      expect_payload_math_at(base_history, 2, 11, 13, 0, 0, 0,
+        $sformatf("%s first hit sampled short mode", case_id));
+      expect_payload_math_at(base_history + 1, 2, 12, 14, 0, 0, 4,
+        $sformatf("%s second hit sampled ToT mode", case_id));
+      expect_trace_pair_at(base_traces,
+        $sformatf("%s first hit normal/debug pair", case_id));
+      expect_trace_pair_at(base_traces + 1,
+        $sformatf("%s second hit normal/debug pair", case_id));
+      expect_total_count(48'd2, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_corner_058_toggle_delay_field_between_hits();
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+
+      base_beats   = m_env.m_scb.beat_count;
+      base_history = m_env.m_scb.history.size();
+      base_traces  = m_env.m_scb.trace_history.size();
+
+      send_hit_beat(2, 13, 15'h0001, 15'h5ee7, 1'b1, 1'b1, 1'b0,
+        '0, 1'b1, 5'd15);
+      csr_write(3'd0, datapath_mode_word(1'b1, 1'b0, 1'b0));
+      send_hit_beat(2, 14, 15'h0001, 15'h5ee7, 1'b1, 1'b1, 1'b0,
+        '0, 1'b1, 5'd16);
+
+      wait_for_beat_count(base_beats + 2, 256, case_id);
+      wait_for_trace_count(base_traces + 2, 256, case_id);
+      expect_payload_math_at(base_history, 2, 13, 15, 0, 0, 0,
+        $sformatf("%s first hit payload", case_id));
+      expect_payload_error_at(base_history, 1'b0,
+        $sformatf("%s first hit sampled T delay", case_id));
+      expect_trace_pair_at(base_traces,
+        $sformatf("%s first hit normal/debug pair", case_id));
+      expect_trace_error_at(base_traces, 1'b0,
+        $sformatf("%s first hit debug math sampled T delay", case_id));
+      expect_payload_math_at(base_history + 1, 2, 14, 16, 0, 0, 0,
+        $sformatf("%s second hit payload", case_id));
+      expect_payload_error_at(base_history + 1, 1'b1,
+        $sformatf("%s second hit sampled E delay", case_id));
+      expect_trace_pair_at(base_traces + 1,
+        $sformatf("%s second hit normal/debug pair", case_id));
+      expect_trace_error_at(base_traces + 1, 1'b1,
+        $sformatf("%s second hit debug math sampled E delay", case_id));
+      expect_total_count(48'd2, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
     task automatic do_corner_059_toggle_eflag_between_hits();
       wait_for_reset_release();
       configure_datapath_mode(1'b1, 1'b1);
@@ -4337,6 +4530,8 @@
         "CORNER_MTS_054_tot_mode_largest_unsaturated_delta": do_corner_054_tot_mode_largest_unsaturated_delta();
         "CORNER_MTS_055_tot_mode_first_saturated_delta": do_corner_055_tot_mode_first_saturated_delta();
         "CORNER_MTS_056_tot_mode_negative_delta_case": do_corner_056_tot_mode_negative_delta_case();
+        "CORNER_MTS_057_toggle_derive_tot_between_hits": do_corner_057_toggle_derive_tot_between_hits();
+        "CORNER_MTS_058_toggle_delay_field_between_hits": do_corner_058_toggle_delay_field_between_hits();
         "CORNER_MTS_059_toggle_eflag_between_hits": do_corner_059_toggle_eflag_between_hits();
         "CORNER_MTS_060_tfine_extremes": do_corner_060_tfine_extremes();
         "CORNER_MTS_071_debug_ts_minus_one": do_corner_071_debug_ts_minus_one();
