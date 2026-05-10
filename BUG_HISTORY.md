@@ -49,8 +49,48 @@ Historical formal note:
 | [BUG-012-R](#bug-012-r-illegal-run-control-error-state-could-wedge-ctrl-ready-low) | R | hard stuck error | `directed-only (illegal control injection)` | fixed | `STRESS_MTS_070_interspersed_illegal_ctrl_words` | `a975fe1` | An illegal run-control word decoded to `ERROR` and left `asi_ctrl_ready` low, blocking later legal recovery commands. |
 | [BUG-013-H](#bug-013-h-inert-parameter-terminate-stimulus-left-input-packet-open) | H | non-datapath-refactor | `directed-only (parameter-sweep terminate stimulus)` | fixed | `STRESS_MTS_090_inert_parameter_sweep_compare` | `c2789b0` | P090 opened an input packet on one sideband channel and placed the terminal EOP on another, so the legal RTL drain held close markers off. |
 | [BUG-014-H](#bug-014-h-soft-reset-smoke-loop-checked-debug-burst-before-monitor-settled) | H | non-datapath-refactor | `directed-only (soft-reset smoke-loop debug timing)` | fixed | `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs` | `dedab24` | P110 enforced exact debug-stream counts before bounded waits let the passive debug monitors report the final sample. |
+| [BUG-015-R](#bug-015-r-open-packet-could-block-terminal-close-markers-after-endofrun) | R | hard stuck error | `rare (routine stop while an input packet remains open or upstream EOP is missing)` | fixed | `NEG_MTS_118_missing_boundary_with_packet_open` | `pending-current-patch` | Stale open-packet bookkeeping could hold the terminal boundary generator busy forever after upstream end-of-run. |
 
 ## 2026-05-10
+
+### BUG-015-R: Open packet could block terminal close markers after endofrun
+
+- First seen:
+  - UVM case `NEG_MTS_118_missing_boundary_with_packet_open`
+  - The first focused X111-X120 batch stopped after one accepted open-packet payload and one paired normal/debug trace had already been observed
+- Symptom:
+  - X118 failed with `packet-open synthetic boundary timed out waiting for empty_eop_count=4, got 0`
+  - the accepted payload path was healthy: the normal output and debug timestamp trace paired at `260001 ps`
+  - after `TERMINATING` plus upstream `endofrun`, no terminal empty close-marker train appeared and control ready could not restore
+- Root cause:
+  - the termination marker busy equation treated any nonzero `packet_in_transaction` bit as pipeline work
+  - if upstream end-of-run arrived while an input-side packet was still open, no later legal beat could clear that stale bookkeeping
+  - the marker generator therefore stayed blocked even after all physical accepted-hit pipeline stages were empty
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - RTL still lets real accepted-hit pipeline valids and pending output work block the terminal close-marker train
+    - once upstream `endofrun` is observed, stale open-packet bookkeeping no longer contributes to the terminal marker busy predicate
+    - the repair preserves packet-open blocking before end-of-run, while allowing a deterministic synthetic terminal boundary at the run stop
+  - before_fix_outcome:
+    - `NEG_MTS_118_missing_boundary_with_packet_open` timed out waiting for the four-lane terminal close-marker train
+  - after_fix_outcome:
+    - `NEG_MTS_118_missing_boundary_with_packet_open` passes with `csr=5 inputs=1 beats=5 payloads=1 eops=4 empty_eops=4 debug_ts=1 debug_burst=1 ts_delta=1 dual_path_pairs=1 traces=1`
+    - focused X111-X120 passes with `FOCUSED_NEG111_NEG120_PASS count=10`
+    - focused X121-X130 passes with `FOCUSED_NEG121_NEG130_PASS count=10`
+    - the ordered explicit-case rerun passes with `FULL_EXPLICIT_521_PASS cases=521 elapsed=914s`
+    - the hard Questa static screen passes for `mts_processor.vhd` using `syn/quartus/mts_processor_static.f`
+  - potential_hazard:
+    - fixed for the current single-clock terminal-boundary contract. The design still depends on upstream `endofrun` as the terminal condition; missing both EOP and end-of-run remains an invalid run-stop sequence
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - the artifact audit passed with `ARTIFACT_AUDIT cases=521 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0`
+  - the explicit-only coverage merge reported filtered instance coverage `71.66%`; DUT statement `97.61%`, branch `95.36%`, condition `84.95%`, expression `100.00%`, FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.93%`
+  - the hard Questa static screen passed with lint `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`
+- Commit:
+  - `pending-current-patch` (`[PATCH] Close MTSP termination negative evidence`)
 
 ### BUG-014-H: Soft-reset smoke loop checked debug burst before monitor settled
 

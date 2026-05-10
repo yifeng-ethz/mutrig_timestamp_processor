@@ -6122,7 +6122,14 @@
       send_endofrun_pulse();
       wait_for_trace_count(base_traces + 2, 128,
         $sformatf("%s non-eop flushing payload traces", case_id));
-      expect_last_trace_pair($sformatf("%s non-eop flushing second payload", case_id));
+      expect_trace_pair_at(base_traces,
+        $sformatf("%s non-eop flushing first payload", case_id));
+      expect_trace_error_at(base_traces, 1'b0,
+        $sformatf("%s non-eop flushing first payload clean", case_id));
+      expect_trace_pair_at(base_traces + 1,
+        $sformatf("%s non-eop flushing second payload", case_id));
+      expect_trace_error_at(base_traces + 1, 1'b1,
+        $sformatf("%s non-eop flushing second payload delay-error", case_id));
       wait_for_empty_eop_count(base_empty_eops + 4, 128,
         $sformatf("%s non-eop flushing close markers", case_id));
       expect_close_markers_since(base_history_size, 4'b1111, 2, case_id);
@@ -12940,6 +12947,170 @@
         case_id));
     endtask
 
+    task automatic do_neg_111_terminate_without_real_eop_gap();
+      run_terminate_without_eop_idle_case(case_id);
+    endtask
+
+    task automatic do_neg_112_idle_before_eop_delay_finishes();
+      do_corner_115_idle_before_eop_delay_matures();
+    endtask
+
+    task automatic do_neg_113_multiple_eops_multiple_boundaries();
+      do_corner_116_multiple_eops_in_flushing();
+    endtask
+
+    task automatic do_neg_114_packet_crosses_terminate_edge();
+      int unsigned base_empty_eops;
+      int unsigned base_history;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      base_history    = m_env.m_scb.history.size();
+      base_traces     = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s pre-terminate open-packet trace", case_id));
+      expect_trace_pair_at(base_traces,
+        $sformatf("%s pre-terminate open-packet trace", case_id));
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      wait_for_hit0_ready(1'b1, 16,
+        $sformatf("%s flushing close-hit ready", case_id));
+      send_hit_beat(2, 1, 15'h0013, 15'h001F, 1'b1, 1'b0, 1'b1);
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 2, 128,
+        $sformatf("%s terminate-crossing payload traces", case_id));
+      expect_trace_pair_at(base_traces + 1,
+        $sformatf("%s terminate-crossing closing trace", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s terminate-crossing close markers", case_id));
+      expect_close_markers_since(base_history, 4'b1111, 2,
+        $sformatf("%s exactly one terminal boundary", case_id));
+      wait_for_ctrl_ready_high(128,
+        $sformatf("%s terminate ready restore", case_id));
+      expect_total_count(48'd2, $sformatf("%s two crossing hits counted",
+        case_id));
+      expect_discard_count(32'd0, $sformatf("%s no crossing hit discarded",
+        case_id));
+    endtask
+
+    task automatic do_neg_115_disabled_sideband_boundary_loss();
+      do_corner_118_terminating_eop_disabled_sideband_channel();
+    endtask
+
+    task automatic do_neg_116_terminate_ack_before_work_done();
+      do_corner_128_accept_command_vs_complete_work_upgrade();
+    endtask
+
+    task automatic do_neg_117_flushing_accepts_fresh_hits_upgrade_gap();
+      do_corner_119_flushing_accepts_non_eop_hits();
+    endtask
+
+    task automatic do_neg_118_missing_boundary_with_packet_open();
+      int unsigned base_empty_eops;
+      int unsigned base_history;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      base_history    = m_env.m_scb.history.size();
+      base_traces     = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s open-packet payload trace", case_id));
+      expect_trace_pair_at(base_traces,
+        $sformatf("%s open-packet payload trace", case_id));
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s packet-open synthetic boundary", case_id));
+      expect_close_markers_since(base_history, 4'b1111, 1,
+        $sformatf("%s packet-open boundary detail", case_id));
+      wait_for_ctrl_ready_high(128,
+        $sformatf("%s terminate ready restore", case_id));
+      expect_total_count(48'd1, $sformatf("%s open-packet hit counted",
+        case_id));
+      expect_discard_count(32'd0, $sformatf("%s open-packet no discard",
+        case_id));
+    endtask
+
+    task automatic do_neg_119_duplicate_boundary_per_run();
+      do_corner_129_one_boundary_per_run_upgrade();
+    endtask
+
+    task automatic do_neg_120_idle_before_pipeline_empty();
+      int unsigned base_empty_eops;
+      int unsigned base_history;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      base_history    = m_env.m_scb.history.size();
+      base_traces     = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b1);
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      pulse_ctrl(CTRL_IDLE, "IDLE_before_pipeline_empty");
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s in-flight payload trace", case_id));
+      expect_trace_pair_at(base_traces,
+        $sformatf("%s in-flight payload trace", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s in-flight close markers", case_id));
+      expect_close_markers_since(base_history, 4'b1111, 1,
+        $sformatf("%s in-flight terminal boundary", case_id));
+      wait_for_ctrl_ready_high(128,
+        $sformatf("%s terminate ready restore", case_id));
+      expect_total_count(48'd1, $sformatf("%s in-flight hit counted",
+        case_id));
+    endtask
+
+    task automatic do_neg_121_prepare_ready_stateful_upgrade();
+      do_corner_121_prepare_ready_gap_upgrade();
+    endtask
+
+    task automatic do_neg_122_sync_ready_stateful_upgrade();
+      do_corner_122_sync_ready_gap_upgrade();
+    endtask
+
+    task automatic do_neg_123_flushing_ready_stateful_upgrade();
+      do_corner_123_flushing_ready_gap_upgrade();
+    endtask
+
+    task automatic do_neg_124_terminate_ack_after_drain_upgrade();
+      do_corner_120_upgrade_ready_should_wait_for_drain();
+    endtask
+
+    task automatic do_neg_125_synthetic_boundary_without_real_eop_upgrade();
+      do_corner_124_missing_synthetic_boundary_upgrade();
+    endtask
+
+    task automatic do_neg_126_no_fresh_accept_in_flushing_upgrade();
+      do_corner_119_flushing_accepts_non_eop_hits();
+    endtask
+
+    task automatic do_neg_127_exactly_one_boundary_per_stop_upgrade();
+      do_corner_129_one_boundary_per_run_upgrade();
+    endtask
+
+    task automatic do_neg_128_idle_only_after_boundary_upgrade();
+      do_corner_130_idle_after_boundary_upgrade();
+    endtask
+
+    task automatic do_neg_129_ctrl_handshake_reflects_completion_upgrade();
+      do_corner_128_accept_command_vs_complete_work_upgrade();
+    endtask
+
+    task automatic do_neg_130_full_run_sequence_upgrade_suite();
+      do_stress_130_full_signoff_mixed_soak();
+    endtask
+
     task automatic run_case_by_id();
       case (case_id)
         "STD_MTS_001_powerup_reset_idle": do_std_001_powerup_reset_idle();
@@ -13313,6 +13484,26 @@
         "NEG_MTS_108_running_status_high_outside_run": do_neg_108_running_status_high_outside_run();
         "NEG_MTS_109_running_status_low_inside_run": do_neg_109_running_status_low_inside_run();
         "NEG_MTS_110_control_readback_mismatch": do_neg_110_control_readback_mismatch();
+        "NEG_MTS_111_terminate_without_real_eop_gap": do_neg_111_terminate_without_real_eop_gap();
+        "NEG_MTS_112_idle_before_eop_delay_finishes": do_neg_112_idle_before_eop_delay_finishes();
+        "NEG_MTS_113_multiple_eops_multiple_boundaries": do_neg_113_multiple_eops_multiple_boundaries();
+        "NEG_MTS_114_packet_crosses_terminate_edge": do_neg_114_packet_crosses_terminate_edge();
+        "NEG_MTS_115_disabled_sideband_boundary_loss": do_neg_115_disabled_sideband_boundary_loss();
+        "NEG_MTS_116_terminate_ack_before_work_done": do_neg_116_terminate_ack_before_work_done();
+        "NEG_MTS_117_flushing_accepts_fresh_hits_upgrade_gap": do_neg_117_flushing_accepts_fresh_hits_upgrade_gap();
+        "NEG_MTS_118_missing_boundary_with_packet_open": do_neg_118_missing_boundary_with_packet_open();
+        "NEG_MTS_119_duplicate_boundary_per_run": do_neg_119_duplicate_boundary_per_run();
+        "NEG_MTS_120_idle_before_pipeline_empty": do_neg_120_idle_before_pipeline_empty();
+        "NEG_MTS_121_prepare_ready_stateful_upgrade": do_neg_121_prepare_ready_stateful_upgrade();
+        "NEG_MTS_122_sync_ready_stateful_upgrade": do_neg_122_sync_ready_stateful_upgrade();
+        "NEG_MTS_123_flushing_ready_stateful_upgrade": do_neg_123_flushing_ready_stateful_upgrade();
+        "NEG_MTS_124_terminate_ack_after_drain_upgrade": do_neg_124_terminate_ack_after_drain_upgrade();
+        "NEG_MTS_125_synthetic_boundary_without_real_eop_upgrade": do_neg_125_synthetic_boundary_without_real_eop_upgrade();
+        "NEG_MTS_126_no_fresh_accept_in_flushing_upgrade": do_neg_126_no_fresh_accept_in_flushing_upgrade();
+        "NEG_MTS_127_exactly_one_boundary_per_stop_upgrade": do_neg_127_exactly_one_boundary_per_stop_upgrade();
+        "NEG_MTS_128_idle_only_after_boundary_upgrade": do_neg_128_idle_only_after_boundary_upgrade();
+        "NEG_MTS_129_ctrl_handshake_reflects_completion_upgrade": do_neg_129_ctrl_handshake_reflects_completion_upgrade();
+        "NEG_MTS_130_full_run_sequence_upgrade_suite": do_neg_130_full_run_sequence_upgrade_suite();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
         "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
         "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();

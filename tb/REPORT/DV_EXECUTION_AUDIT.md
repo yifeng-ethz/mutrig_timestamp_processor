@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 15:27 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 16:01 CEST
 
 ## Scope
 
@@ -84,6 +84,15 @@ rollover math check because the new NEG wrapper did not inherit the
 `DV_COUNTER_SEED_ENABLE` generic used by the standard/corner rollover aliases;
 the Makefile now maps X105 to that DV-only generic, and no RTL bug was
 accepted.
+The X111-X130 refresh completed the ERROR/NEG termination and upgrade-contract
+section. X118 stopped on a real RTL liveness bug before evidence was accepted:
+an open input packet could hold terminal close markers off forever after
+upstream end-of-run. `BUG-015-R` fixes that busy predicate, and the rerun
+requires terminal boundary, ready recovery, payload/debug trace pairing, and
+static-screen evidence. X126 retains its future no-fresh-accept name but now
+explicitly records current delivered RTL behavior: fresh `FLUSHING` payloads
+are accepted and the normal/debug trace classifies one clean payload plus one
+delay-error-marked payload with no math mismatch.
 
 ## Current Coverage Of Documented Cases
 
@@ -92,8 +101,8 @@ accepted.
 | BASIC | 130 | 130 | 130 |
 | EDGE | 131 | 131 | 131 |
 | PROF | 130 | 130 | 130 |
-| ERROR | 130 | 110 | 110 |
-| Total | 521 | 501 | 501 |
+| ERROR | 130 | 130 | 130 |
+| Total | 521 | 521 | 521 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -102,7 +111,7 @@ Notes:
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
 - `DV_PROF.md` has explicit UVM handlers for P001 through P130.
-- `DV_ERROR.md` has explicit UVM handlers for X001 through X110.
+- `DV_ERROR.md` has explicit UVM handlers for X001 through X130.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -495,26 +504,26 @@ Notes:
 | Invalid enabled-channel window configurations cannot also produce normal pass UCDB artifacts. | `NEG_MTS_089_invalid_enabled_window_compile_guard`, `NEG_MTS_090_out_of_range_enabled_values` | No RTL change was accepted. The package validation callback is checked directly by `hw_tcl_validate_check`, and legal boundary-window UVM companion cases still require log, UCDB, and normal/debug scoreboard evidence. |
 | Initial X097 debug-burst expectation used too small a negative delta for the 12-bit trim check. | `NEG_MTS_097_signmag_conversion_extreme_negative` | No RTL change was accepted. RTL review showed `DELTA_TIMESTAMP_WIDTH=12` and `aso_debug_burst_data(15 downto 8)` takes bits `[11:4]`, so the stimulus now drives `-2044`, requires trimmed high byte `0xff`, and still checks exact `ts_delta=-2044`. |
 | X105 NEG wrapper initially lacked the DV-only counter seed generic used by the rollover alias. | `NEG_MTS_105_hi_lo_counter_snapshot_incoherent` | No RTL change was accepted. The Makefile maps X105 to `DV_COUNTER_SEED_ENABLE=1`, matching the STD/CORNER rollover cases; focused X101-X110 and full 501-case sweeps pass. |
+| An open input packet could keep terminal close markers blocked forever after upstream end-of-run. | `NEG_MTS_118_missing_boundary_with_packet_open` | RTL fix `BUG-015-R` removes stale open-packet bookkeeping from the terminal-marker busy predicate after upstream `endofrun`, while still waiting for real pipeline work to drain. Focused X111-X130, the full 521-case sweep, and the hard Questa static screen pass. |
 
 ## Submodule Freshness Check
 
 The OPQ IP-core chain requested on 2026-05-09 was fetched again on
-2026-05-10 with `--recurse-submodules`. The user-provided leading commits are
-contained on the expected branches. The parent and top branches are already
-ahead of those OPQ commits at the prior MTSP debug-stream pointer, and this
-batch advances MTSP independently through the current counter-coherency/status
-ERROR/NEG checkpoint:
+2026-05-10. The user-provided leading commits are contained on the expected
+branches. The parent and top branches are already ahead of those OPQ commits at
+the prior MTSP checkpoints, and this batch advances MTSP independently through
+the current termination/upgrade ERROR/NEG checkpoint:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | contained by `codex/opq-feb-swb-parent-20260508`, current head before this batch `44cca62` |
-| `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | contained by `yifeng-ip_sim-2604`, current head before this batch `02f7673` |
-| `mutrig_timestamp_processor` | local `master` with the X101-X110 counter-coherency/status ERROR/NEG checkpoint | source for `origin/master` and parent/top pointer publication |
+| `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | contained by `codex/opq-feb-swb-parent-20260508`; current head before this batch `584023e` |
+| `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | contained by `yifeng-ip_sim-2604`; current head before this batch `9f262a7` |
+| `mutrig_timestamp_processor` | local `master` with the X111-X130 termination/upgrade ERROR/NEG checkpoint | source for `origin/master` and parent/top pointer publication |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
 `packet_scheduler 245eb93` plus the local MTSP ERROR/NEG checkpoints. The
-X101-X110 checkpoint is the source for the next parent and top-level gitlink
+X111-X130 checkpoint is the source for the next parent and top-level gitlink
 commits.
 
 ## Evidence Commands
@@ -1603,6 +1612,50 @@ Mismatch review in this batch:
   `CORNER_MTS_018`. No RTL bug was accepted, and the focused X101-X110 batch
   plus the full 501-case sweep pass after the harness build-selection fix.
 
+Focused ERROR/NEG termination and upgrade-contract batch:
+
+```bash
+make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<X111-X130 case_id> SEED=1
+```
+
+Results:
+- `FOCUSED_NEG111_NEG120_PASS count=10`
+- `FOCUSED_NEG121_NEG130_PASS count=10`
+- current-harness `FULL_EXPLICIT_521_PASS cases=521 elapsed=914s`
+
+Key evidence:
+- X111 proves upstream end-of-run without a real input EOP still produces the
+  four terminal close markers: `csr=5 inputs=0 beats=4 payloads=0 eops=4
+  empty_eops=4 debug_ts=0 dual_path_pairs=0 traces=0`.
+- X114 proves a packet opened before `TERMINATING` and closed in `FLUSHING`
+  keeps both payloads, emits one four-lane close-marker train, and reports two
+  paired normal/debug traces.
+- X117 and X126 record the delivered current behavior for fresh `FLUSHING`
+  payloads: two accepted payloads, two dual-path traces, first trace clean,
+  second trace delay-error-marked with `math_error=1 hit_error=1`, and no
+  `MTSP_DELAY_MATH` mismatch.
+- X118 is the `BUG-015-R` regression. Before the RTL fix it timed out waiting
+  for `empty_eop_count=4`; after the fix it passes with `csr=5 inputs=1
+  beats=5 payloads=1 eops=4 empty_eops=4 debug_ts=1 debug_burst=1 ts_delta=1
+  dual_path_pairs=1 traces=1`.
+- X121-X125 and X127-X130 preserve the stateful-ready, synthetic-boundary,
+  exact-boundary, idle-after-boundary, completion-handshake, and mixed-soak
+  upgrade contracts as passing regression gates.
+
+Mismatch review in this batch:
+- X118 exposed a real RTL liveness bug. Reviewing `mts_processor.vhd` showed
+  that `packet_in_transaction` contributed to the terminal-marker busy
+  predicate even after upstream `endofrun`; with a packet left open, no legal
+  later beat could clear the bookkeeping, so close markers and control-ready
+  recovery were permanently blocked. The RTL now ignores stale open-packet
+  bookkeeping only after upstream `endofrun`, while still waiting for actual
+  accepted-hit pipeline work to drain.
+- X126 and the mixed-soak X130 logs include intentional delay-error-marked
+  payloads. The scoreboard recomputes delay math from the debug timestamp and
+  raises `MTSP_DELAY_MATH` on disagreement; these runs had `UVM_ERROR: 0`, and
+  the X126 helper now asserts the expected clean/error classification
+  explicitly.
+
 RTL before/after bug proof:
 
 ```bash
@@ -1619,10 +1672,10 @@ Latest full explicit-case sweep and current artifact set:
 make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_501_PASS cases=501 elapsed=884s` on the final current
-UVM harness after the counter-coherency/status dispatcher bring-up. The per-case artifact
+Result: `FULL_EXPLICIT_521_PASS cases=521 elapsed=914s` on the final current
+UVM harness after the termination/upgrade-contract dispatcher bring-up. The per-case artifact
 audit now reports
-`ARTIFACT_AUDIT cases=501 missing_logs=0
+`ARTIFACT_AUDIT cases=521 missing_logs=0
 bad_or_incomplete_logs=0 missing_ucdb=0`.
 
 Combo terminate contract:
@@ -1646,14 +1699,14 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_501.ucdb <501 dispatcher UCDBs>
-/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_501.ucdb
+/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_521.ucdb <521 dispatcher UCDBs>
+/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_521.ucdb
 ```
 
 The merge used QuestaSim-64 `vcover` 2026.1_1 to match the UCDB generation
 version; the older Quartus-bundled 2022.4 `vcover` rejected the files as newer
-UCDBs. Filtered instance coverage summary: `71.59%`. The DUT instance summary is
-statement `97.61%`, branch `95.36%`, condition `84.82%`, expression `100.00%`,
+UCDBs. Filtered instance coverage summary: `71.66%`. The DUT instance summary is
+statement `97.61%`, branch `95.36%`, condition `84.95%`, expression `100.00%`,
 FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.93%`.
 The merge log was checked for source mismatch and reported none; the only
 reported warning was the local missing `vcovkill` helper.
@@ -1661,13 +1714,17 @@ reported warning was the local missing `vcovkill` helper.
 Artifact check:
 
 ```text
-ARTIFACT_AUDIT cases=501 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
+ARTIFACT_AUDIT cases=521 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
 ```
 
-Additional checks through this ERROR/NEG counter-coherency/status batch:
+Additional checks through this ERROR/NEG termination/upgrade batch:
 
 ```bash
 git diff --check
+python3 /home/yifeng/.codex/skills/rtl-writing/scripts/rtl_style_check.py mts_processor.vhd
+python3 /home/yifeng/.codex/skills/rtl-linter-and-checker/scripts/questa_static_screen.py --top mts_processor --filelist syn/quartus/mts_processor_static.f --work-dir /tmp/mtsp_static_neg111_neg130 mts_processor.vhd
+/home/yifeng/.codex/skills/ip-packaging/scripts/lint_csr_header.py mts_processor_hw.tcl
+make -C tb/uvm -s hw_tcl_validate_check
 python3 /home/yifeng/.codex/skills/rtl-doc-style/scripts/rtl_doc_style_check.py .
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/bug_history_format_check.py BUG_HISTORY.md
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py tb
@@ -1675,6 +1732,19 @@ python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py
 
 Results:
 - `git diff --check`: pass.
+- `rtl_style_check.py mts_processor.vhd`: fail on the legacy VHDL style
+  baseline with 968 existing tab/naming/alignment issues. The current functional
+  fix intentionally did not combine with a whole-file style migration.
+- `questa_static_screen.py`: pass at
+  `/tmp/mtsp_static_neg111_neg130/questa_static_screen.log`, with lint
+  `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`.
+- `lint_csr_header.py mts_processor_hw.tcl`: fail on the existing legacy
+  identity-header profile: HDL parameter flags, display hints, and META header
+  text are not yet migrated to the current common-header convention. This patch
+  only bumps the compatible IP version surfaces from `26.0.12.0510` to
+  `26.0.13.0510`.
+- `make -C tb/uvm -s hw_tcl_validate_check`: pass with
+  `HW_TCL_VALIDATE_CHECK_PASS cases=3`.
 - `rtl_doc_style_check.py .`: fail on the legacy `tb/` documentation layout,
   including missing `tb/README.md`, `tb/DV_REPORT.json`, and canonical
   companion/header/footer sections. This batch updated the execution audit but
@@ -1691,11 +1761,12 @@ Results:
   ready/handshake, timestamp/window, ToT/ET, marker/boundary,
   reset/recovery, generic/build, debug-stream, and counter/status fault
   evidence separately.
-- RTL changed in the first ERROR/NEG batch only to expose numeric run-control and
-  processor-state debug mirrors for deterministic DV checkpointing; no
-  functional RTL fault was accepted, and no new `BUG_HISTORY.md` entry was
-  warranted. The P117 debug-burst/ts-delta check, the P121-P130 packet-close
-  timing assumptions, the X001-X010 control expectations, the X011-X020 CSR
+- RTL changed in this batch to fix `BUG-015-R`, and `BUG_HISTORY.md` records
+  the open-packet terminal-boundary failure and repair. The first ERROR/NEG
+  batch also exposed numeric run-control and processor-state debug mirrors for
+  deterministic DV checkpointing. The P117 debug-burst/ts-delta check, the
+  P121-P130 packet-close timing assumptions, the X001-X010 control
+  expectations, the X011-X020 CSR
   misuse expectations, the X022-X030 input-error expectations, the
   X031-X040 ready/handshake expectations, the X041-X050 timestamp/window
   expectations, the X051-X060 ToT/ET expectations, the X061-X070
@@ -1706,23 +1777,17 @@ Results:
   contract after reviewing normal/debug, hit0 fault, ready,
   terminal-boundary, reset, force-stop, package-validation, debug-burst
   timestamp slicing, counter seed generic selection, and CSR
-  analysis-port evidence.
-- No RTL changed in the CSR-misuse, input-error, ready/handshake,
-  timestamp/window, ToT/ET, marker/boundary, reset/recovery, generic/build, or
-  debug-stream or counter/status fault batches, so Questa static screen was not
-  rerun.
-  The previous static screen for the current RTL remains at
-  `/tmp/mtsp_static_neg001_neg010/questa_static_screen.log` with lint
-  `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`.
+  analysis-port evidence. The current RTL static screen was rerun after
+  `BUG-015-R` and passed.
 
-Current evidenced explicit cases are the 501 handlers in
+Current evidenced explicit cases are the 521 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
-DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 20 uncovered ERROR/NEG cases, then
-regenerate the ordered coverage/report dashboard from current artifacts instead
-of relying on stale proxy rows. EDGE is now fully dispatched and evidenced;
-PROF has 130 evidenced stress handlers.
+All documented BASIC, EDGE, PROF, and ERROR cases now have explicit UVM
+handlers and current log/UCDB artifacts. DV closure is still not complete until
+the generator-owned `tb/DV_REPORT.md`, `tb/DV_COV.md`, and any dashboard JSON
+are regenerated from the 521-case artifact set and the remaining legacy bucket
+format issues are migrated or explicitly waived.

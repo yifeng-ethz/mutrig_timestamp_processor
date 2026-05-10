@@ -51,7 +51,9 @@
 --      Date: May 10, 2026
 -- Revision: 5.19 (Expose numeric run-control state mirrors for DV checkpointing)
 --      Date: May 10, 2026
--- Version : 26.0.12
+-- Revision: 5.20 (Do not let stale open-packet bookkeeping block terminal close markers)
+--      Date: May 10, 2026
+-- Version : 26.0.13
 -- Date    : 20260510
 -- Change  : Register the corrected divider numerators in hit_prediv, then split divider launch and
 --           ToT subtraction into separate cycles. A one-cycle delayed copy of the divider outputs keeps
@@ -86,6 +88,8 @@
 --           stale timing context from the previous traffic phase.
 --           Illegal run-control words still decode to ERROR, but ERROR no longer leaves
 --           asi_ctrl_ready stuck low; the next legal control word can recover the local agent.
+--           Once upstream end-of-run is observed, stale packet-open bookkeeping no longer blocks
+--           the terminal close-marker train; the physical input pipeline still drains first.
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -722,7 +726,10 @@ begin
             or hit_totcalc.valid = '1'
             or div_busy_v = '1'
             or hit_out.valid = '1'
-            or packet_in_transaction /= (packet_in_transaction'range => '0')
+            or (
+                upstream_endofrun_seen = '0'
+                and packet_in_transaction /= (packet_in_transaction'range => '0')
+            )
         ) then
             pipeline_busy_v := '1';
         end if;

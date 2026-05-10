@@ -149,26 +149,26 @@
 
 ## 12. Termination Failure Injections
 
-- `X111 | NEG_MTS_111_terminate_without_real_eop_gap`: Enter `TERMINATING` and never provide a real EOP; tag the missing downstream boundary as the current architectural gap. Covers the key stop weakness.
-- `X112 | NEG_MTS_112_idle_before_eop_delay_finishes`: Enter `TERMINATING`, accept EOP, then issue `IDLE` before the delayed pulse matures; tag any lost boundary explicitly. Covers control precedence over stop bookkeeping.
-- `X113 | NEG_MTS_113_multiple_eops_multiple_boundaries`: Feed multiple EOP-tagged beats in `FLUSHING`; if multiple output boundaries occur, tag the result as a current design weakness. Covers over-generation of stop markers.
+- `X111 | NEG_MTS_111_terminate_without_real_eop_gap`: Enter `TERMINATING`, provide upstream end-of-run without a real input EOP, and require the deterministic four-lane terminal close-marker train. Covers the synthetic stop boundary path.
+- `X112 | NEG_MTS_112_idle_before_eop_delay_finishes`: Enter `TERMINATING`, accept EOP, then issue `IDLE` before the delayed pulse matures; require the boundary and ready recovery to remain ordered. Covers control precedence over stop bookkeeping.
+- `X113 | NEG_MTS_113_multiple_eops_multiple_boundaries`: Feed multiple EOP-tagged beats in `FLUSHING` and require one terminal boundary train, not unbounded duplicate boundaries. Covers over-generation of stop markers.
 - `X114 | NEG_MTS_114_packet_crosses_terminate_edge`: Start a packet before `TERMINATING` and close it after the stop edge; require exactly one boundary and correct payload retention. Covers the core stop-crossing scenario.
-- `X115 | NEG_MTS_115_disabled_sideband_boundary_loss`: Use a sideband channel outside the enabled window during a terminating EOP and tag any missing boundary/bookkeeping issue explicitly. Covers sideband/window stop mismatch.
-- `X116 | NEG_MTS_116_terminate_ack_before_work_done`: Observe `asi_ctrl_ready` during termination and tag the fact that it acknowledges immediately, before drain completion. Covers the handshake design gap.
-- `X117 | NEG_MTS_117_flushing_accepts_fresh_hits_upgrade_gap`: Continue driving fresh hits in `FLUSHING` and tag the current acceptance as an upgrade-gap behavior rather than a clean architectural pass. Covers post-stop openness.
-- `X118 | NEG_MTS_118_missing_boundary_with_packet_open`: Track a packet-in-transaction case and require a downstream terminal boundary; absence is a failure. Covers packet-aware stop correctness.
-- `X119 | NEG_MTS_119_duplicate_boundary_per_run`: Require at most one terminal boundary per run stop; duplicates are failures or current-gap findings. Covers end-of-run uniqueness.
+- `X115 | NEG_MTS_115_disabled_sideband_boundary_loss`: Use a sideband channel outside the enabled input window during a terminating EOP and still require deterministic route-lane payload/debug evidence plus terminal close markers. Covers sideband/window stop mismatch.
+- `X116 | NEG_MTS_116_terminate_ack_before_work_done`: Observe `asi_ctrl_ready` during termination and require acknowledgement to reflect drain and close-marker completion. Covers the stateful completion handshake.
+- `X117 | NEG_MTS_117_flushing_accepts_fresh_hits_upgrade_gap`: Continue driving fresh hits in `FLUSHING` and record the delivered behavior: the current RTL accepts them, pairs normal/debug metadata, and classifies clean versus delay-error payloads explicitly. Covers post-stop openness.
+- `X118 | NEG_MTS_118_missing_boundary_with_packet_open`: Track a packet-in-transaction case and require a downstream terminal boundary after upstream end-of-run; this is the BUG-015-R regression. Covers packet-aware stop correctness.
+- `X119 | NEG_MTS_119_duplicate_boundary_per_run`: Require exactly one terminal boundary train per run stop, even when late payloads and multiple EOP attempts are present. Covers end-of-run uniqueness.
 - `X120 | NEG_MTS_120_idle_before_pipeline_empty`: Force `IDLE` while in-flight data remains and require no silent data loss; any loss is a failure. Covers premature-stop cleanup.
 
-## 13. Must-Fail-Today Upgrade Gates
+## 13. Upgrade-Contract Regression Gates
 
-- `X121 | NEG_MTS_121_prepare_ready_stateful_upgrade`: Define the post-upgrade expectation that `asi_ctrl_ready` deasserts during `RUN_PREPARE`; it should fail on current RTL. Creates an explicit future gate.
-- `X122 | NEG_MTS_122_sync_ready_stateful_upgrade`: Define the post-upgrade expectation that `asi_ctrl_ready` deasserts during `SYNC`; it should fail on current RTL. Creates an explicit future gate.
-- `X123 | NEG_MTS_123_flushing_ready_stateful_upgrade`: Define the post-upgrade expectation that `asi_ctrl_ready` deasserts during `FLUSHING`; it should fail on current RTL. Creates an explicit future gate.
-- `X124 | NEG_MTS_124_terminate_ack_after_drain_upgrade`: Define the post-upgrade expectation that terminate acknowledgement waits for drain completion; it should fail on current RTL. Creates an explicit future gate.
-- `X125 | NEG_MTS_125_synthetic_boundary_without_real_eop_upgrade`: Define the post-upgrade expectation that a deterministic terminal boundary exists even without a real input EOP; it should fail on current RTL. Creates an explicit future gate.
-- `X126 | NEG_MTS_126_no_fresh_accept_in_flushing_upgrade`: Define the post-upgrade expectation that fresh hits are no longer accepted in `FLUSHING`; it should fail on current RTL. Creates an explicit future gate.
-- `X127 | NEG_MTS_127_exactly_one_boundary_per_stop_upgrade`: Define the post-upgrade expectation that each stop produces exactly one terminal boundary; it should fail on current RTL whenever multi-EOP stress can duplicate the boundary. Creates an explicit future gate.
-- `X128 | NEG_MTS_128_idle_only_after_boundary_upgrade`: Define the post-upgrade expectation that `IDLE` is reached only after boundary forwarding; it should fail on current RTL. Creates an explicit future gate.
-- `X129 | NEG_MTS_129_ctrl_handshake_reflects_completion_upgrade`: Define the post-upgrade expectation that the control handshake reflects completed work, not just command sampling; it should fail on current RTL. Creates an explicit future gate.
-- `X130 | NEG_MTS_130_full_run_sequence_upgrade_suite`: Bundle all termination-contract assertions from `RUN_SEQ_UPGRADE_PLAN.md` into one must-fail-today suite that becomes must-pass after the RTL repair. Creates the final upgrade signoff gate.
+- `X121 | NEG_MTS_121_prepare_ready_stateful_upgrade`: Require `asi_ctrl_ready` to deassert and restore deterministically around `RUN_PREPARE`. Keeps the start-sequence ready contract visible for hardware bring-up.
+- `X122 | NEG_MTS_122_sync_ready_stateful_upgrade`: Require `asi_ctrl_ready` to deassert and restore deterministically around `SYNC`. Keeps synchronization ready behavior explicit.
+- `X123 | NEG_MTS_123_flushing_ready_stateful_upgrade`: Require `asi_ctrl_ready` to deassert during `FLUSHING` until the terminal close-marker work is complete. Covers stop-sequence completion visibility.
+- `X124 | NEG_MTS_124_terminate_ack_after_drain_upgrade`: Require terminate acknowledgement to wait for payload drain and terminal boundary completion. Covers completion-based control handshaking.
+- `X125 | NEG_MTS_125_synthetic_boundary_without_real_eop_upgrade`: Require a deterministic terminal boundary after upstream end-of-run even without a real input EOP. Covers synthetic stop-boundary generation.
+- `X126 | NEG_MTS_126_no_fresh_accept_in_flushing_upgrade`: Retain the future no-fresh-accept name but record current delivered RTL behavior: fresh FLUSHING hits are accepted and checked with normal/debug trace classification. This remains the upgrade-gap checkpoint for a later policy change.
+- `X127 | NEG_MTS_127_exactly_one_boundary_per_stop_upgrade`: Require each stop to produce exactly one terminal boundary train under late-EOP stress. Covers terminal-boundary uniqueness.
+- `X128 | NEG_MTS_128_idle_only_after_boundary_upgrade`: Require `IDLE` sequencing only after boundary forwarding has completed. Covers final stop-to-idle ordering.
+- `X129 | NEG_MTS_129_ctrl_handshake_reflects_completion_upgrade`: Require the control handshake to reflect completed work, not just command sampling. Covers bring-up-visible completion semantics.
+- `X130 | NEG_MTS_130_full_run_sequence_upgrade_suite`: Bundle the termination, ready, synthetic-boundary, exact-boundary, and mixed-soak contracts into the full upgrade-regression suite. Creates the final run-sequence signoff gate.
