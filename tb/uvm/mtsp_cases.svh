@@ -12704,6 +12704,242 @@
             m_env.m_scb.ts_delta_count, base_ts_delta))
     endtask
 
+    task automatic do_neg_101_discard_counter_on_clean_hit();
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s clean hit output", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s clean hit trace", case_id));
+      expect_last_trace_pair($sformatf("%s clean hit trace pair", case_id));
+      expect_total_count(48'd1, $sformatf("%s clean hit total", case_id));
+      expect_discard_count(32'd0, $sformatf("%s clean hit discard", case_id));
+    endtask
+
+    task automatic do_neg_102_missing_discard_increment();
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0,
+        3'b001);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 64,
+        $sformatf("%s rejected hiterr output quiet", case_id));
+      expect_total_count(48'd1, $sformatf("%s rejected hiterr total", case_id));
+      expect_discard_count(32'd1,
+        $sformatf("%s rejected hiterr discard", case_id));
+
+      send_hit_beat(2, 1, 15'h0003, 15'h0003, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s clean recovery output", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s clean recovery trace", case_id));
+      expect_last_trace_pair($sformatf("%s clean recovery trace pair",
+        case_id));
+      expect_discard_count(32'd1,
+        $sformatf("%s discard stable after recovery", case_id));
+    endtask
+
+    task automatic do_neg_103_missing_total_increment_on_reject();
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0,
+        3'b001);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 64,
+        $sformatf("%s rejected hiterr output quiet", case_id));
+      expect_total_count(48'd1, $sformatf("%s rejected hiterr total", case_id));
+      expect_discard_count(32'd1,
+        $sformatf("%s rejected hiterr discard", case_id));
+
+      send_hit_beat(2, 1, 15'h0003, 15'h0003, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s clean recovery output", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s clean recovery trace", case_id));
+      expect_last_trace_pair($sformatf("%s clean recovery trace pair",
+        case_id));
+      expect_total_count(48'd2, $sformatf("%s total after recovery", case_id));
+    endtask
+
+    task automatic do_neg_104_spurious_total_increment_without_valid();
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats       = m_env.m_scb.beat_count;
+      base_eops        = m_env.m_scb.eop_count;
+      base_empty_eops  = m_env.m_scb.empty_eop_count;
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      base_traces      = m_env.m_scb.trace_history.size();
+      wait_cycles(32);
+      expect_total_count(48'd0, $sformatf("%s idle-valid-low total", case_id));
+      expect_discard_count(32'd0,
+        $sformatf("%s idle-valid-low discard", case_id));
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 0,
+        $sformatf("%s no output without valid", case_id));
+      if (m_env.m_scb.debug_ts_count != base_debug_ts ||
+          m_env.m_scb.debug_burst_count != base_debug_burst ||
+          m_env.m_scb.ts_delta_count != base_ts_delta ||
+          m_env.m_scb.trace_history.size() != base_traces)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s debug path advanced without valid: debug_ts %0d/%0d debug_burst %0d/%0d ts_delta %0d/%0d traces %0d/%0d",
+            case_id, m_env.m_scb.debug_ts_count, base_debug_ts,
+            m_env.m_scb.debug_burst_count, base_debug_burst,
+            m_env.m_scb.ts_delta_count, base_ts_delta,
+            m_env.m_scb.trace_history.size(), base_traces))
+
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s clean recovery output", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s clean recovery trace", case_id));
+      expect_last_trace_pair($sformatf("%s clean recovery trace pair",
+        case_id));
+      expect_total_count(48'd1, $sformatf("%s recovery total", case_id));
+    endtask
+
+    task automatic do_neg_105_hi_lo_counter_snapshot_incoherent();
+      do_corner_018_counter_read_on_low_word_rollover();
+    endtask
+
+    task automatic do_neg_106_soft_reset_counter_clear_failure();
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(1, 128, $sformatf("%s pre-reset output", case_id));
+      expect_last_trace_pair($sformatf("%s pre-reset trace pair", case_id));
+      expect_total_count(48'd1, $sformatf("%s pre-reset total", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0004);
+      wait_cycles(4);
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0004,
+        $sformatf("%s soft_reset self-clear", case_id));
+      expect_total_count(48'd0, $sformatf("%s post-soft-reset total", case_id));
+      expect_discard_count(32'd0,
+        $sformatf("%s post-soft-reset discard", case_id));
+    endtask
+
+    task automatic do_neg_107_sync_counter_clear_failure();
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(1, 128, $sformatf("%s pre-sync output", case_id));
+      expect_last_trace_pair($sformatf("%s pre-sync trace pair", case_id));
+      expect_total_count(48'd1, $sformatf("%s pre-sync total", case_id));
+
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(4);
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_cycles(2);
+      send_ctrl(CTRL_SYNC, "SYNC");
+      wait_cycles(4);
+      expect_total_count(48'd0, $sformatf("%s post-sync total", case_id));
+      expect_discard_count(32'd0, $sformatf("%s post-sync discard", case_id));
+    endtask
+
+    task automatic do_neg_108_running_status_high_outside_run();
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0001,
+        $sformatf("%s IDLE status low", case_id));
+      run_start();
+      expect_csr_mask(3'd0, 32'h0000_0001, 32'h0000_0001,
+        $sformatf("%s RUNNING status high before exit", case_id));
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b1);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s pre-IDLE status payload", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s pre-IDLE status trace", case_id));
+      expect_last_trace_pair($sformatf("%s pre-IDLE status trace pair",
+        case_id));
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(4);
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0001,
+        $sformatf("%s post-IDLE status low", case_id));
+      expect_total_count(48'd1, $sformatf("%s one accepted hit total", case_id));
+    endtask
+
+    task automatic do_neg_109_running_status_low_inside_run();
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      expect_csr_mask(3'd0, 32'h0000_0001, 32'h0000_0001,
+        $sformatf("%s RUNNING status high", case_id));
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s running status payload", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s running status trace", case_id));
+      expect_last_trace_pair($sformatf("%s running status trace pair",
+        case_id));
+      expect_csr_mask(3'd0, 32'h0000_0001, 32'h0000_0001,
+        $sformatf("%s RUNNING status stays high", case_id));
+    endtask
+
+    task automatic do_neg_110_control_readback_mismatch();
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      csr_write(3'd0, 32'h6000_001f);
+      wait_cycles(2);
+      expect_csr_mask(3'd0, 32'h6000_001a, 32'h6000_001e,
+        $sformatf("%s packed control readback", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0004);
+      wait_cycles(4);
+      expect_csr_mask(3'd0, 32'h2000_0010, 32'h6000_001e,
+        $sformatf("%s soft_reset self-clear and defaults", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT & ~32'h0000_0010);
+      wait_cycles(2);
+      expect_csr_mask(3'd0, 32'h2000_0000, 32'h6000_001e,
+        $sformatf("%s discard_hiterr clear", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT);
+      wait_cycles(2);
+      expect_csr_mask(3'd0, 32'h2000_0010, 32'h6000_001e,
+        $sformatf("%s restored control defaults", case_id));
+      run_start();
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s restored control payload", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s restored control trace", case_id));
+      expect_last_trace_pair($sformatf("%s restored control trace pair",
+        case_id));
+    endtask
+
     task automatic run_case_by_id();
       case (case_id)
         "STD_MTS_001_powerup_reset_idle": do_std_001_powerup_reset_idle();
@@ -13067,6 +13303,16 @@
         "NEG_MTS_098_delay_field_switch_no_debug_source_change": do_neg_098_delay_field_switch_no_debug_source_change();
         "NEG_MTS_099_debug_outputs_active_in_idle": do_neg_099_debug_outputs_active_in_idle();
         "NEG_MTS_100_debug_outputs_active_in_reset": do_neg_100_debug_outputs_active_in_reset();
+        "NEG_MTS_101_discard_counter_on_clean_hit": do_neg_101_discard_counter_on_clean_hit();
+        "NEG_MTS_102_missing_discard_increment": do_neg_102_missing_discard_increment();
+        "NEG_MTS_103_missing_total_increment_on_reject": do_neg_103_missing_total_increment_on_reject();
+        "NEG_MTS_104_spurious_total_increment_without_valid": do_neg_104_spurious_total_increment_without_valid();
+        "NEG_MTS_105_hi_lo_counter_snapshot_incoherent": do_neg_105_hi_lo_counter_snapshot_incoherent();
+        "NEG_MTS_106_soft_reset_counter_clear_failure": do_neg_106_soft_reset_counter_clear_failure();
+        "NEG_MTS_107_sync_counter_clear_failure": do_neg_107_sync_counter_clear_failure();
+        "NEG_MTS_108_running_status_high_outside_run": do_neg_108_running_status_high_outside_run();
+        "NEG_MTS_109_running_status_low_inside_run": do_neg_109_running_status_low_inside_run();
+        "NEG_MTS_110_control_readback_mismatch": do_neg_110_control_readback_mismatch();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
         "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
         "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();

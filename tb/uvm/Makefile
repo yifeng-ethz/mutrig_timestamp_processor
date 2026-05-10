@@ -168,6 +168,9 @@ endif
 ifeq ($(CASE_ID),NEG_MTS_090_out_of_range_enabled_values)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=3 -g/tb_top/dut/ENABLED_CHANNEL_HI=3
 endif
+ifeq ($(CASE_ID),NEG_MTS_105_hi_lo_counter_snapshot_incoherent)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DV_COUNTER_SEED_ENABLE=1
+endif
 
 RTL_SRC = $(if $(filter before,$(RTL_VARIANT)),$(BUILD_DIR)/mts_processor.vhd,$(IP_SRC)/mts_processor.vhd)
 RUN_ID  = $(if $(CASE_ID),$(CASE_ID),$(TEST))
