@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 05:54 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 06:12 CEST
 
 ## Scope
 
@@ -14,7 +14,8 @@ generic/configuration, ready-edge, termination-edge, ready-X monitor-trap, and
 upgrade-readiness batches, plus the counter-rollover seed/readout, sampled CSR
 mode, output-marker batches, the first PROF/STRESS throughput and soak batch,
 the PROF/STRESS long-run mode stress batch, and the PROF/STRESS high-variance
-input-pattern batch, and the PROF/STRESS counter/reset/control-poll batch.
+input-pattern batch, the PROF/STRESS counter/reset/control-poll batch, and the
+PROF/STRESS overflow-window stress batch.
 This refresh also records the `bypass_lapse` per-hit RTL fix, the hit0 monitor
 timing fix required for input analysis-port evidence, and the `csr.soft_reset`
 RTL fix that clears local timing, datapath, output, and debug history.
@@ -25,9 +26,9 @@ RTL fix that clears local timing, datapath, output, and debug history.
 |---|---:|---:|---:|
 | BASIC | 130 | 130 | 130 |
 | EDGE | 131 | 131 | 131 |
-| PROF | 130 | 40 | 40 |
+| PROF | 130 | 50 | 50 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 303 | 303 |
+| Total | 521 | 313 | 313 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -35,8 +36,8 @@ Notes:
 - The old generic smoke fallback is no longer counted as evidence.
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
-- `DV_PROF.md` has explicit UVM handlers for P001 through P040; the remaining
-  90 PROF stress cases still require real stimuli.
+- `DV_PROF.md` has explicit UVM handlers for P001 through P050; the remaining
+  80 PROF stress cases still require real stimuli.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -318,6 +319,15 @@ Notes:
 - `STRESS_MTS_040` polls CSR every 32 cycles while traffic is active and
   requires 256 normal payloads, 256 debug timestamp/burst entries, 256
   `ts_delta` entries, and 256 normal/debug trace pairs.
+- `STRESS_MTS_041` through `STRESS_MTS_050` cover overflow-window stress:
+  single and repeated wrap events, symbols just below/equal/above
+  `padding_upper`, mixed T/E adjustment eligibility, bypass-off/on long-run
+  behavior, small and large `expected_latency`, and dense divider launch while
+  `overflow_adjust_active` is asserted. The reference model uses
+  `OVERFLOW_TIME_1N6=32767` and `padding_upper=22766`; the scoreboard requires
+  normal payload math, debug timestamp/burst metadata, `ts_delta`, input
+  analysis-port observations, and normal/debug trace pairing for every emitted
+  payload.
 
 ## Debug And RTL Findings From This Batch
 
@@ -348,18 +358,19 @@ The OPQ IP-core chain requested on 2026-05-09 was fetched and the parent
 pointers were advanced through the MTSP EDGE-completion checkpoint before the
 PROF/STRESS checkpoints. The OPQ packet-scheduler chain remains on the
 requested leading commit while MTSP advances independently through the current
-soft-reset fix:
+soft-reset fix and this overflow-window DV checkpoint:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mutrig_timestamp_processor` | `b1d45ba` `[PATCH] Reset MTSP soft-reset datapath state` | local `master`, pending parent pointer publication |
-| `mu3e-ip-cores` | pending | `origin/codex/opq-feb-swb-parent-20260508` |
-| `musip` | pending | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
+| `mutrig_timestamp_processor` | local `master` with the P041-P050 overflow-window DV checkpoint after `908ed7e` | pending parent pointer publication |
+| `mu3e-ip-cores` | pending MTSP gitlink advance | `origin/codex/opq-feb-swb-parent-20260508` |
+| `musip` | pending parent gitlink advance | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
-`packet_scheduler 245eb93` plus the local MTSP `b1d45ba` fix before the
-current P031-P040 checkpoint is published through the parent pointers.
+`packet_scheduler 245eb93` plus the local MTSP overflow-window checkpoint
+before the current P041-P050 checkpoint is published through the parent
+pointers.
 
 ## Evidence Commands
 
@@ -645,6 +656,34 @@ Representative summaries:
 - P040 CSR polling under load: `csr=54 inputs=256 beats=256 payloads=256
   debug_ts=256 debug_burst=256 ts_delta=256 dual_path_pairs=256 traces=256`.
 
+Focused PROF/STRESS overflow-window batch:
+
+```bash
+make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<P041-P050 case_id> SEED=1
+```
+
+Result: `STRESS_P041_P050_BATCH_PASS count=10`. Every case ran with
+`MTSP_DEBUG_PATH_REQUIRED=1`, input analysis-port monitoring, normal output
+monitoring, debug-path monitoring, and a scoreboard summary.
+Representative summaries:
+- P041/P042 single and repeated overflow runs: `csr=6 inputs=3 beats=3
+  payloads=3 debug_ts=3 debug_burst=3 ts_delta=3 dual_path_pairs=3
+  traces=3 expected_latency=2000`.
+- P043/P044/P045 overflow threshold and mixed T/E eligibility cases:
+  `csr=6 inputs=4 beats=4 payloads=4 debug_ts=4 debug_burst=4 ts_delta=4
+  dual_path_pairs=4 traces=4 expected_latency=2000`.
+- P046/P047 bypass-off/on overflow soaks: `csr=6 inputs=16 beats=16
+  payloads=16 debug_ts=16 debug_burst=16 ts_delta=16 dual_path_pairs=16
+  traces=16 expected_latency=2000`.
+- P048 small-latency overflow: `csr=7 inputs=4 beats=4 payloads=4 debug_ts=4
+  debug_burst=4 ts_delta=4 dual_path_pairs=4 traces=4 expected_latency=1`.
+- P049 large-latency overflow: `csr=7 inputs=4 beats=4 payloads=4 debug_ts=4
+  debug_burst=4 ts_delta=4 dual_path_pairs=4 traces=4
+  expected_latency=65535`.
+- P050 dense divider-launch overflow run: `csr=6 inputs=96 beats=96
+  payloads=96 debug_ts=96 debug_burst=96 ts_delta=96 dual_path_pairs=96
+  traces=96 expected_latency=2000`.
+
 RTL before/after bug proof:
 
 ```bash
@@ -664,6 +703,11 @@ make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 Result: `FULL_EXPLICIT_303_RERUN_PASS cases=303` on the final current RTL
 source after the `b1d45ba` soft-reset fix. The per-case artifact audit reports
 `explicit_cases=303 missing_artifacts=0 failed_or_incomplete_logs=0`.
+
+The P041-P050 overflow-window batch was then added and run incrementally. A
+full 313-case current-source rerun remains pending, but all 313 current
+explicit handlers now have passing logs and per-case UCDB artifacts:
+`explicit_cases=313 missing_artifacts=0 failed_or_incomplete_logs=0`.
 
 Combo terminate contract:
 
@@ -686,22 +730,23 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-vcover merge /tmp/mtsp_explicit_303.ucdb <303 dispatcher UCDBs>
-vcover report -details -code bcesft /tmp/mtsp_explicit_303.ucdb
+vcover merge /tmp/mtsp_explicit_313.ucdb <313 dispatcher UCDBs>
+vcover report -details -code bcesft /tmp/mtsp_explicit_313.ucdb
 ```
 
-Filtered instance coverage summary: `70.64%`. The DUT instance summary is
-statement `95.94%`, branch `94.65%`, condition `82.14%`, expression `100.00%`,
-FSM state `100.00%`, FSM transition `77.77%`, and toggle `54.33%`.
-The merge log was checked for source mismatch and reported none.
+Filtered instance coverage summary: `57.06%`. The DUT instance summary is
+statement `97.04%`, branch `95.47%`, condition `83.92%`, expression `100.00%`,
+FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.50%`.
+The merge log was checked for source mismatch and reported none; the only
+reported warning was the local missing `vcovkill` helper.
 
 Artifact check:
 
 ```text
-explicit_cases=303 missing_artifacts=0 failed_or_incomplete_logs=0
+explicit_cases=313 missing_artifacts=0 failed_or_incomplete_logs=0
 ```
 
-Additional checks through this PROF/STRESS batch:
+Additional checks through this PROF/STRESS overflow-window batch:
 
 ```bash
 git diff --check
@@ -728,14 +773,14 @@ Results:
 - `rtl_style_check.py mts_processor.vhd`: fail on 968 legacy style issues.
 - `./tb/run_mts_processor_tb.sh`: pass with `mts_processor_tb PASSED`.
 
-Current evidenced explicit cases are the 303 handlers in
+Current evidenced explicit cases are the 313 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 218 uncovered cases (90 PROF/STRESS and 128 ERROR/NEG), then
+the remaining 208 uncovered cases (80 PROF/STRESS and 128 ERROR/NEG), then
 regenerate the ordered coverage/report dashboard from current artifacts instead
 of relying on stale proxy rows. EDGE is now fully dispatched and evidenced;
-PROF has 40 evidenced stress handlers.
+PROF has 50 evidenced stress handlers.

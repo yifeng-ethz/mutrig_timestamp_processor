@@ -5,6 +5,8 @@
     localparam bit [31:0] CSR_CTRL_WRITE_DEFAULT = 32'h2000_0011;
     localparam bit [31:0] CSR_CTRL_READ_DEFAULT_IDLE = 32'h2000_0010;
     localparam bit [31:0] CSR_CTRL_MODE_MASK = 32'h7000_0000;
+    localparam int unsigned MTSP_OVERFLOW_TIME_1N6 = 32767;
+    localparam int unsigned MTSP_OVERFLOW_PADDING_UPPER_1N6 = 22766;
     bit          raw_by_decoded_loaded;
     int unsigned raw_by_decoded[int unsigned];
 
@@ -870,6 +872,140 @@
       // With default generics, one local MuTRiG wrap occurs after about 6554
       // clocks and the overflow lookback remains active for 2000 more clocks.
       wait_cycles(6600);
+    endtask
+
+    function automatic int unsigned overflow_decoded_value(int unsigned quotient,
+                                                           int unsigned remainder);
+      return (quotient * 5) + remainder;
+    endfunction
+
+    function automatic bit overflow_adjust_eligible(int unsigned quotient,
+                                                    int unsigned remainder);
+      return overflow_decoded_value(quotient, remainder) >
+             MTSP_OVERFLOW_PADDING_UPPER_1N6;
+    endfunction
+
+    function automatic int unsigned overflow_expected_decoded(int unsigned wrap_count,
+                                                              int unsigned quotient,
+                                                              int unsigned remainder,
+                                                              bit adjust);
+      int unsigned decoded_value;
+      int unsigned base_value;
+
+      decoded_value = overflow_decoded_value(quotient, remainder);
+      base_value    = wrap_count * MTSP_OVERFLOW_TIME_1N6;
+      if (adjust)
+        return decoded_value + base_value - MTSP_OVERFLOW_TIME_1N6;
+      return decoded_value + base_value;
+    endfunction
+
+    function automatic int unsigned expected_et_from_decoded(bit derive_tot,
+                                                             bit eflag_value,
+                                                             int unsigned t_decoded,
+                                                             int unsigned e_decoded);
+      int unsigned delta;
+
+      if (!derive_tot || !eflag_value || e_decoded < t_decoded)
+        return 0;
+      delta = e_decoded - t_decoded;
+      if (delta > 511)
+        return 511;
+      return delta;
+    endfunction
+
+    task automatic wait_for_overflow_lookback_at_count(int unsigned wrap_count,
+                                                       int unsigned max_cycles,
+                                                       string ctx);
+      int unsigned observed_wraps;
+      int unsigned lookback_count;
+      bit          will_happen;
+
+      repeat (max_cycles) begin
+        read_dut_uint("/tb_top/dut/counter_ov_cnt", observed_wraps,
+          $sformatf("%s overflow-count sample", ctx));
+        read_dut_uint("/tb_top/dut/fpga_overflow_lookback_cnt", lookback_count,
+          $sformatf("%s overflow-lookback sample", ctx));
+        read_dut_bit("/tb_top/dut/fpga_overflow_will_happen", will_happen,
+          $sformatf("%s overflow-will-happen sample", ctx));
+        if (observed_wraps >= wrap_count &&
+            (lookback_count != 0 || will_happen))
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+
+      `uvm_fatal("MTSP_TIMEOUT",
+        $sformatf("%s timed out waiting for overflow wrap_count=%0d with active lookback",
+          ctx, wrap_count))
+    endtask
+
+    task automatic send_overflow_hit_and_expect(int unsigned wrap_count,
+                                                int unsigned t_quotient,
+                                                int unsigned t_remainder,
+                                                int unsigned e_quotient,
+                                                int unsigned e_remainder,
+                                                bit derive_tot,
+                                                bit bypass_lapse,
+                                                bit eflag_value,
+                                                int unsigned asic_value,
+                                                int unsigned channel_value,
+                                                int unsigned tfine_value,
+                                                bit sop_value,
+                                                bit check_error,
+                                                bit expected_error,
+                                                string ctx);
+      int unsigned t_raw_value;
+      int unsigned e_raw_value;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+      int unsigned expected_t_decoded;
+      int unsigned expected_e_decoded;
+      int unsigned expected_t_q;
+      int unsigned expected_t_r;
+      int unsigned expected_et;
+      bit          t_adjust;
+      bit          e_adjust;
+
+      lookup_raw_for_quotient(t_quotient, t_remainder, t_raw_value,
+        $sformatf("%s T overflow symbol", ctx));
+      lookup_raw_for_quotient(e_quotient, e_remainder, e_raw_value,
+        $sformatf("%s E overflow symbol", ctx));
+
+      t_adjust = (!bypass_lapse) &&
+                 overflow_adjust_eligible(t_quotient, t_remainder);
+      e_adjust = (!bypass_lapse) &&
+                 overflow_adjust_eligible(e_quotient, e_remainder);
+      if (bypass_lapse) begin
+        expected_t_decoded = overflow_decoded_value(t_quotient, t_remainder);
+        expected_e_decoded = overflow_decoded_value(e_quotient, e_remainder);
+      end else begin
+        expected_t_decoded = overflow_expected_decoded(wrap_count, t_quotient,
+          t_remainder, t_adjust);
+        expected_e_decoded = overflow_expected_decoded(wrap_count, e_quotient,
+          e_remainder, e_adjust);
+      end
+      expected_t_q = expected_t_decoded / 5;
+      expected_t_r = expected_t_decoded % 5;
+      expected_et  = expected_et_from_decoded(derive_tot, eflag_value,
+        expected_t_decoded, expected_e_decoded);
+
+      base_inputs  = m_env.m_scb.hit0_history.size();
+      base_beats   = m_env.m_scb.beat_count;
+      base_history = m_env.m_scb.history.size();
+      base_traces  = m_env.m_scb.trace_history.size();
+      send_hit_beat(asic_value, channel_value, t_raw_value, e_raw_value,
+        eflag_value, sop_value, 1'b0, '0, 1'b1, tfine_value);
+      wait_for_input_count(base_inputs + 1, 128, ctx);
+      wait_for_beat_count(base_beats + 1, 512, ctx);
+      wait_for_trace_count(base_traces + 1, 512, ctx);
+      expect_payload_math_at(base_history, asic_value, channel_value,
+        tfine_value, expected_t_q, expected_t_r, expected_et, ctx);
+      expect_trace_pair_at(base_traces, ctx);
+      if (check_error)
+        expect_trace_error_at(base_traces, expected_error, ctx);
+      else
+        expect_trace_math_self_consistent_at(base_traces, ctx);
     endtask
 
     task automatic wait_for_ts_delta_count(int unsigned expected_count,
@@ -6763,6 +6899,213 @@
       run_csr_poll_under_load_case(256, 8, 32, case_id);
     endtask
 
+    task automatic do_stress_041_single_overflow_run();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0, 1'b1);
+      run_start();
+      send_overflow_hit_and_expect(0, 16, 0, 16, 0, 1'b0, 1'b0, 1'b0,
+        2, 0, 0, 1'b1, 1'b0, 1'b0,
+        $sformatf("%s pre-overflow reference", case_id));
+      wait_for_overflow_lookback_at_count(1, 9000,
+        $sformatf("%s first overflow lookback", case_id));
+      send_overflow_hit_and_expect(1, 4553, 1, 4553, 1, 1'b0, 1'b0, 1'b0,
+        2, 1, 1, 1'b0, 1'b0, 1'b0,
+        $sformatf("%s equal-upper no-adjust hit", case_id));
+      send_overflow_hit_and_expect(1, 4553, 2, 4553, 2, 1'b0, 1'b0, 1'b0,
+        2, 2, 2, 1'b0, 1'b0, 1'b0,
+        $sformatf("%s one-above-upper adjust hit", case_id));
+      expect_total_count(48'd3, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_stress_042_many_overflow_run();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0, 1'b1);
+      run_start();
+      for (int unsigned wrap = 1; wrap <= 3; wrap++) begin
+        wait_for_overflow_lookback_at_count(wrap, 9000,
+          $sformatf("%s overflow wrap=%0d", case_id, wrap));
+        send_overflow_hit_and_expect(wrap, 5000, 0, 5000, 0, 1'b0, 1'b0,
+          1'b0, 2, wrap, wrap[4:0], wrap == 1, 1'b0, 1'b0,
+          $sformatf("%s adjusted hit wrap=%0d", case_id, wrap));
+      end
+      expect_total_count(48'd3, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_stress_043_hits_just_below_upper_across_overflow();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0, 1'b1);
+      run_start();
+      for (int unsigned wrap = 1; wrap <= 2; wrap++) begin
+        wait_for_overflow_lookback_at_count(wrap, 9000,
+          $sformatf("%s overflow wrap=%0d", case_id, wrap));
+        send_overflow_hit_and_expect(wrap, 4553, 0, 4553, 0, 1'b0, 1'b0,
+          1'b0, 2, wrap * 2, 3, wrap == 1, 1'b0, 1'b0,
+          $sformatf("%s below-upper hit wrap=%0d", case_id, wrap));
+        send_overflow_hit_and_expect(wrap, 4553, 1, 4553, 1, 1'b0, 1'b0,
+          1'b0, 2, (wrap * 2) + 1, 4, 1'b0, 1'b0, 1'b0,
+          $sformatf("%s equal-upper hit wrap=%0d", case_id, wrap));
+      end
+      expect_total_count(48'd4, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_stress_044_hits_just_above_upper_across_overflow();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0, 1'b1);
+      run_start();
+      for (int unsigned wrap = 1; wrap <= 2; wrap++) begin
+        wait_for_overflow_lookback_at_count(wrap, 9000,
+          $sformatf("%s overflow wrap=%0d", case_id, wrap));
+        send_overflow_hit_and_expect(wrap, 4553, 2, 4553, 2, 1'b0, 1'b0,
+          1'b0, 2, wrap * 2, 5, wrap == 1, 1'b0, 1'b0,
+          $sformatf("%s one-above-upper hit wrap=%0d", case_id, wrap));
+        send_overflow_hit_and_expect(wrap, 4553, 3, 4553, 3, 1'b0, 1'b0,
+          1'b0, 2, (wrap * 2) + 1, 6, 1'b0, 1'b0, 1'b0,
+          $sformatf("%s two-above-upper hit wrap=%0d", case_id, wrap));
+      end
+      expect_total_count(48'd4, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_stress_045_mixed_t_and_e_adjust_eligibility();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b1, 1'b1);
+      run_start();
+      wait_for_overflow_lookback_at_count(1, 9000,
+        $sformatf("%s first overflow lookback", case_id));
+      send_overflow_hit_and_expect(1, 4553, 0, 4553, 1, 1'b1, 1'b0, 1'b1,
+        2, 0, 7, 1'b1, 1'b0, 1'b0,
+        $sformatf("%s neither path adjusts", case_id));
+      send_overflow_hit_and_expect(1, 4553, 2, 4553, 1, 1'b1, 1'b0, 1'b1,
+        2, 1, 8, 1'b0, 1'b0, 1'b0,
+        $sformatf("%s T-only adjustment", case_id));
+      send_overflow_hit_and_expect(1, 4553, 1, 4553, 2, 1'b1, 1'b0, 1'b1,
+        2, 2, 9, 1'b0, 1'b0, 1'b0,
+        $sformatf("%s E-only adjustment", case_id));
+      send_overflow_hit_and_expect(1, 4553, 2, 4553, 3, 1'b1, 1'b0, 1'b1,
+        2, 3, 10, 1'b0, 1'b0, 1'b0,
+        $sformatf("%s both paths adjust", case_id));
+      expect_total_count(48'd4, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_stress_046_bypass_off_overflow_soak();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0, 1'b1);
+      run_start();
+      wait_for_overflow_lookback_at_count(1, 9000,
+        $sformatf("%s first overflow lookback", case_id));
+      for (int unsigned idx = 0; idx < 16; idx++)
+        send_overflow_hit_and_expect(1, 5000 + (idx % 4), idx % 5,
+          5000 + (idx % 4), idx % 5, 1'b0, 1'b0, 1'b0, 2,
+          idx % 32, idx % 32, idx == 0, 1'b0, 1'b0,
+          $sformatf("%s bypass-off overflow idx=%0d", case_id, idx));
+      expect_total_count(48'd16, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_stress_047_bypass_on_overflow_soak();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      wait_for_overflow_lookback_at_count(1, 9000,
+        $sformatf("%s first overflow lookback", case_id));
+      for (int unsigned idx = 0; idx < 16; idx++)
+        send_overflow_hit_and_expect(1, 5000 + (idx % 4), idx % 5,
+          5000 + (idx % 4), idx % 5, 1'b0, 1'b1, 1'b0, 2,
+          idx % 32, idx % 32, idx == 0, 1'b0, 1'b0,
+          $sformatf("%s bypass-on overflow idx=%0d", case_id, idx));
+      expect_total_count(48'd16, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_stress_048_small_expected_latency_overflow();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd1);
+      wait_cycles(2);
+      run_start();
+      wait_for_overflow_lookback_at_count(1, 9000,
+        $sformatf("%s first overflow lookback", case_id));
+      for (int unsigned idx = 0; idx < 4; idx++)
+        send_overflow_hit_and_expect(1, 5000 + idx, 0, 5000 + idx, 0,
+          1'b0, 1'b0, 1'b0, 2, idx, idx[4:0], idx == 0, 1'b1, 1'b1,
+          $sformatf("%s small-latency overflow idx=%0d", case_id, idx));
+      expect_total_count(48'd4, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_stress_049_large_expected_latency_overflow();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0, 1'b1);
+      csr_write(3'd2, 32'h0000_ffff);
+      wait_cycles(2);
+      run_start();
+      wait_for_overflow_lookback_at_count(1, 9000,
+        $sformatf("%s first overflow lookback", case_id));
+      for (int unsigned idx = 0; idx < 4; idx++)
+        send_overflow_hit_and_expect(1, 5000 + idx, 0, 5000 + idx, 0,
+          1'b0, 1'b0, 1'b0, 2, idx, idx[4:0], idx == 0, 1'b1, 1'b0,
+          $sformatf("%s large-latency overflow idx=%0d", case_id, idx));
+      expect_total_count(48'd4, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_stress_050_dense_divider_launch_overflow();
+      int unsigned raw_value;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+      bit          busy;
+      bit          active;
+      bit          saw_busy_and_active;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0, 1'b1);
+      run_start();
+      wait_for_overflow_lookback_at_count(1, 9000,
+        $sformatf("%s first overflow lookback", case_id));
+      lookup_raw_for_quotient(5000, 0, raw_value, case_id);
+
+      base_inputs          = m_env.m_scb.hit0_history.size();
+      base_beats           = m_env.m_scb.beat_count;
+      base_history         = m_env.m_scb.history.size();
+      base_traces          = m_env.m_scb.trace_history.size();
+      saw_busy_and_active  = 1'b0;
+      for (int unsigned idx = 0; idx < 96; idx++) begin
+        send_hit_beat(2, idx % 32, raw_value, raw_value, 1'b0, idx == 0,
+          1'b0, '0, 1'b1, idx[4:0]);
+        read_dut_bit("/tb_top/dut/hit_div_busy", busy,
+          $sformatf("%s dense overflow busy idx=%0d", case_id, idx));
+        read_dut_bit("/tb_top/dut/overflow_adjust_active", active,
+          $sformatf("%s dense overflow active idx=%0d", case_id, idx));
+        if (busy && active)
+          saw_busy_and_active = 1'b1;
+      end
+
+      wait_for_input_count(base_inputs + 96, 512, case_id);
+      wait_for_beat_count(base_beats + 96, 2048, case_id);
+      wait_for_trace_count(base_traces + 96, 2048, case_id);
+      if (!saw_busy_and_active)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s never observed divider busy during overflow adjust",
+            case_id))
+      for (int unsigned idx = 0; idx < 96; idx++) begin
+        expect_payload_math_at(base_history + idx, 2, idx % 32, idx[4:0],
+          5000, 0, 0,
+          $sformatf("%s dense overflow payload idx=%0d", case_id, idx));
+        expect_trace_pair_at(base_traces + idx,
+          $sformatf("%s dense overflow trace idx=%0d", case_id, idx));
+        expect_trace_math_self_consistent_at(base_traces + idx,
+          $sformatf("%s dense overflow trace math idx=%0d", case_id, idx));
+      end
+      expect_total_count(48'd96, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -7076,6 +7419,16 @@
         "STRESS_MTS_038_direct_running_sequence_repeated_100x": do_stress_038_direct_running_sequence_repeated_100x();
         "STRESS_MTS_039_force_stop_pulse_every_100_hits": do_stress_039_force_stop_pulse_every_100_hits();
         "STRESS_MTS_040_csr_poll_every_32_cycles": do_stress_040_csr_poll_every_32_cycles();
+        "STRESS_MTS_041_single_overflow_run": do_stress_041_single_overflow_run();
+        "STRESS_MTS_042_many_overflow_run": do_stress_042_many_overflow_run();
+        "STRESS_MTS_043_hits_just_below_upper_across_overflow": do_stress_043_hits_just_below_upper_across_overflow();
+        "STRESS_MTS_044_hits_just_above_upper_across_overflow": do_stress_044_hits_just_above_upper_across_overflow();
+        "STRESS_MTS_045_mixed_t_and_e_adjust_eligibility": do_stress_045_mixed_t_and_e_adjust_eligibility();
+        "STRESS_MTS_046_bypass_off_overflow_soak": do_stress_046_bypass_off_overflow_soak();
+        "STRESS_MTS_047_bypass_on_overflow_soak": do_stress_047_bypass_on_overflow_soak();
+        "STRESS_MTS_048_small_expected_latency_overflow": do_stress_048_small_expected_latency_overflow();
+        "STRESS_MTS_049_large_expected_latency_overflow": do_stress_049_large_expected_latency_overflow();
+        "STRESS_MTS_050_dense_divider_launch_overflow": do_stress_050_dense_divider_launch_overflow();
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("No explicit UVM stimulus handler for documented case '%s'", case_id))
