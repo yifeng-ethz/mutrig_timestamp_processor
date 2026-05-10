@@ -45,8 +45,50 @@ Historical formal note:
 | [BUG-008-R](#bug-008-r-bypass-lapse-was-live-for-in-flight-hits) | R | soft error | `corner-only (CSR bypass toggle while datapath pipeline is active)` | fixed | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | `6f4bf95` | A CSR write to `bypass_lapse` could reinterpret the divider numerator source for a hit already accepted into the pipeline. |
 | [BUG-009-H](#bug-009-h-hit0-monitor-sampled-after-one-cycle-valid-deassert) | H | non-datapath-refactor | `directed-only (adjacent accepted hit0 visibility)` | fixed | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | `6f4bf95` | The hit0 monitor could miss a one-cycle accepted beat, weakening input-analysis-port evidence for dual normal/debug checks. |
 | [BUG-010-H](#bug-010-h-profile-helper-forced-zero-delay-error-on-valid-route-jump) | H | non-datapath-refactor | `directed-only (profile route-jump delay sanity)` | fixed | `STRESS_MTS_021_round_robin_enabled_channels` | `39fa9c0` | Profile helper forced zero delay-error even when normal output and debug math correctly agreed on a negative-delta route jump. |
+| [BUG-011-R](#bug-011-r-csr-soft-reset-left-timing-datapath-and-debug-history-live) | R | soft error | `occasional (routine CSR soft-reset recovery)` | fixed | `STRESS_MTS_035_soft_reset_every_10k_cycles` | `b1d45ba` | CSR soft reset cleared visible counters without clearing local timing, datapath, output, and debug history. |
 
 ## 2026-05-10
+
+### BUG-011-R: CSR soft reset left timing datapath and debug history live
+
+- First seen:
+  - UVM case `STRESS_MTS_035_soft_reset_every_10k_cycles`
+  - Follow-up contract checks `CORNER_MTS_084_soft_reset_with_inflight_beats` and `STRESS_MTS_036_global_reset_periodic_recovery`
+- Symptom:
+  - P035 first stopped after a software reset with `debug_delta=10038 expected_latency=2000 math_error=1 hit_error=1` on the first post-reset payload
+  - the normal output error bit and debug-derived delay math agreed, so the mismatch was a stale RTL timing context rather than a scoreboard-only false positive
+  - E084 exposed that an in-flight accepted hit must be flushed by soft reset, not emitted after the counter clear
+- Root cause:
+  - `csr.soft_reset` cleared the visible total/discard counters but left the local MTS/GTS counters, accepted-hit pipeline, divider-output delay registers, route packet bookkeeping, and debug delta history live
+  - hit input ready and normal output assembly were not explicitly gated during the active soft-reset cycle
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - RTL now resets the local MTS/GTS counters on `csr.soft_reset`
+    - hit input ready and `hit_in_ok` are held low while soft reset is active
+    - the datapath pipeline, divider delay registers, route start/terminate bookkeeping, upstream end-of-run state, and debug timestamp/burst history are cleared or gated during soft reset
+    - E084 now requires the in-flight payload/debug output to be flushed and then checks that the next post-reset hit restarts cleanly
+    - P035 and P036 use reset-local synthetic timestamp epochs so the no-error reference matches the reset contract
+  - before_fix_outcome:
+    - `STRESS_MTS_035_soft_reset_every_10k_cycles` failed on the first payload after a CSR soft reset with stale long-gap delay math
+    - the older E084 expectation would have allowed a flushed in-flight hit to appear after reset, which was inconsistent with the CSR reset contract
+  - after_fix_outcome:
+    - `CORNER_MTS_084_soft_reset_with_inflight_beats` passes with `csr=8 inputs=2 beats=1 payloads=1 debug_ts=1 debug_burst=1 ts_delta=1 dual_path_pairs=1 traces=1`
+    - `STRESS_MTS_035_soft_reset_every_10k_cycles` passes with `csr=24 inputs=48 beats=48 payloads=48 debug_ts=48 debug_burst=48 ts_delta=48 dual_path_pairs=48 traces=48`
+    - `STRESS_MTS_036_global_reset_periodic_recovery` passes with `csr=21 inputs=48 beats=48 payloads=48 debug_ts=48 debug_burst=48 ts_delta=48 dual_path_pairs=48 traces=48`
+    - the final ordered documented-case rerun passes with `FULL_EXPLICIT_303_RERUN_PASS cases=303`
+  - potential_hazard:
+    - fixed for the current single-clock CSR soft-reset implementation and documented reset-recovery bring-up sequence; CDC/static signoff remains tracked separately
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - the artifact audit passed with `explicit_cases=303 missing_artifacts=0 failed_or_incomplete_logs=0`
+  - the source-homogeneous explicit-only coverage merge reported DUT statement `95.94%`, branch `94.65%`, condition `82.14%`, expression `100.00%`, FSM state `100.00%`, FSM transition `77.77%`, and toggle `54.33%`
+  - the legacy VHDL smoke bench `./tb/run_mts_processor_tb.sh` passed
+  - `rtl_style_check.py mts_processor.vhd` still fails on the legacy style baseline with 968 issues
+- Commit:
+  - `b1d45ba` (`[PATCH] Reset MTSP soft-reset datapath state`)
 
 ### BUG-010-H: Profile helper forced zero delay-error on valid route jump
 
