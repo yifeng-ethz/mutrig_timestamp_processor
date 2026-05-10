@@ -23,19 +23,19 @@ This page is the chief-architect dashboard. All per-case evidence lives under [`
 
 | field | claimed value |
 |---|---|
-| ALL_BUCKETS_FRAME_RUNS | `1/1` |
-| BUCKET_FRAME_RUNS | `4/4` |
+| DUT_IMPL | `VHDL rtl` |
+| RTL_VARIANT | `after` |
 | DEBUG_PATH_REQUIRED | `1` |
+| RESET_EXPECTED_LATENCY | `2000` |
+| EXPLICIT_CASES | `521` |
 | DEBUG_REQUIRED_CASES | `521/521` |
 | DUAL_PATH_PAIRS | `19323` |
-| DUT_IMPL | `VHDL rtl` |
-| EVIDENCE_GIT_BRANCH | `master` |
-| EVIDENCE_GIT_COMMIT | `d276eb7` |
-| EXPLICIT_CASES | `521` |
-| RESET_EXPECTED_LATENCY | `2000` |
-| RTL_VARIANT | `after` |
 | SCOREBOARD_TRACES | `19323` |
 | TRACE_DETAIL_LINES | `19195` |
+| BUCKET_FRAME_RUNS | `4/4` |
+| ALL_BUCKETS_FRAME_RUNS | `1/1` |
+| EVIDENCE_GIT_BRANCH | `master` |
+| EVIDENCE_GIT_COMMIT | `9692869` |
 | probe_only_exclusions |  |
 
 ## Non-Claims
