@@ -5708,6 +5708,17 @@
                                    bit eop_value,
                                    bit [2:0] error_value,
                                    string ctx);
+      send_stress_hit_with_channel(idx, stress_channel(idx), derive_tot,
+        sop_value, eop_value, error_value, ctx);
+    endtask
+
+    task automatic send_stress_hit_with_channel(int unsigned idx,
+                                                int unsigned channel_value,
+                                                bit derive_tot,
+                                                bit sop_value,
+                                                bit eop_value,
+                                                bit [2:0] error_value,
+                                                string ctx);
       int unsigned t_raw_value;
       int unsigned e_raw_value;
 
@@ -5716,7 +5727,7 @@
       lookup_raw_for_quotient(stress_e_quotient(idx, derive_tot),
         stress_e_remainder(idx, derive_tot), e_raw_value,
         $sformatf("%s stress E symbol idx=%0d", ctx, idx));
-      send_hit_beat(stress_asic(idx), stress_channel(idx), t_raw_value,
+      send_hit_beat(stress_asic(idx), channel_value, t_raw_value,
         e_raw_value, stress_eflag(idx, derive_tot), sop_value, eop_value,
         error_value, 1'b1, stress_tfine(idx));
     endtask
@@ -5726,8 +5737,18 @@
                                             int unsigned stimulus_idx,
                                             bit derive_tot,
                                             string ctx);
+      expect_stress_payload_at_with_channel(history_idx, trace_idx,
+        stimulus_idx, stress_channel(stimulus_idx), derive_tot, ctx);
+    endtask
+
+    task automatic expect_stress_payload_at_with_channel(int unsigned history_idx,
+                                                         int unsigned trace_idx,
+                                                         int unsigned stimulus_idx,
+                                                         int unsigned channel_value,
+                                                         bit derive_tot,
+                                                         string ctx);
       expect_payload_math_at(history_idx, stress_asic(stimulus_idx),
-        stress_channel(stimulus_idx), stress_tfine(stimulus_idx),
+        channel_value, stress_tfine(stimulus_idx),
         stress_t_quotient(stimulus_idx), stress_t_remainder(stimulus_idx),
         stress_expected_et(stimulus_idx, derive_tot), ctx);
       expect_trace_pair_at(trace_idx, ctx);
@@ -6107,6 +6128,7 @@
     localparam int unsigned PROFILE_PATTERN_SINGLE_PACKET = 5;
     localparam int unsigned PROFILE_PATTERN_MULTI_PACKET  = 6;
     localparam int unsigned PROFILE_PATTERN_MUX_BITS      = 7;
+    localparam int unsigned PROFILE_PATTERN_MID_WINDOW    = 8;
 
     function automatic int unsigned profile_route_from_q(int unsigned quotient);
       return (quotient >> 4) & 3;
@@ -6180,6 +6202,12 @@
           sideband_channel = 6'b10_0000 | (idx % 4);
           channel_value    = idx % 4;
           sop_value        = (idx == 0);
+        end
+        PROFILE_PATTERN_MID_WINDOW: begin
+          sideband_channel = 1 + (idx % 2);
+          channel_value    = sideband_channel;
+          quotient         = profile_route_quotient(sideband_channel, idx / 2);
+          sop_value        = (idx < 2);
         end
         default:
           `uvm_fatal("MTSP_CASE",
@@ -6326,6 +6354,214 @@
       end
       expect_total_count(hit_count, ctx);
       expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic expect_latency_cycles_since(int unsigned base_inputs,
+                                               int unsigned base_history_size,
+                                               int unsigned hit_count,
+                                               int unsigned expected_cycles,
+                                               string ctx);
+      int unsigned min_cycles;
+      int unsigned max_cycles;
+
+      min_cycles = 32'hffff_ffff;
+      max_cycles = 0;
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        mtsp_hit0_obs_item hit0_obs;
+        mtsp_hit1_obs_item hit1_obs;
+        time               latency_ps;
+        int unsigned       observed_cycles;
+
+        if (base_inputs + idx >= m_env.m_scb.hit0_history.size())
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s missing input latency sample idx=%0d", ctx, idx))
+        if (base_history_size + idx >= m_env.m_scb.history.size())
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s missing output latency sample idx=%0d", ctx, idx))
+
+        hit0_obs = m_env.m_scb.hit0_history[base_inputs + idx];
+        hit1_obs = m_env.m_scb.history[base_history_size + idx];
+        if (hit1_obs.empty)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s expected payload for latency sample idx=%0d",
+              ctx, idx))
+        if (hit1_obs.time_ps <= hit0_obs.time_ps)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s non-positive latency idx=%0d hit0=%0t hit1=%0t",
+              ctx, idx, hit0_obs.time_ps, hit1_obs.time_ps))
+        latency_ps      = hit1_obs.time_ps - hit0_obs.time_ps;
+        observed_cycles = int'(latency_ps / CLK_PERIOD_PS);
+        if ((latency_ps % CLK_PERIOD_PS) != 0 ||
+            observed_cycles != expected_cycles)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s expected latency %0d cycles at idx=%0d, got %0d cycles (%0t ps)",
+              ctx, expected_cycles, idx, observed_cycles, latency_ps))
+        if (observed_cycles < min_cycles)
+          min_cycles = observed_cycles;
+        if (observed_cycles > max_cycles)
+          max_cycles = observed_cycles;
+      end
+
+      `uvm_info("MTSP_LATENCY",
+        $sformatf("%s latency_samples=%0d min_cycles=%0d max_cycles=%0d",
+          ctx, hit_count, min_cycles, max_cycles),
+        UVM_LOW)
+    endtask
+
+    task automatic run_pipeline_parameter_soak_case(int unsigned hit_count,
+                                                    int unsigned expected_cycles,
+                                                    string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+
+      for (int unsigned idx = 0; idx < hit_count; idx++)
+        send_stress_hit(idx, 1'b0, idx == 0, 1'b0, '0, ctx);
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 1024, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 2048, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 2048, ctx);
+      expect_stress_stream_since(base_history_size, base_traces, hit_count,
+        1'b0, 0, 1'b1, ctx);
+      expect_latency_cycles_since(base_inputs, base_history_size, hit_count,
+        expected_cycles, ctx);
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_remapped_hiterr_soak_case(int unsigned hit_count,
+                                                 string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned expected_discards;
+      int unsigned expected_payloads;
+      int unsigned emitted_idx;
+
+      wait_for_reset_release();
+      run_start();
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      expected_discards = hit_count / 8;
+      expected_payloads = hit_count - expected_discards;
+
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        bit [2:0] error_value;
+
+        error_value = '0;
+        if ((idx % 8) == 3)
+          error_value = 3'b001;
+        if ((idx % 8) == 7)
+          error_value = 3'b100;
+        send_stress_hit(idx, 1'b0, idx == 0, 1'b0, error_value, ctx);
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 1024, ctx);
+      wait_for_beat_count(base_beats + expected_payloads, hit_count + 2048,
+        ctx);
+      wait_for_trace_count(base_traces + expected_payloads, hit_count + 2048,
+        ctx);
+
+      emitted_idx = 0;
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        if ((idx % 8) != 7) begin
+          expect_stress_payload_at(base_history_size + emitted_idx,
+            base_traces + emitted_idx, idx, 1'b0,
+            $sformatf("%s remapped payload idx=%0d", ctx, idx));
+          emitted_idx++;
+        end
+      end
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(expected_discards, ctx);
+    endtask
+
+    task automatic run_custom_default_latency_soak_case(int unsigned hit_count,
+                                                        int unsigned expected_latency,
+                                                        string ctx);
+      bit [31:0] csr_word;
+
+      wait_for_reset_release();
+      csr_read(3'd2, csr_word);
+      if (csr_word !== expected_latency[31:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected power-on expected_latency CSR=%0d got %0d",
+            ctx, expected_latency, csr_word))
+      run_stress_stream_case(hit_count, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0,
+        1'b1, 1'b0, ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++)
+        expect_trace_expected_latency_at(m_env.m_scb.trace_history.size() -
+          hit_count + idx, expected_latency,
+          $sformatf("%s default latency trace idx=%0d", ctx, idx));
+    endtask
+
+    task automatic run_inert_parameter_soak_case(int unsigned hit_count,
+                                                 string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      run_start();
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        bit [2:0] error_value;
+        bit       eop_value;
+        bit       sop_value;
+        int unsigned channel_value;
+
+        error_value = '0;
+        if ((idx % 4) == 1)
+          error_value = 3'b010;
+        else if ((idx % 4) == 3)
+          error_value = 3'b100;
+        channel_value = idx % 4;
+        sop_value     = idx < 4;
+        eop_value     = idx >= hit_count - 4;
+        send_stress_hit_with_channel(idx, channel_value, 1'b0, sop_value,
+          eop_value, error_value, ctx);
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 1024, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 2048, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 2048, ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++)
+        expect_stress_payload_at_with_channel(base_history_size + idx,
+          base_traces + idx, idx, idx % 4, 1'b0,
+          $sformatf("%s inert payload idx=%0d", ctx, idx));
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+
+      base_history_size = m_env.m_scb.history.size();
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", ctx));
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 512,
+        $sformatf("%s inert close markers", ctx));
+      expect_close_markers_since(base_history_size, 4'b1111, 0,
+        $sformatf("%s inert close marker detail", ctx));
+      wait_for_ctrl_ready_high(512,
+        $sformatf("%s terminate ready restore", ctx));
     endtask
 
     task automatic read_total_count_coherent(output bit [47:0] total_count,
@@ -8753,6 +8989,46 @@
       run_terminate_with_csr_polling_case(16, 16, case_id);
     endtask
 
+    task automatic do_stress_081_div_pipeline_two_under_load();
+      run_pipeline_parameter_soak_case(96, 8, case_id);
+    endtask
+
+    task automatic do_stress_082_div_pipeline_four_under_load();
+      run_pipeline_parameter_soak_case(96, 10, case_id);
+    endtask
+
+    task automatic do_stress_083_single_enabled_channel_soak();
+      run_profile_variance_case(128, PROFILE_PATTERN_HOT_CH0, case_id);
+    endtask
+
+    task automatic do_stress_084_two_enabled_channels_soak();
+      run_profile_variance_case(128, PROFILE_PATTERN_MID_WINDOW, case_id);
+    endtask
+
+    task automatic do_stress_085_four_enabled_channels_soak();
+      run_profile_variance_case(256, PROFILE_PATTERN_RR_ENABLED, case_id);
+    endtask
+
+    task automatic do_stress_086_remapped_hiterr_soak();
+      run_remapped_hiterr_soak_case(128, case_id);
+    endtask
+
+    task automatic do_stress_087_custom_default_latency_soak();
+      run_custom_default_latency_soak_case(64, 128, case_id);
+    endtask
+
+    task automatic do_stress_088_debug_zero_soak();
+      run_profile_variance_case(128, PROFILE_PATTERN_RR_ENABLED, case_id);
+    endtask
+
+    task automatic do_stress_089_bank_up_vs_down_compare();
+      run_profile_variance_case(128, PROFILE_PATTERN_RR_ENABLED, case_id);
+    endtask
+
+    task automatic do_stress_090_inert_parameter_sweep_compare();
+      run_inert_parameter_soak_case(64, case_id);
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -9106,6 +9382,16 @@
         "STRESS_MTS_078_terminate_per_enabled_channel": do_stress_078_terminate_per_enabled_channel();
         "STRESS_MTS_079_terminate_near_overflow_window": do_stress_079_terminate_near_overflow_window();
         "STRESS_MTS_080_terminate_during_heavy_csr_polling": do_stress_080_terminate_during_heavy_csr_polling();
+        "STRESS_MTS_081_div_pipeline_two_under_load": do_stress_081_div_pipeline_two_under_load();
+        "STRESS_MTS_082_div_pipeline_four_under_load": do_stress_082_div_pipeline_four_under_load();
+        "STRESS_MTS_083_single_enabled_channel_soak": do_stress_083_single_enabled_channel_soak();
+        "STRESS_MTS_084_two_enabled_channels_soak": do_stress_084_two_enabled_channels_soak();
+        "STRESS_MTS_085_four_enabled_channels_soak": do_stress_085_four_enabled_channels_soak();
+        "STRESS_MTS_086_remapped_hiterr_soak": do_stress_086_remapped_hiterr_soak();
+        "STRESS_MTS_087_custom_default_latency_soak": do_stress_087_custom_default_latency_soak();
+        "STRESS_MTS_088_debug_zero_soak": do_stress_088_debug_zero_soak();
+        "STRESS_MTS_089_bank_up_vs_down_compare": do_stress_089_bank_up_vs_down_compare();
+        "STRESS_MTS_090_inert_parameter_sweep_compare": do_stress_090_inert_parameter_sweep_compare();
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("No explicit UVM stimulus handler for documented case '%s'", case_id))

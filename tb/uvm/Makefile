@@ -103,6 +103,34 @@ endif
 ifeq ($(CASE_ID),CORNER_MTS_100_padding_eop_wait_still_inert)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/PADDING_EOP_WAIT_CYCLE=1
 endif
+ifeq ($(CASE_ID),STRESS_MTS_081_div_pipeline_two_under_load)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/LPM_DIV_PIPELINE=2
+endif
+ifeq ($(CASE_ID),STRESS_MTS_082_div_pipeline_four_under_load)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/LPM_DIV_PIPELINE=4
+endif
+ifeq ($(CASE_ID),STRESS_MTS_083_single_enabled_channel_soak)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=0 -g/tb_top/dut/ENABLED_CHANNEL_HI=0
+endif
+ifeq ($(CASE_ID),STRESS_MTS_084_two_enabled_channels_soak)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=1 -g/tb_top/dut/ENABLED_CHANNEL_HI=2
+endif
+ifeq ($(CASE_ID),STRESS_MTS_086_remapped_hiterr_soak)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/HITERR_BIT_LOC=2
+endif
+ifeq ($(CASE_ID),STRESS_MTS_087_custom_default_latency_soak)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/MUTRIG_BUFFER_EXPECTED_LATENCY_8N=128
+RESET_EXPECTED_LATENCY := 128
+endif
+ifeq ($(CASE_ID),STRESS_MTS_088_debug_zero_soak)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DEBUG=0
+endif
+ifeq ($(CASE_ID),STRESS_MTS_089_bank_up_vs_down_compare)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/BANK=DOWN
+endif
+ifeq ($(CASE_ID),STRESS_MTS_090_inert_parameter_sweep_compare)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/PADDING_EOP_WAIT_CYCLE=1 -g/tb_top/dut/CRCERR_BIT_LOC=2 -g/tb_top/dut/FRAME_CORRPT_BIT_LOC=1
+endif
 
 RTL_SRC = $(if $(filter before,$(RTL_VARIANT)),$(BUILD_DIR)/mts_processor.vhd,$(IP_SRC)/mts_processor.vhd)
 RUN_ID  = $(if $(CASE_ID),$(CASE_ID),$(TEST))
