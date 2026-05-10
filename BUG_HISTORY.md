@@ -50,7 +50,7 @@ Historical formal note:
 | [BUG-013-H](#bug-013-h-inert-parameter-terminate-stimulus-left-input-packet-open) | H | non-datapath-refactor | `directed-only (parameter-sweep terminate stimulus)` | fixed | `STRESS_MTS_090_inert_parameter_sweep_compare` | `c2789b0` | P090 opened an input packet on one sideband channel and placed the terminal EOP on another, so the legal RTL drain held close markers off. |
 | [BUG-014-H](#bug-014-h-soft-reset-smoke-loop-checked-debug-burst-before-monitor-settled) | H | non-datapath-refactor | `directed-only (soft-reset smoke-loop debug timing)` | fixed | `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs` | `dedab24` | P110 enforced exact debug-stream counts before bounded waits let the passive debug monitors report the final sample. |
 | [BUG-015-R](#bug-015-r-open-packet-could-block-terminal-close-markers-after-endofrun) | R | hard stuck error | `rare (routine stop while an input packet remains open or upstream EOP is missing)` | fixed | `NEG_MTS_118_missing_boundary_with_packet_open` | `a1d9155` | Stale open-packet bookkeeping could hold the terminal boundary generator busy forever after upstream end-of-run. |
-| [BUG-016-H](#bug-016-h-continuous-frame-checkpoint-token-metadata-was-cleared-by-implicit-port-direction) | H | non-datapath-refactor | `directed-only (continuous-frame reporting metadata)` | fixed | `mtsp_bucket_frame_BASIC` | `pending` | The new no-restart frame run passed datapath checks but emitted blank or malformed checkpoint tokens, weakening machine-readable cross-run traceability. |
+| [BUG-016-H](#bug-016-h-continuous-frame-checkpoint-token-metadata-was-cleared-by-implicit-port-direction) | H | non-datapath-refactor | `directed-only (continuous-frame reporting metadata)` | fixed | `mtsp_bucket_frame_BASIC` | `5e60c20` | The new no-restart frame run passed datapath checks but emitted blank or malformed checkpoint tokens, weakening machine-readable cross-run traceability. |
 
 ## 2026-05-10
 
@@ -96,7 +96,7 @@ Historical formal note:
   - `mtsp_all_buckets_frame` reported `inputs=521 payloads=521 debug_ts=521 debug_burst=521 ts_delta=521 dual_path_pairs=521 traces=521`
   - refreshed `tb/REPORT/cross/` pages now require scoreboard evidence tables for the normal payload path, debug path, and dual analysis-port trace counters
 - Commit:
-  - pending
+  - `5e60c20` (`[PATCH] Add MTSP continuous-frame DV evidence`)
 
 ### BUG-015-R: Open packet could block terminal close markers after endofrun
 
