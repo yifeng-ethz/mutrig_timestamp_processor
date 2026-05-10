@@ -11828,8 +11828,102 @@
       do_std_036_hiterr_discard_enabled();
     endtask
 
+    task automatic expect_non_hiterr_error_bit_inert(bit [2:0] error_bits,
+                                                     string ctx);
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 1, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0,
+        error_bits);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s non-hiterr error accepted", ctx));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s non-hiterr error trace", ctx));
+      expect_last_trace_pair($sformatf("%s non-hiterr normal/debug pair",
+        ctx));
+      expect_last_payload_error(1'b0,
+        $sformatf("%s non-hiterr payload error clear", ctx));
+      expect_total_count(48'd1, $sformatf("%s total count", ctx));
+      expect_discard_count(32'd0, $sformatf("%s discard count", ctx));
+    endtask
+
+    task automatic do_neg_022_hiterr_kept_running();
+      do_std_037_hiterr_discard_disabled();
+    endtask
+
+    task automatic do_neg_023_crcerr_only_inert();
+      expect_non_hiterr_error_bit_inert(3'b010, case_id);
+    endtask
+
+    task automatic do_neg_024_frame_corrupt_only_inert();
+      expect_non_hiterr_error_bit_inert(3'b100, case_id);
+    endtask
+
+    task automatic do_neg_025_combined_error_bits_only_hiterr_matters();
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 1, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0,
+        3'b110);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s crcerr+frame accepted", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s crcerr+frame trace", case_id));
+      expect_last_trace_pair($sformatf("%s crcerr+frame normal/debug pair",
+        case_id));
+      expect_discard_count(32'd0,
+        $sformatf("%s no-hiterr discard", case_id));
+
+      send_hit_beat(2, 2, 15'h0007, 15'h0011, 1'b1, 1'b0, 1'b0,
+        3'b111);
+      expect_no_new_beats(base_beats + 1, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 64,
+        $sformatf("%s all-error hiterr rejected", case_id));
+      expect_total_count(48'd2, $sformatf("%s total count", case_id));
+      expect_discard_count(32'd1,
+        $sformatf("%s hiterr-only discard effect", case_id));
+
+      csr_write(3'd0, 32'h0000_0001);
+      wait_cycles(2);
+      send_hit_beat(2, 3, 15'h000B, 15'h0013, 1'b1, 1'b0, 1'b0,
+        3'b111);
+      wait_for_beat_count(base_beats + 2, 128,
+        $sformatf("%s all-error discard disabled", case_id));
+      wait_for_trace_count(base_traces + 2, 128,
+        $sformatf("%s all-error discard-disabled trace", case_id));
+      expect_last_trace_pair($sformatf("%s all-error discard-disabled pair",
+        case_id));
+      expect_total_count(48'd3, $sformatf("%s final total count", case_id));
+      expect_discard_count(32'd1,
+        $sformatf("%s discard remains only first hiterr", case_id));
+    endtask
+
+    task automatic do_neg_026_valid_beat_in_idle();
+      do_std_032_idle_rejects_clean_hit();
+    endtask
+
+    task automatic do_neg_027_valid_beat_in_reset_sync();
+      do_std_034_reset_sync_blocks_hit();
+    endtask
+
     task automatic do_neg_028_valid_beat_under_force_stop();
       do_std_038_force_stop_blocks_acceptance();
+    endtask
+
+    task automatic do_neg_029_sop_without_matching_eop_then_abort();
+      do_corner_117_packet_open_then_abort();
+    endtask
+
+    task automatic do_neg_030_sideband_outside_enabled_window();
+      do_corner_030_sideband_channel_outside_enabled_window();
     endtask
 
     task automatic run_case_by_id();
@@ -12116,7 +12210,15 @@
         "NEG_MTS_019_counter_reads_mid_reset": do_neg_019_counter_reads_mid_reset();
         "NEG_MTS_020_expected_latency_overflow_model": do_neg_020_expected_latency_overflow_model();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
+        "NEG_MTS_022_hiterr_kept_running": do_neg_022_hiterr_kept_running();
+        "NEG_MTS_023_crcerr_only_inert": do_neg_023_crcerr_only_inert();
+        "NEG_MTS_024_frame_corrupt_only_inert": do_neg_024_frame_corrupt_only_inert();
+        "NEG_MTS_025_combined_error_bits_only_hiterr_matters": do_neg_025_combined_error_bits_only_hiterr_matters();
+        "NEG_MTS_026_valid_beat_in_idle": do_neg_026_valid_beat_in_idle();
+        "NEG_MTS_027_valid_beat_in_reset_sync": do_neg_027_valid_beat_in_reset_sync();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();
+        "NEG_MTS_029_sop_without_matching_eop_then_abort": do_neg_029_sop_without_matching_eop_then_abort();
+        "NEG_MTS_030_sideband_outside_enabled_window": do_neg_030_sideband_outside_enabled_window();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
         "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
         "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();

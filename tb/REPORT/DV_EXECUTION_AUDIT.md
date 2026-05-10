@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 11:17 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 11:38 CEST
 
 ## Scope
 
@@ -22,7 +22,7 @@ parameter-sweep-under-load batch, and the PROF/STRESS randomized
 entropy/control-noise batch, the PROF/STRESS legacy smoke-vector endurance
 batch, the PROF/STRESS post-upgrade drain/ready/boundary signoff batch, the
 initial ERROR/NEG illegal-control/protocol batch, and the ERROR/NEG CSR-misuse
-batch.
+batch, and the ERROR/NEG input-error batch.
 This refresh also records the `bypass_lapse` per-hit RTL fix, the hit0 monitor
 timing fix required for input analysis-port evidence, and the `csr.soft_reset`
 RTL fix that clears local timing, datapath, output, and debug history. It also
@@ -44,8 +44,8 @@ bug. The failure was reviewed against the four normal outputs and paired
 | BASIC | 130 | 130 | 130 |
 | EDGE | 131 | 131 | 131 |
 | PROF | 130 | 130 | 130 |
-| ERROR | 130 | 22 | 22 |
-| Total | 521 | 413 | 413 |
+| ERROR | 130 | 30 | 30 |
+| Total | 521 | 421 | 421 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -54,7 +54,7 @@ Notes:
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
 - `DV_PROF.md` has explicit UVM handlers for P001 through P130.
-- `DV_ERROR.md` has explicit UVM handlers for X001 through X021, and X028.
+- `DV_ERROR.md` has explicit UVM handlers for X001 through X030.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -1175,6 +1175,33 @@ Mismatch review in this batch:
   idle driver next updated them. The stimulus now drives an idle CSR cycle under
   reset before releasing the force, and no RTL bug was accepted.
 
+Focused ERROR/NEG input-error batch:
+
+```bash
+make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<X022-X027,X029-X030 case_id> SEED=1
+```
+
+Result: `FOCUSED_NEG022_NEG030_PASS count=8`, followed by a full
+current-harness `FULL_EXPLICIT_421_PASS cases=421 elapsed=739s`. Key evidence:
+- X022 disables hiterr discard and proves a hiterr beat still propagates with
+  paired normal/debug trace evidence.
+- X023/X024 drive only `CRCERR_BIT_LOC` and only `FRAME_CORRPT_BIT_LOC` in
+  `RUNNING`; both are accepted, report one paired trace, and leave discard
+  count at zero.
+- X025 drives CRCERR+frame-corrupt without hiterr and then all error bits with
+  hiterr. Only the hiterr-containing beat is rejected while discard is enabled;
+  the same all-error beat propagates once discard is disabled.
+- X026/X027 drive valid input while `IDLE` and `RESET/SYNC` hold input ready
+  low; hit0 monitor counts remain unchanged and no output/debug samples appear.
+- X029 starts a packet without matching EOP, aborts to `IDLE`, restarts, and
+  proves the stale open-packet state does not create a later terminal payload.
+- X030 drives an outside-enabled-window sideband and proves payload/trace
+  correctness plus close-marker drain behavior.
+
+No RTL or harness bug was accepted in this batch. The direct X023-X025 checks
+were added to bind the negative plan text to RUNNING-state hit-error behavior
+instead of relying only on existing edge aliases.
+
 RTL before/after bug proof:
 
 ```bash
@@ -1191,10 +1218,10 @@ Latest full explicit-case sweep and current artifact set:
 make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_413_PASS cases=413 elapsed=726s` on the final current
-UVM harness after the CSR-misuse dispatcher bring-up. The per-case artifact
+Result: `FULL_EXPLICIT_421_PASS cases=421 elapsed=739s` on the final current
+UVM harness after the input-error dispatcher bring-up. The per-case artifact
 audit now reports
-`ARTIFACT_AUDIT cases=413 missing_logs=0
+`ARTIFACT_AUDIT cases=421 missing_logs=0
 bad_or_incomplete_logs=0 missing_ucdb=0`.
 
 Combo terminate contract:
@@ -1218,13 +1245,13 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_413.ucdb <413 dispatcher UCDBs>
-/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_413.ucdb
+/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_421.ucdb <421 dispatcher UCDBs>
+/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_421.ucdb
 ```
 
 The merge used QuestaSim-64 `vcover` 2026.1_1 to match the UCDB generation
 version; the older Quartus-bundled 2022.4 `vcover` rejected the files as newer
-UCDBs. Filtered instance coverage summary: `71.32%`. The DUT instance summary is
+UCDBs. Filtered instance coverage summary: `71.35%`. The DUT instance summary is
 statement `97.61%`, branch `95.36%`, condition `84.82%`, expression `100.00%`,
 FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.93%`.
 The merge log was checked for source mismatch and reported none; the only
@@ -1233,10 +1260,10 @@ reported warning was the local missing `vcovkill` helper.
 Artifact check:
 
 ```text
-ARTIFACT_AUDIT cases=413 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
+ARTIFACT_AUDIT cases=421 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
 ```
 
-Additional checks through this ERROR/NEG CSR-misuse batch:
+Additional checks through this ERROR/NEG input-error batch:
 
 ```bash
 git diff --check
@@ -1256,30 +1283,31 @@ Results:
   `tb/DV_BASIC.md`, `tb/DV_EDGE.md`, `tb/DV_PROF.md`, and `tb/DV_ERROR.md`
   because those files still use the older bullet-list layout instead of the
   canonical table/header format. Recent batches corrected specific stale EDGE
-  timing, PROF termination/drain, initial ERROR/NEG control text, and CSR
-  misuse text inside the legacy bucket files, and this audit now records the
-  sink-ready, drain/ready/boundary, illegal-control, and CSR-misuse evidence
-  separately.
+  timing, PROF termination/drain, initial ERROR/NEG control text, CSR misuse
+  text, and input-error text inside the legacy bucket files, and this audit now
+  records the sink-ready, drain/ready/boundary, illegal-control, CSR-misuse, and
+  input-error evidence separately.
 - RTL changed in the first ERROR/NEG batch only to expose numeric run-control and
   processor-state debug mirrors for deterministic DV checkpointing; no
   functional RTL fault was accepted, and no new `BUG_HISTORY.md` entry was
   warranted. The P117 debug-burst/ts-delta check, the P121-P130 packet-close
-  timing assumptions, the X001-X010 control expectations, and the X011-X020 CSR
-  misuse expectations were aligned to the existing RTL contract after reviewing
-  normal/debug and CSR analysis-port evidence.
-- No RTL changed in the CSR-misuse batch, so Questa static screen was not
-  rerun. The previous static screen for the current RTL remains at
+  timing assumptions, the X001-X010 control expectations, the X011-X020 CSR
+  misuse expectations, and the X022-X030 input-error expectations were aligned
+  to the existing RTL contract after reviewing normal/debug and CSR analysis-port
+  evidence.
+- No RTL changed in the CSR-misuse or input-error batches, so Questa static
+  screen was not rerun. The previous static screen for the current RTL remains at
   `/tmp/mtsp_static_neg001_neg010/questa_static_screen.log` with lint
   `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`.
 
-Current evidenced explicit cases are the 413 handlers in
+Current evidenced explicit cases are the 421 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 108 uncovered ERROR/NEG cases, then
+the remaining 100 uncovered ERROR/NEG cases, then
 regenerate the ordered coverage/report dashboard from current artifacts instead
 of relying on stale proxy rows. EDGE is now fully dispatched and evidenced;
 PROF has 130 evidenced stress handlers.
