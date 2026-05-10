@@ -405,12 +405,12 @@ the current termination/drain DV checkpoint:
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
 | `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | `codex/opq-feb-swb-parent-20260508`, `origin/codex/opq-feb-swb-parent-20260508` |
 | `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
-| `mutrig_timestamp_processor` | local `master` with the P071-P080 termination/drain DV checkpoint | pending parent pointer publication |
+| `mutrig_timestamp_processor` | local `master` with the P071-P080 termination/drain DV checkpoint beginning at `6b02500` | pushed to `origin/master` for parent/top pointer publication |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
-`packet_scheduler 245eb93` plus the local MTSP run-control checkpoint. The
-current P071-P080 termination/drain checkpoint is published from this audit
-through the MTSP, parent, and top-level pointers.
+`packet_scheduler 245eb93` plus the local MTSP termination/drain checkpoint.
+The P071-P080 checkpoint is pushed on MTSP `master` and is the source for the
+parent and top-level gitlink commits.
 
 ## Evidence Commands
 
