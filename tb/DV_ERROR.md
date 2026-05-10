@@ -102,7 +102,7 @@
 - `X073 | NEG_MTS_073_soft_reset_hangs_running_illegal`: Pulse `soft_reset` in `RUNNING` and require the DUT to continue operating afterward; any hang is a failure. Covers software reset recovery.
 - `X074 | NEG_MTS_074_soft_reset_creates_phantom_eop`: Pulse `soft_reset` in `FLUSHING` and require no spurious output EOP. Covers reset/marker interaction.
 - `X075 | NEG_MTS_075_prepare_after_aborted_packet`: Abort a packet with `IDLE`, then re-enter the standard start sequence; any stale SOP/EOP bookkeeping is a failure. Covers recovery from malformed stops.
-- `X076 | NEG_MTS_076_force_stop_stuck_high`: Leave `force_stop` high for a long time and require no accidental acceptance; any accepted hit is a failure. Covers control override stability.
+- `X076 | NEG_MTS_076_force_stop_stuck_high`: Leave `force_stop` high for a long time and require no emitted payloads; attempts may be counted and discarded, but any output beat is a failure. Covers control override stability.
 - `X077 | NEG_MTS_077_force_stop_clear_not_reopening`: Clear `force_stop` and require acceptance to resume immediately in `RUNNING`; failure to reopen is a bug. Covers override recovery.
 - `X078 | NEG_MTS_078_reset_flow_stuck_sclr`: After `RUN_PREPARE -> SYNC -> RUNNING`, require `reset_flow` not to remain stuck in `SCLR`; any such stickiness is a failure. Covers state-machine advancement.
 - `X079 | NEG_MTS_079_reset_flow_stuck_sync`: After `RUNNING`, require `reset_flow` not to remain stuck in `SYNC`; any such stickiness is a failure. Covers state-machine advancement.

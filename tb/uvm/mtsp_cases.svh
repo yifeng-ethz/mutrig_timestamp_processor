@@ -12361,6 +12361,127 @@
       do_corner_086_global_reset_with_pending_term_eop();
     endtask
 
+    task automatic do_neg_071_global_reset_clears_inflight_valids();
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats      = m_env.m_scb.beat_count;
+      base_eops       = m_env.m_scb.eop_count;
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      base_traces     = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      drive_global_reset(5, 4);
+      expect_hit0_ready(1'b0, $sformatf("%s post-reset input blocked", case_id));
+      expect_total_count(48'd0, $sformatf("%s hard reset total", case_id));
+      expect_discard_count(32'd0, $sformatf("%s hard reset discard", case_id));
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 128,
+        $sformatf("%s in-flight hit flushed by hard reset", case_id));
+      if (m_env.m_scb.trace_history.size() != base_traces)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s hard reset emitted a debug trace for flushed in-flight payload: base=%0d now=%0d",
+            case_id, base_traces, m_env.m_scb.trace_history.size()))
+
+      run_start();
+      send_hit_beat(2, 1, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s post-hard-reset recovery hit", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s post-hard-reset recovery trace", case_id));
+      expect_last_trace_pair($sformatf("%s post-hard-reset recovery trace",
+        case_id));
+      expect_total_count(48'd1, $sformatf("%s post-hard-reset total", case_id));
+    endtask
+
+    task automatic do_neg_072_global_reset_clears_debug_history();
+      do_corner_087_global_reset_with_debug_history();
+    endtask
+
+    task automatic do_neg_073_soft_reset_hangs_running_illegal();
+      do_corner_083_soft_reset_while_running_idle_pipe();
+    endtask
+
+    task automatic do_neg_074_soft_reset_creates_phantom_eop();
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      base_beats        = m_env.m_scb.beat_count;
+      base_eops         = m_env.m_scb.eop_count;
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0004);
+      wait_cycles(16);
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 0,
+        $sformatf("%s soft_reset did not create phantom EOP", case_id));
+      expect_total_count(48'd0, $sformatf("%s flushing soft_reset total", case_id));
+      expect_discard_count(32'd0, $sformatf("%s flushing soft_reset discard", case_id));
+
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s close markers after explicit endofrun", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 0,
+        $sformatf("%s close markers after explicit endofrun", case_id));
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_neg_075_prepare_after_aborted_packet();
+      do_corner_117_packet_open_then_abort();
+    endtask
+
+    task automatic do_neg_076_force_stop_stuck_high();
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      run_start();
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0002);
+      wait_cycles(2);
+      expect_csr_mask(3'd0, 32'h0000_0002, 32'h0000_0002,
+        $sformatf("%s force_stop set", case_id));
+      base_beats      = m_env.m_scb.beat_count;
+      base_eops       = m_env.m_scb.eop_count;
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      for (int idx = 0; idx < 4; idx++) begin
+        send_hit_beat(2, idx, idx + 1, idx + 1, 1'b0,
+          (idx == 0), 1'b0);
+        wait_cycles(32);
+      end
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 0,
+        $sformatf("%s force_stop held outputs quiet", case_id));
+      expect_csr_mask(3'd0, 32'h0000_0002, 32'h0000_0002,
+        $sformatf("%s force_stop still set", case_id));
+      expect_total_count(48'd4, $sformatf("%s force_stop attempts counted", case_id));
+      expect_discard_count(32'd4, $sformatf("%s force_stop attempts discarded", case_id));
+    endtask
+
+    task automatic do_neg_077_force_stop_clear_not_reopening();
+      do_corner_082_force_stop_clear_before_next_hit();
+    endtask
+
+    task automatic do_neg_078_reset_flow_stuck_sclr();
+      do_corner_006_sync_then_immediate_running();
+    endtask
+
+    task automatic do_neg_079_reset_flow_stuck_sync();
+      do_std_006_running_from_sync();
+      expect_last_trace_pair($sformatf("%s post-running trace", case_id));
+    endtask
+
+    task automatic do_neg_080_direct_running_no_accept_illegal();
+      do_std_003_direct_running_entry_allowed();
+      expect_last_trace_pair($sformatf("%s direct-running trace", case_id));
+    endtask
+
     task automatic run_case_by_id();
       case (case_id)
         "STD_MTS_001_powerup_reset_idle": do_std_001_powerup_reset_idle();
@@ -12694,6 +12815,16 @@
         "NEG_MTS_068_duplicate_output_eop": do_neg_068_duplicate_output_eop();
         "NEG_MTS_069_output_valid_outside_active_states": do_neg_069_output_valid_outside_active_states();
         "NEG_MTS_070_packet_tracker_not_cleared_by_reset": do_neg_070_packet_tracker_not_cleared_by_reset();
+        "NEG_MTS_071_global_reset_clears_inflight_valids": do_neg_071_global_reset_clears_inflight_valids();
+        "NEG_MTS_072_global_reset_clears_debug_history": do_neg_072_global_reset_clears_debug_history();
+        "NEG_MTS_073_soft_reset_hangs_running_illegal": do_neg_073_soft_reset_hangs_running_illegal();
+        "NEG_MTS_074_soft_reset_creates_phantom_eop": do_neg_074_soft_reset_creates_phantom_eop();
+        "NEG_MTS_075_prepare_after_aborted_packet": do_neg_075_prepare_after_aborted_packet();
+        "NEG_MTS_076_force_stop_stuck_high": do_neg_076_force_stop_stuck_high();
+        "NEG_MTS_077_force_stop_clear_not_reopening": do_neg_077_force_stop_clear_not_reopening();
+        "NEG_MTS_078_reset_flow_stuck_sclr": do_neg_078_reset_flow_stuck_sclr();
+        "NEG_MTS_079_reset_flow_stuck_sync": do_neg_079_reset_flow_stuck_sync();
+        "NEG_MTS_080_direct_running_no_accept_illegal": do_neg_080_direct_running_no_accept_illegal();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
         "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
         "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();

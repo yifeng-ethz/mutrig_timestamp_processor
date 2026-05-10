@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 13:28 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 13:56 CEST
 
 ## Scope
 
@@ -25,7 +25,7 @@ initial ERROR/NEG illegal-control/protocol batch, and the ERROR/NEG CSR-misuse
 batch, the ERROR/NEG input-error batch, the ERROR/NEG
 ready/handshake/protocol-source batch, the ERROR/NEG timestamp/window fault
 batch, the ERROR/NEG ToT/ET fault batch, and the ERROR/NEG
-marker/boundary fault batch.
+marker/boundary fault batch, and the ERROR/NEG reset/recovery fault batch.
 This refresh also records the `bypass_lapse` per-hit RTL fix, the hit0 monitor
 timing fix required for input analysis-port evidence, and the `csr.soft_reset`
 RTL fix that clears local timing, datapath, output, and debug history. It also
@@ -54,6 +54,11 @@ packet-tracker reset checks into the ERROR/NEG bucket. X063 initially exposed a
 plan/harness context mismatch, so the RTL was reviewed before acceptance:
 output route markers are keyed by decoded route lane, while open-packet
 tracking is keyed by enabled input sideband. No RTL fault was accepted.
+The X071-X080 refresh added hard-reset, soft-reset, force-stop recovery,
+reset-flow advancement, and legacy direct-start compatibility checks. X076
+required a plan wording correction after RTL review: held `force_stop` attempts
+are counted and discarded without payload output, which is the delivered
+contract already covered by the existing force-stop cases.
 
 ## Current Coverage Of Documented Cases
 
@@ -62,8 +67,8 @@ tracking is keyed by enabled input sideband. No RTL fault was accepted.
 | BASIC | 130 | 130 | 130 |
 | EDGE | 131 | 131 | 131 |
 | PROF | 130 | 130 | 130 |
-| ERROR | 130 | 70 | 70 |
-| Total | 521 | 461 | 461 |
+| ERROR | 130 | 80 | 80 |
+| Total | 521 | 471 | 471 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -72,7 +77,7 @@ Notes:
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
 - `DV_PROF.md` has explicit UVM handlers for P001 through P130.
-- `DV_ERROR.md` has explicit UVM handlers for X001 through X070.
+- `DV_ERROR.md` has explicit UVM handlers for X001 through X080.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -461,26 +466,27 @@ Notes:
 | Soft-reset smoke-loop checking enforced exact debug-stream counts before the passive debug monitors had been bounded-waited into the scoreboard. | `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs` | No RTL change was accepted. P110 now waits for `debug_ts`, `debug_burst`, and `ts_delta` counts before exact per-iteration checks; recorded as `BUG-014-H`. |
 | `DV_ERROR.md` X038 still described the older expectation that `ctrl_ready` would not deassert during prepare/sync/flush. | `NEG_MTS_038_ctrl_driver_assumes_stateful_ready` | No RTL change was accepted. RTL review showed `ctrl_ready_comb` is already stateful for `RUN_PREPARE`, `SYNC`, and `TERMINATING`, so the plan and testcase now require ready-low and bounded ready-restore evidence before legal recovery traffic is accepted. |
 | `DV_ERROR.md` X063 described "no SOP" for a disabled input channel and the first NEG wrapper reused a CORNER helper whose disabled sideband depended on a Makefile generic override. | `NEG_MTS_063_sop_on_disabled_channel` | No RTL change was accepted. RTL review showed route-lane SOP is generated from decoded output route, while input packet tracking only records enabled sideband lanes. X063 now drives default-window-disabled sideband 5, requires the route-lane SOP and normal/debug trace pair, then proves termination emits one close-marker train because disabled input bookkeeping did not hold a packet open. |
+| `DV_ERROR.md` X076 described force-stop as allowing no accepted hits, but delivered RTL counts ready-valid attempts and discards them while `force_stop` blocks payload output. | `NEG_MTS_076_force_stop_stuck_high` | No RTL change was accepted. The case now holds `force_stop`, drives four attempts, requires `beats=0` and `payloads=0`, and records the expected discard behavior. The plan text now distinguishes input-side attempts from emitted payloads. |
 
 ## Submodule Freshness Check
 
 The OPQ IP-core chain requested on 2026-05-09 was fetched again on
 2026-05-10 with `--recurse-submodules`. The user-provided leading commits are
 contained on the expected branches. The parent and top branches are already
-ahead of those OPQ commits at the prior MTSP ToT/ET pointer, and this
-batch advances MTSP independently through the current marker/boundary ERROR/NEG
+ahead of those OPQ commits at the prior MTSP marker/boundary pointer, and this
+batch advances MTSP independently through the current reset/recovery ERROR/NEG
 checkpoint:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | contained by `codex/opq-feb-swb-parent-20260508`, current head before this batch `40605d7` |
-| `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | contained by `yifeng-ip_sim-2604`, current head before this batch `50294c9` |
-| `mutrig_timestamp_processor` | local `master` with the X061-X070 marker/boundary ERROR/NEG checkpoint | source for `origin/master` and parent/top pointer publication |
+| `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | contained by `codex/opq-feb-swb-parent-20260508`, current head before this batch `8692910` |
+| `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | contained by `yifeng-ip_sim-2604`, current head before this batch `3bc7194` |
+| `mutrig_timestamp_processor` | local `master` with the X071-X080 reset/recovery ERROR/NEG checkpoint | source for `origin/master` and parent/top pointer publication |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
 `packet_scheduler 245eb93` plus the local MTSP ERROR/NEG checkpoints. The
-X061-X070 checkpoint is the source for the parent and top-level gitlink commits.
+X071-X080 checkpoint is the source for the parent and top-level gitlink commits.
 
 ## Evidence Commands
 
@@ -1387,6 +1393,48 @@ while `packet_in_transaction` only tracks enabled input sidebands. The
 documented X063 wording and new NEG wrapper now match that contract, so no
 `BUG_HISTORY.md` entry was added.
 
+Focused ERROR/NEG reset/recovery batch:
+
+```bash
+make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<X071-X080 case_id> SEED=1
+```
+
+Result: `FOCUSED_NEG071_NEG080_PASS count=10`, followed by a full
+current-harness `FULL_EXPLICIT_471_PASS cases=471 elapsed=820s`. Key evidence:
+- X071 accepts one hit, asserts global reset while the hit is still in flight,
+  requires no payload/debug trace from the flushed hit, then proves recovery
+  with one paired normal/debug trace.
+- X072 builds debug history, asserts global reset, and requires the first
+  post-reset hit to restart the debug-delta stream from zero-history semantics.
+- X073 pulses CSR `soft_reset` in `RUNNING`, requires counters and local state
+  to clear, then proves a post-reset payload/debug pair can still flow.
+- X074 enters `FLUSHING`, pulses CSR `soft_reset`, checks no phantom EOP before
+  explicit upstream `endofrun`, then requires the legal four-lane close-marker
+  train.
+- X075 opens and aborts a packet with `IDLE`, then re-enters the standard start
+  path and proves no stale packet bookkeeping corrupts terminal markers.
+- X076 holds `force_stop` high across four input attempts and requires zero
+  emitted payloads while the attempts are counted and discarded.
+- X077 clears `force_stop` and requires immediate payload/debug recovery.
+- X078/X079 prove reset-flow advancement by accepting a checked payload after
+  the standard `RUN_PREPARE -> SYNC -> RUNNING` path.
+- X080 preserves the documented legacy direct `RUNNING` start compatibility
+  with one checked payload/debug pair.
+
+Representative reset/recovery summaries:
+
+```text
+NEG_MTS_071: inputs=2 beats=1 payloads=1 dual_path_pairs=1 traces=1
+NEG_MTS_072: inputs=3 beats=3 debug_ts=3 debug_burst=3 ts_delta=3 traces=3
+NEG_MTS_074: inputs=0 beats=4 payloads=0 eops=4 empty_eops=4 traces=0
+NEG_MTS_076: inputs=4 beats=0 payloads=0 eops=0 empty_eops=0 traces=0
+NEG_MTS_080: inputs=1 beats=1 dual_path_pairs=1 traces=1
+```
+
+No RTL bug was accepted in this batch. The only wording correction was X076:
+`force_stop` blocks payload output while ready-valid attempts are counted and
+discarded, matching existing STD/CORNER force-stop evidence.
+
 RTL before/after bug proof:
 
 ```bash
@@ -1403,10 +1451,10 @@ Latest full explicit-case sweep and current artifact set:
 make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_461_PASS cases=461 elapsed=799s` on the final current
-UVM harness after the marker/boundary dispatcher bring-up. The per-case artifact
+Result: `FULL_EXPLICIT_471_PASS cases=471 elapsed=820s` on the final current
+UVM harness after the reset/recovery dispatcher bring-up. The per-case artifact
 audit now reports
-`ARTIFACT_AUDIT cases=461 missing_logs=0
+`ARTIFACT_AUDIT cases=471 missing_logs=0
 bad_or_incomplete_logs=0 missing_ucdb=0`.
 
 Combo terminate contract:
@@ -1430,13 +1478,13 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_461.ucdb <461 dispatcher UCDBs>
-/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_461.ucdb
+/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_471.ucdb <471 dispatcher UCDBs>
+/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_471.ucdb
 ```
 
 The merge used QuestaSim-64 `vcover` 2026.1_1 to match the UCDB generation
 version; the older Quartus-bundled 2022.4 `vcover` rejected the files as newer
-UCDBs. Filtered instance coverage summary: `71.55%`. The DUT instance summary is
+UCDBs. Filtered instance coverage summary: `71.57%`. The DUT instance summary is
 statement `97.61%`, branch `95.36%`, condition `84.82%`, expression `100.00%`,
 FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.93%`.
 The merge log was checked for source mismatch and reported none; the only
@@ -1445,10 +1493,10 @@ reported warning was the local missing `vcovkill` helper.
 Artifact check:
 
 ```text
-ARTIFACT_AUDIT cases=461 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
+ARTIFACT_AUDIT cases=471 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
 ```
 
-Additional checks through this ERROR/NEG marker/boundary batch:
+Additional checks through this ERROR/NEG reset/recovery batch:
 
 ```bash
 git diff --check
@@ -1472,8 +1520,8 @@ Results:
   text, input-error text, and X038 ready-handshake wording inside the legacy
   bucket files, and this audit now records the sink-ready,
   drain/ready/boundary, illegal-control, CSR-misuse, input-error,
-  ready/handshake, timestamp/window, ToT/ET, and marker/boundary evidence
-  separately.
+  ready/handshake, timestamp/window, ToT/ET, marker/boundary, and
+  reset/recovery evidence separately.
 - RTL changed in the first ERROR/NEG batch only to expose numeric run-control and
   processor-state debug mirrors for deterministic DV checkpointing; no
   functional RTL fault was accepted, and no new `BUG_HISTORY.md` entry was
@@ -1481,25 +1529,26 @@ Results:
   timing assumptions, the X001-X010 control expectations, the X011-X020 CSR
   misuse expectations, the X022-X030 input-error expectations, the
   X031-X040 ready/handshake expectations, the X041-X050 timestamp/window
-  expectations, the X051-X060 ToT/ET expectations, and the X061-X070
-  marker/boundary expectations were aligned to the existing RTL contract after
-  reviewing normal/debug, hit0 fault, ready, terminal-boundary, and CSR
-  analysis-port evidence.
+  expectations, the X051-X060 ToT/ET expectations, the X061-X070
+  marker/boundary expectations, and the X071-X080 reset/recovery expectations
+  were aligned to the existing RTL contract after reviewing normal/debug, hit0
+  fault, ready, terminal-boundary, reset, force-stop, and CSR analysis-port
+  evidence.
 - No RTL changed in the CSR-misuse, input-error, ready/handshake, or
-  timestamp/window, ToT/ET, or marker/boundary batches, so Questa static screen
-  was not rerun.
+  timestamp/window, ToT/ET, marker/boundary, or reset/recovery batches, so
+  Questa static screen was not rerun.
   The previous static screen for the current RTL remains at
   `/tmp/mtsp_static_neg001_neg010/questa_static_screen.log` with lint
   `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`.
 
-Current evidenced explicit cases are the 461 handlers in
+Current evidenced explicit cases are the 471 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 60 uncovered ERROR/NEG cases, then
+the remaining 50 uncovered ERROR/NEG cases, then
 regenerate the ordered coverage/report dashboard from current artifacts instead
 of relying on stale proxy rows. EDGE is now fully dispatched and evidenced;
 PROF has 130 evidenced stress handlers.
