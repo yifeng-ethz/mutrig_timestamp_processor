@@ -1017,6 +1017,48 @@ trace metadata checks, and scoreboard summaries. Representative summaries:
   debug_burst=128 ts_delta=128 dual_path_pairs=128 traces=128
   expected_latency=2000`.
 
+Focused PROF/STRESS sink-ready equivalence batch:
+
+```bash
+make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<P111-P120 case_id> SEED=1
+```
+
+Result: `FOCUSED_P111_P120_PASS count=10`, then refreshed under the final
+current-source 383-case rerun. The harness now samples ordinary sink `ready`
+on every normal output observation, in addition to the existing ready-X,
+normal-output, debug, and paired trace analysis ports. The new cases enforce:
+- P111/P112 ready-high and ready-low baselines: each reports `csr=6 inputs=64
+  beats=64 payloads=64 eops=0 empty_eops=0 debug_ts=64 debug_burst=64
+  ts_delta=64 ready_x=0 dual_path_pairs=64 traces=64` and 10-cycle latency.
+- P113 toggle 1010: same 64-payload normal/debug counts, with sampled ready
+  evidence `high=32 low=32`.
+- P114 SOP-ready-low window: same 64-payload normal/debug counts, with at
+  least one SOP output sampled while ready was low.
+- P115 EOP-ready-low termination: `csr=6 inputs=8 beats=12 payloads=8 eops=4
+  empty_eops=4 debug_ts=8 debug_burst=8 ts_delta=8 ready_x=0
+  dual_path_pairs=8 traces=8`, with the four close EOP markers sampled
+  ready-low.
+- P116 dense burst ready-low: `csr=6 inputs=128 beats=128 payloads=128
+  debug_ts=128 debug_burst=128 ts_delta=128 dual_path_pairs=128 traces=128`
+  and all 128 normal outputs sampled ready-low.
+- P117 ready-low in `FLUSHING`: `csr=6 inputs=8 beats=12 payloads=8 eops=4
+  empty_eops=4 debug_ts=8 debug_burst=0 ts_delta=0 ready_x=0
+  dual_path_pairs=8 traces=8`. This matches the documented RTL contract:
+  `debug_ts` pairs with flushing payloads, while `debug_burst` and `ts_delta`
+  are RUNNING-only.
+- P118 random ready toggle: `csr=6 inputs=128 beats=128 payloads=128
+  debug_ts=128 debug_burst=128 ts_delta=128 dual_path_pairs=128 traces=128`,
+  with sampled ready evidence `high=64 low=64`.
+- P119 ready-low across reset: `csr=6 inputs=64 beats=64 payloads=64
+  debug_ts=64 debug_burst=64 ts_delta=64 dual_path_pairs=64 traces=64`,
+  with ready held low through reset and all outputs sampled low.
+- P120 equivalence summary: four phases compare ready-high, ready-low,
+  toggle, and random sink patterns. The case requires exact equality for
+  normal output fields, paired normal/debug trace metadata, `debug_ts`,
+  `debug_burst`, and `ts_delta`; final scoreboard is `csr=24 inputs=128
+  beats=128 payloads=128 eops=0 empty_eops=0 debug_ts=128 debug_burst=128
+  ts_delta=128 ready_x=0 dual_path_pairs=128 traces=128`.
+
 RTL before/after bug proof:
 
 ```bash
@@ -1033,11 +1075,10 @@ Final explicit-case sweep:
 make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL373_PASS cases=373 elapsed=659s` on the final current RTL source
-after the smoke-endurance stress additions. The per-case artifact audit reports
-`ARTIFACT_AUDIT cases=373 missing_logs=0 bad_or_incomplete_logs=0
-missing_ucdb=0 ucdbs=374`. The explicit list has no missing UCDBs; the extra
-UCDB in the directory is outside the audited dispatcher list.
+Result: `FULL_EXPLICIT_PASS cases=383 elapsed=674s` on the final current RTL
+source after the sink-ready equivalence additions. The per-case artifact audit
+reports `ARTIFACT_AUDIT cases=383 missing_logs=0 bad_or_incomplete_logs=0
+missing_ucdb=0`.
 
 Combo terminate contract:
 
@@ -1060,13 +1101,13 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_373.ucdb <373 dispatcher UCDBs>
-/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_373.ucdb
+/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_383.ucdb <383 dispatcher UCDBs>
+/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_383.ucdb
 ```
 
 The merge used QuestaSim-64 `vcover` 2026.1_1 to match the UCDB generation
 version; the older Quartus-bundled 2022.4 `vcover` rejected the files as newer
-UCDBs. Filtered instance coverage summary: `71.70%`. The DUT instance summary is
+UCDBs. Filtered instance coverage summary: `71.43%`. The DUT instance summary is
 statement `97.04%`, branch `95.49%`, condition `83.92%`, expression `100.00%`,
 FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.82%`.
 The merge log was checked for source mismatch and reported none; the only
@@ -1075,21 +1116,20 @@ reported warning was the local missing `vcovkill` helper.
 Artifact check:
 
 ```text
-ARTIFACT_AUDIT cases=373 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0 ucdbs=374
+ARTIFACT_AUDIT cases=383 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
 ```
 
-Additional checks through this PROF/STRESS smoke-endurance stress batch:
+Additional checks through this PROF/STRESS sink-ready stress batch:
 
 ```bash
-git diff --check -- BUG_HISTORY.md tb/uvm/Makefile tb/uvm/mtsp_cases.svh tb/REPORT/DV_EXECUTION_AUDIT.md
+git diff --check
 python3 /home/yifeng/.codex/skills/rtl-doc-style/scripts/rtl_doc_style_check.py .
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/bug_history_format_check.py BUG_HISTORY.md
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py tb
 ```
 
 Results:
-- `git diff --check -- BUG_HISTORY.md tb/uvm/Makefile tb/uvm/mtsp_cases.svh tb/REPORT/DV_EXECUTION_AUDIT.md`:
-  pass.
+- `git diff --check`: pass.
 - `rtl_doc_style_check.py .`: fail on the legacy `tb/` documentation layout,
   including missing `tb/README.md`, `tb/DV_REPORT.json`, and canonical
   companion/header/footer sections. This batch updated the execution audit but
@@ -1100,19 +1140,21 @@ Results:
   because those files still use the older bullet-list layout instead of the
   canonical table/header format. Recent batches corrected specific stale EDGE
   timing plus PROF termination/drain text inside the legacy bucket files, and
-  this audit now records the smoke-endurance stress evidence separately.
-- No RTL source changed in the P101-P110 batch. The last RTL-changing batch
-  remains covered by the passing static screen transcript
+  this audit now records the sink-ready stress evidence separately.
+- No RTL source changed in the P111-P120 batch. The P117 debug-burst/ts-delta
+  check was aligned to the existing RUNNING-only RTL contract after reviewing
+  `mts_processor.vhd` and earlier P074/P076/P077 audit evidence. The last
+  RTL-changing batch remains covered by the passing static screen transcript
   `/tmp/mtsp_static_p061_p070/questa_static_screen.log`.
 
-Current evidenced explicit cases are the 373 handlers in
+Current evidenced explicit cases are the 383 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 148 uncovered cases (20 PROF/STRESS and 128 ERROR/NEG), then
+the remaining 138 uncovered cases (10 PROF/STRESS and 128 ERROR/NEG), then
 regenerate the ordered coverage/report dashboard from current artifacts instead
 of relying on stale proxy rows. EDGE is now fully dispatched and evidenced;
-PROF has 110 evidenced stress handlers.
+PROF has 120 evidenced stress handlers.

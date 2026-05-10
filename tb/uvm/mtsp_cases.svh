@@ -960,6 +960,377 @@
       wait_cycles(2);
     endtask
 
+    localparam int unsigned SINK_READY_HIGH        = 0;
+    localparam int unsigned SINK_READY_LOW         = 1;
+    localparam int unsigned SINK_READY_TOGGLE_1010 = 2;
+    localparam int unsigned SINK_READY_LOW_ON_SOP  = 3;
+    localparam int unsigned SINK_READY_LOW_ON_EOP  = 4;
+    localparam int unsigned SINK_READY_DENSE_LOW   = 5;
+    localparam int unsigned SINK_READY_FLUSH_LOW   = 6;
+    localparam int unsigned SINK_READY_RANDOM      = 7;
+    localparam int unsigned SINK_READY_RESET_LOW   = 8;
+
+    function automatic bit sink_ready_value(input int unsigned pattern,
+                                            input int unsigned cycle_idx);
+      bit [31:0] prbs;
+
+      prbs = (cycle_idx * 32'd1103515245) + 32'd12345;
+      case (pattern)
+        SINK_READY_HIGH:        return 1'b1;
+        SINK_READY_LOW:         return 1'b0;
+        SINK_READY_TOGGLE_1010: return !cycle_idx[0];
+        SINK_READY_LOW_ON_SOP:  return (cycle_idx < 96) ? 1'b0 : 1'b1;
+        SINK_READY_DENSE_LOW:   return 1'b0;
+        SINK_READY_FLUSH_LOW:   return 1'b0;
+        SINK_READY_RESET_LOW:   return 1'b0;
+        SINK_READY_RANDOM:      return prbs[3];
+        default:                return 1'b1;
+      endcase
+    endfunction
+
+    task automatic expect_ready_observation_since(input int unsigned base_history,
+                                                  input int unsigned sample_count,
+                                                  input int unsigned pattern,
+                                                  input string ctx);
+      int unsigned low_count;
+      int unsigned high_count;
+      int unsigned sop_low_count;
+      int unsigned eop_low_count;
+      int unsigned empty_eop_low_count;
+
+      if (base_history + sample_count > m_env.m_scb.history.size())
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d ready-sampled outputs from base %0d, size=%0d",
+            ctx, sample_count, base_history, m_env.m_scb.history.size()))
+
+      low_count            = 0;
+      high_count           = 0;
+      sop_low_count        = 0;
+      eop_low_count        = 0;
+      empty_eop_low_count  = 0;
+      for (int unsigned idx = 0; idx < sample_count; idx++) begin
+        mtsp_hit1_obs_item obs;
+
+        obs = m_env.m_scb.history[base_history + idx];
+        if ($isunknown(obs.ready))
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s output idx=%0d sampled unknown sink ready",
+              ctx, idx))
+        if (obs.ready === 1'b0)
+          low_count++;
+        else if (obs.ready === 1'b1)
+          high_count++;
+        if (obs.sop && obs.ready === 1'b0)
+          sop_low_count++;
+        if (obs.eop && obs.ready === 1'b0)
+          eop_low_count++;
+        if (obs.empty && obs.eop && obs.ready === 1'b0)
+          empty_eop_low_count++;
+      end
+
+      case (pattern)
+        SINK_READY_HIGH: begin
+          if (low_count != 0 || high_count != sample_count)
+            `uvm_fatal("MTSP_CASE",
+              $sformatf("%s expected all %0d outputs ready-high, got high=%0d low=%0d",
+                ctx, sample_count, high_count, low_count))
+        end
+        SINK_READY_LOW,
+        SINK_READY_DENSE_LOW,
+        SINK_READY_FLUSH_LOW,
+        SINK_READY_RESET_LOW: begin
+          if (low_count != sample_count)
+            `uvm_fatal("MTSP_CASE",
+              $sformatf("%s expected all %0d outputs ready-low, got high=%0d low=%0d",
+                ctx, sample_count, high_count, low_count))
+        end
+        SINK_READY_TOGGLE_1010,
+        SINK_READY_RANDOM: begin
+          if (low_count == 0 || high_count == 0)
+            `uvm_fatal("MTSP_CASE",
+              $sformatf("%s expected mixed ready observations, got high=%0d low=%0d",
+                ctx, high_count, low_count))
+        end
+        SINK_READY_LOW_ON_SOP: begin
+          if (sop_low_count == 0)
+            `uvm_fatal("MTSP_CASE",
+              $sformatf("%s expected at least one SOP output sampled with ready low",
+                ctx))
+        end
+        SINK_READY_LOW_ON_EOP: begin
+          if (eop_low_count == 0 || empty_eop_low_count == 0)
+            `uvm_fatal("MTSP_CASE",
+              $sformatf("%s expected close EOP marker sampled with ready low, eop_low=%0d empty_eop_low=%0d",
+                ctx, eop_low_count, empty_eop_low_count))
+        end
+        default: begin
+        end
+      endcase
+
+      `uvm_info("MTSP_SINK_READY",
+        $sformatf("%s ready evidence outputs=%0d high=%0d low=%0d sop_low=%0d eop_low=%0d empty_eop_low=%0d",
+          ctx, sample_count, high_count, low_count, sop_low_count,
+          eop_low_count, empty_eop_low_count),
+        UVM_LOW)
+    endtask
+
+    task automatic expect_sink_phase_equivalent(input int unsigned base_history_a,
+                                                input int unsigned base_history_b,
+                                                input int unsigned base_traces_a,
+                                                input int unsigned base_traces_b,
+                                                input int unsigned base_debug_ts_a,
+                                                input int unsigned base_debug_ts_b,
+                                                input int unsigned base_debug_burst_a,
+                                                input int unsigned base_debug_burst_b,
+                                                input int unsigned base_ts_delta_a,
+                                                input int unsigned base_ts_delta_b,
+                                                input int unsigned sample_count,
+                                                input string ctx);
+      if (base_history_a + sample_count > m_env.m_scb.history.size() ||
+          base_history_b + sample_count > m_env.m_scb.history.size() ||
+          base_traces_a + sample_count > m_env.m_scb.trace_history.size() ||
+          base_traces_b + sample_count > m_env.m_scb.trace_history.size() ||
+          base_debug_ts_a + sample_count > m_env.m_scb.debug_ts_history.size() ||
+          base_debug_ts_b + sample_count > m_env.m_scb.debug_ts_history.size() ||
+          base_debug_burst_a + sample_count > m_env.m_scb.debug_burst_history.size() ||
+          base_debug_burst_b + sample_count > m_env.m_scb.debug_burst_history.size() ||
+          base_ts_delta_a + sample_count > m_env.m_scb.ts_delta_history.size() ||
+          base_ts_delta_b + sample_count > m_env.m_scb.ts_delta_history.size())
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s cannot compare %0d samples from selected baselines",
+            ctx, sample_count))
+
+      for (int unsigned idx = 0; idx < sample_count; idx++) begin
+        mtsp_hit1_obs_item  hit_a;
+        mtsp_hit1_obs_item  hit_b;
+        mtsp_hit_trace_item trace_a;
+        mtsp_hit_trace_item trace_b;
+        mtsp_dbg_obs_item   dbg_a;
+        mtsp_dbg_obs_item   dbg_b;
+
+        hit_a = m_env.m_scb.history[base_history_a + idx];
+        hit_b = m_env.m_scb.history[base_history_b + idx];
+        if (hit_a.channel !== hit_b.channel || hit_a.sop !== hit_b.sop ||
+            hit_a.eop !== hit_b.eop || hit_a.data !== hit_b.data ||
+            hit_a.empty !== hit_b.empty || hit_a.error !== hit_b.error)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s normal path mismatch idx=%0d a={ch=%0h sop=%0b eop=%0b empty=%0b err=%0b data=0x%010h} b={ch=%0h sop=%0b eop=%0b empty=%0b err=%0b data=0x%010h}",
+              ctx, idx, hit_a.channel, hit_a.sop, hit_a.eop, hit_a.empty,
+              hit_a.error, hit_a.data, hit_b.channel, hit_b.sop, hit_b.eop,
+              hit_b.empty, hit_b.error, hit_b.data))
+
+        trace_a = m_env.m_scb.trace_history[base_traces_a + idx];
+        trace_b = m_env.m_scb.trace_history[base_traces_b + idx];
+        if (trace_a.channel !== trace_b.channel || trace_a.data !== trace_b.data ||
+            trace_a.hit1_error !== trace_b.hit1_error ||
+            trace_a.debug_ts !== trace_b.debug_ts ||
+            trace_a.debug_delta != trace_b.debug_delta ||
+            trace_a.expected_latency !== trace_b.expected_latency ||
+            trace_a.math_error !== trace_b.math_error)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s paired normal/debug trace mismatch idx=%0d",
+              ctx, idx))
+
+        dbg_a = m_env.m_scb.debug_ts_history[base_debug_ts_a + idx];
+        dbg_b = m_env.m_scb.debug_ts_history[base_debug_ts_b + idx];
+        if (dbg_a.data !== dbg_b.data)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s debug_ts mismatch idx=%0d a=0x%04h b=0x%04h",
+              ctx, idx, dbg_a.data, dbg_b.data))
+        dbg_a = m_env.m_scb.debug_burst_history[base_debug_burst_a + idx];
+        dbg_b = m_env.m_scb.debug_burst_history[base_debug_burst_b + idx];
+        if (dbg_a.data !== dbg_b.data)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s debug_burst mismatch idx=%0d a=0x%04h b=0x%04h",
+              ctx, idx, dbg_a.data, dbg_b.data))
+        dbg_a = m_env.m_scb.ts_delta_history[base_ts_delta_a + idx];
+        dbg_b = m_env.m_scb.ts_delta_history[base_ts_delta_b + idx];
+        if (dbg_a.data !== dbg_b.data)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s ts_delta mismatch idx=%0d a=0x%04h b=0x%04h",
+              ctx, idx, dbg_a.data, dbg_b.data))
+      end
+    endtask
+
+    task automatic run_sink_smoke_replay_phase(input int unsigned repeat_count,
+                                               input int unsigned ready_pattern,
+                                               output int unsigned base_history_size,
+                                               output int unsigned base_traces,
+                                               output int unsigned base_debug_ts,
+                                               output int unsigned base_debug_burst,
+                                               output int unsigned base_ts_delta,
+                                               output int unsigned expected_payloads,
+                                               input string ctx);
+      int unsigned pattern_count;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_dual_pairs;
+      int unsigned seq_idx;
+      bit          ready_done;
+
+      pattern_count = smoke_pattern_len(SMOKE_PATTERN_ALL);
+      expected_payloads = repeat_count * pattern_count;
+
+      wait_for_reset_release();
+      write_smoke_mode(1'b0, 1'b0);
+      hit1_drv_vif.ready <= sink_ready_value(ready_pattern, 0);
+      wait_cycles(1);
+      run_start();
+
+      ready_done = 1'b0;
+      fork
+        begin : sink_ready_loop
+          int unsigned cycle_idx;
+
+          cycle_idx = 0;
+          while (!ready_done) begin
+            hit1_drv_vif.ready <= sink_ready_value(ready_pattern, cycle_idx);
+            cycle_idx++;
+            @(posedge hit1_drv_vif.clk);
+          end
+        end
+      join_none
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      base_debug_ts     = m_env.m_scb.debug_ts_count;
+      base_debug_burst  = m_env.m_scb.debug_burst_count;
+      base_ts_delta     = m_env.m_scb.ts_delta_count;
+      base_dual_pairs   = m_env.m_scb.dual_path_pair_count;
+      seq_idx           = 0;
+
+      for (int unsigned rep = 0; rep < repeat_count; rep++) begin
+        for (int unsigned pos = 0; pos < pattern_count; pos++) begin
+          send_smoke_vector_kind(smoke_pattern_kind(SMOKE_PATTERN_ALL, pos),
+            seq_idx, $sformatf("%s rep=%0d pos=%0d", ctx, rep, pos));
+          seq_idx++;
+        end
+      end
+
+      wait_for_input_count(base_inputs + expected_payloads,
+        expected_payloads + 2048, ctx);
+      wait_for_beat_count(base_beats + expected_payloads,
+        expected_payloads + 4096, ctx);
+      wait_for_trace_count(base_traces + expected_payloads,
+        expected_payloads + 4096, ctx);
+      wait_for_debug_ts_count(base_debug_ts + expected_payloads,
+        expected_payloads + 1024, ctx);
+      wait_for_debug_burst_count(base_debug_burst + expected_payloads,
+        expected_payloads + 1024, ctx);
+      wait_for_ts_delta_count(base_ts_delta + expected_payloads,
+        expected_payloads + 1024, ctx);
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, expected_payloads, expected_payloads,
+        expected_payloads, ctx);
+      if (m_env.m_scb.dual_path_pair_count != base_dual_pairs + expected_payloads)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d new dual-path trace pairs, got %0d from base %0d",
+            ctx, expected_payloads,
+            m_env.m_scb.dual_path_pair_count - base_dual_pairs,
+            base_dual_pairs))
+
+      seq_idx = 0;
+      for (int unsigned rep = 0; rep < repeat_count; rep++) begin
+        for (int unsigned pos = 0; pos < pattern_count; pos++) begin
+          expect_smoke_vector_kind_at(base_history_size + seq_idx,
+            base_traces + seq_idx, smoke_pattern_kind(SMOKE_PATTERN_ALL, pos),
+            $sformatf("%s payload rep=%0d pos=%0d", ctx, rep, pos));
+          seq_idx++;
+        end
+      end
+      expect_latency_cycles_since(base_inputs, base_history_size,
+        expected_payloads, 10, ctx);
+      expect_total_count(expected_payloads, ctx);
+      expect_discard_count(32'd0, ctx);
+      expect_ready_observation_since(base_history_size, expected_payloads,
+        ready_pattern, ctx);
+
+      ready_done = 1'b1;
+      wait_cycles(2);
+      hit1_drv_vif.ready <= 1'b1;
+    endtask
+
+    task automatic run_sink_terminate_eop_ready_case(input int unsigned hit_count,
+                                                     input string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+      int unsigned base_dual_pairs;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      set_hit1_ready(1'b1);
+
+      base_inputs      = m_env.m_scb.hit0_history.size();
+      base_beats       = m_env.m_scb.beat_count;
+      base_history     = m_env.m_scb.history.size();
+      base_traces      = m_env.m_scb.trace_history.size();
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      base_dual_pairs  = m_env.m_scb.dual_path_pair_count;
+      base_empty_eops  = m_env.m_scb.empty_eop_count;
+
+      for (int unsigned idx = 0; idx < hit_count; idx++)
+        send_run_control_payload(idx, idx % 4, idx < 4,
+          idx == hit_count - 1, base_history, base_traces, idx,
+          $sformatf("%s pre-terminate idx=%0d", ctx, idx));
+
+      set_hit1_ready(1'b0);
+      finish_termination_after_payloads(base_history, base_empty_eops,
+        hit_count, ctx);
+      set_hit1_ready(1'b1);
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 512, ctx);
+      wait_for_debug_ts_count(base_debug_ts + hit_count, hit_count + 1024,
+        ctx);
+      wait_for_debug_burst_count(base_debug_burst + hit_count,
+        hit_count + 1024, ctx);
+      wait_for_ts_delta_count(base_ts_delta + hit_count, hit_count + 1024,
+        ctx);
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, hit_count, hit_count, hit_count, ctx);
+      if (m_env.m_scb.dual_path_pair_count != base_dual_pairs + hit_count)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d new dual-path trace pairs, got %0d",
+            ctx, hit_count, m_env.m_scb.dual_path_pair_count - base_dual_pairs))
+      if (m_env.m_scb.beat_count != base_beats + hit_count + 4)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d payload/marker beats, got %0d",
+            ctx, hit_count + 4, m_env.m_scb.beat_count - base_beats))
+      if (m_env.m_scb.trace_history.size() != base_traces + hit_count)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d normal/debug traces, got %0d",
+            ctx, hit_count, m_env.m_scb.trace_history.size() - base_traces))
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+      expect_ready_observation_since(base_history, hit_count + 4,
+        SINK_READY_LOW_ON_EOP, ctx);
+    endtask
+
+    task automatic run_sink_smoke_replay_case(input int unsigned repeat_count,
+                                              input int unsigned ready_pattern,
+                                              input string ctx);
+      int unsigned base_history;
+      int unsigned base_traces;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+      int unsigned expected_payloads;
+
+      run_sink_smoke_replay_phase(repeat_count, ready_pattern, base_history,
+        base_traces, base_debug_ts, base_debug_burst, base_ts_delta,
+        expected_payloads, ctx);
+    endtask
+
     task automatic run_smoke_soft_reset_case(int unsigned iterations,
                                              string ctx);
       int unsigned pattern_count;
@@ -10262,6 +10633,154 @@
       run_smoke_soft_reset_case(32, case_id);
     endtask
 
+    task automatic do_stress_111_ready_high_baseline_log();
+      run_sink_smoke_replay_case(16, SINK_READY_HIGH, case_id);
+    endtask
+
+    task automatic do_stress_112_ready_low_baseline_log();
+      run_sink_smoke_replay_case(16, SINK_READY_LOW, case_id);
+    endtask
+
+    task automatic do_stress_113_ready_toggle_1010();
+      run_sink_smoke_replay_case(16, SINK_READY_TOGGLE_1010, case_id);
+    endtask
+
+    task automatic do_stress_114_ready_low_on_sop_beats();
+      run_sink_smoke_replay_case(16, SINK_READY_LOW_ON_SOP, case_id);
+    endtask
+
+    task automatic do_stress_115_ready_low_on_eop_beats();
+      run_sink_terminate_eop_ready_case(8, case_id);
+    endtask
+
+    task automatic do_stress_116_ready_low_during_dense_burst();
+      run_sink_smoke_replay_case(32, SINK_READY_DENSE_LOW, case_id);
+    endtask
+
+    task automatic do_stress_117_ready_low_in_flushing();
+      int unsigned base_history;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+      int unsigned base_dual_pairs;
+
+      base_history     = m_env.m_scb.history.size();
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      base_dual_pairs  = m_env.m_scb.dual_path_pair_count;
+      run_late_flushing_payload_case(8, 1'b0, 1'b1, case_id);
+      wait_for_debug_ts_count(base_debug_ts + 8, 1032, case_id);
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, 8, 0, 0, case_id);
+      if (m_env.m_scb.dual_path_pair_count != base_dual_pairs + 8)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected 8 new dual-path trace pairs, got %0d",
+            case_id, m_env.m_scb.dual_path_pair_count - base_dual_pairs))
+      expect_ready_observation_since(base_history, 12, SINK_READY_FLUSH_LOW,
+        case_id);
+    endtask
+
+    task automatic do_stress_118_random_ready_toggle();
+      run_sink_smoke_replay_case(32, SINK_READY_RANDOM, case_id);
+    endtask
+
+    task automatic do_stress_119_ready_low_across_resets();
+      int unsigned base_history;
+      int unsigned base_traces;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+      int unsigned expected_payloads;
+
+      wait_for_reset_release();
+      set_hit1_ready(1'b0);
+      drive_global_reset(5, 4);
+      if (hit1_drv_vif.ready !== 1'b0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected sink ready held low across global reset",
+            case_id))
+      run_sink_smoke_replay_phase(16, SINK_READY_RESET_LOW, base_history,
+        base_traces, base_debug_ts, base_debug_burst, base_ts_delta,
+        expected_payloads, case_id);
+    endtask
+
+    task automatic do_stress_120_sink_pattern_equivalence_summary();
+      int unsigned base_history_high;
+      int unsigned base_history_low;
+      int unsigned base_history_toggle;
+      int unsigned base_history_random;
+      int unsigned base_traces_high;
+      int unsigned base_traces_low;
+      int unsigned base_traces_toggle;
+      int unsigned base_traces_random;
+      int unsigned base_debug_ts_high;
+      int unsigned base_debug_ts_low;
+      int unsigned base_debug_ts_toggle;
+      int unsigned base_debug_ts_random;
+      int unsigned base_debug_burst_high;
+      int unsigned base_debug_burst_low;
+      int unsigned base_debug_burst_toggle;
+      int unsigned base_debug_burst_random;
+      int unsigned base_ts_delta_high;
+      int unsigned base_ts_delta_low;
+      int unsigned base_ts_delta_toggle;
+      int unsigned base_ts_delta_random;
+      int unsigned payloads_high;
+      int unsigned payloads_low;
+      int unsigned payloads_toggle;
+      int unsigned payloads_random;
+
+      run_sink_smoke_replay_phase(8, SINK_READY_HIGH, base_history_high,
+        base_traces_high, base_debug_ts_high, base_debug_burst_high,
+        base_ts_delta_high, payloads_high,
+        $sformatf("%s high baseline", case_id));
+      drive_global_reset(4, 4);
+      run_sink_smoke_replay_phase(8, SINK_READY_LOW, base_history_low,
+        base_traces_low, base_debug_ts_low, base_debug_burst_low,
+        base_ts_delta_low, payloads_low,
+        $sformatf("%s low compare", case_id));
+      if (payloads_low != payloads_high)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s low payload count mismatch high=%0d low=%0d",
+            case_id, payloads_high, payloads_low))
+      expect_sink_phase_equivalent(base_history_high, base_history_low,
+        base_traces_high, base_traces_low, base_debug_ts_high,
+        base_debug_ts_low, base_debug_burst_high, base_debug_burst_low,
+        base_ts_delta_high, base_ts_delta_low, payloads_high,
+        $sformatf("%s high-vs-low", case_id));
+
+      drive_global_reset(4, 4);
+      run_sink_smoke_replay_phase(8, SINK_READY_TOGGLE_1010,
+        base_history_toggle, base_traces_toggle, base_debug_ts_toggle,
+        base_debug_burst_toggle, base_ts_delta_toggle, payloads_toggle,
+        $sformatf("%s toggle compare", case_id));
+      if (payloads_toggle != payloads_high)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s toggle payload count mismatch high=%0d toggle=%0d",
+            case_id, payloads_high, payloads_toggle))
+      expect_sink_phase_equivalent(base_history_high, base_history_toggle,
+        base_traces_high, base_traces_toggle, base_debug_ts_high,
+        base_debug_ts_toggle, base_debug_burst_high, base_debug_burst_toggle,
+        base_ts_delta_high, base_ts_delta_toggle, payloads_high,
+        $sformatf("%s high-vs-toggle", case_id));
+
+      drive_global_reset(4, 4);
+      run_sink_smoke_replay_phase(8, SINK_READY_RANDOM, base_history_random,
+        base_traces_random, base_debug_ts_random, base_debug_burst_random,
+        base_ts_delta_random, payloads_random,
+        $sformatf("%s random compare", case_id));
+      if (payloads_random != payloads_high)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s random payload count mismatch high=%0d random=%0d",
+            case_id, payloads_high, payloads_random))
+      expect_sink_phase_equivalent(base_history_high, base_history_random,
+        base_traces_high, base_traces_random, base_debug_ts_high,
+        base_debug_ts_random, base_debug_burst_high, base_debug_burst_random,
+        base_ts_delta_high, base_ts_delta_random, payloads_high,
+        $sformatf("%s high-vs-random", case_id));
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -10645,6 +11164,16 @@
         "STRESS_MTS_108_smoke_vectors_bypass_on": do_stress_108_smoke_vectors_bypass_on();
         "STRESS_MTS_109_smoke_vectors_delay_field_e": do_stress_109_smoke_vectors_delay_field_e();
         "STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs": do_stress_110_smoke_vectors_with_soft_reset_between_runs();
+        "STRESS_MTS_111_ready_high_baseline_log": do_stress_111_ready_high_baseline_log();
+        "STRESS_MTS_112_ready_low_baseline_log": do_stress_112_ready_low_baseline_log();
+        "STRESS_MTS_113_ready_toggle_1010": do_stress_113_ready_toggle_1010();
+        "STRESS_MTS_114_ready_low_on_sop_beats": do_stress_114_ready_low_on_sop_beats();
+        "STRESS_MTS_115_ready_low_on_eop_beats": do_stress_115_ready_low_on_eop_beats();
+        "STRESS_MTS_116_ready_low_during_dense_burst": do_stress_116_ready_low_during_dense_burst();
+        "STRESS_MTS_117_ready_low_in_flushing": do_stress_117_ready_low_in_flushing();
+        "STRESS_MTS_118_random_ready_toggle": do_stress_118_random_ready_toggle();
+        "STRESS_MTS_119_ready_low_across_resets": do_stress_119_ready_low_across_resets();
+        "STRESS_MTS_120_sink_pattern_equivalence_summary": do_stress_120_sink_pattern_equivalence_summary();
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("No explicit UVM stimulus handler for documented case '%s'", case_id))
