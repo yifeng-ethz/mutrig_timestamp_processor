@@ -1114,6 +1114,221 @@
       endcase
     endtask
 
+    task automatic do_corner_001_reset_release_with_ctrl_valid();
+      int unsigned base_beats;
+      bit [31:0]   csr_word;
+
+      rst_vif.rst <= 1'b1;
+      wait_cycles(2);
+      fork
+        pulse_ctrl(CTRL_RUNNING, "RUNNING_at_reset_release");
+        begin
+          @(posedge rst_vif.clk);
+          rst_vif.rst <= 1'b0;
+        end
+      join
+      wait_cycles(3);
+      csr_read(3'd0, csr_word);
+      if (csr_word[0] !== 1'b0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s reset-release control pulse must not enter RUNNING, csr0=0x%08h",
+            case_id, csr_word))
+      expect_hit0_ready(1'b0, $sformatf("%s reset ignored first command", case_id));
+
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0, '0, 1'b0);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count,
+        16, $sformatf("%s no stale RUNNING after reset", case_id));
+
+      send_ctrl(CTRL_RUNNING, "RUNNING_after_reset_release");
+      wait_for_running_status(64, $sformatf("%s legal command after reset", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s legal command ready", case_id));
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s first legal post-reset hit", case_id));
+      expect_last_trace_pair($sformatf("%s post-reset trace", case_id));
+    endtask
+
+    task automatic do_corner_002_running_and_first_hit_same_cycle();
+      int unsigned base_inputs;
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      expect_hit0_ready(1'b0, $sformatf("%s pre-start ready", case_id));
+      base_inputs = m_env.m_scb.input_accept_count;
+      base_beats  = m_env.m_scb.beat_count;
+      fork
+        pulse_ctrl(CTRL_RUNNING, "RUNNING_same_cycle_hit");
+        send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0, '0, 1'b0);
+      join
+      wait_cycles(4);
+      if (m_env.m_scb.input_accept_count != base_inputs)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s same-cycle first hit must not be accepted before RUNNING ready rises",
+            case_id))
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count,
+        16, $sformatf("%s same-cycle first hit no output", case_id));
+
+      wait_for_running_status(64, $sformatf("%s RUNNING status after start edge", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s ready after start edge", case_id));
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s first accepted hit one cycle later", case_id));
+      expect_last_trace_pair($sformatf("%s accepted post-start trace", case_id));
+    endtask
+
+    task automatic do_corner_003_terminate_on_final_eop_cycle();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+
+      fork
+        pulse_ctrl(CTRL_TERMINATING, "TERMINATING_same_cycle_eop");
+        send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b1);
+      join
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s final EOP payload trace", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s final EOP close markers", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_004_idle_on_output_valid_cycle();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_cycles(9);
+      pulse_ctrl(CTRL_IDLE, "IDLE_on_output_valid_cycle");
+      wait_for_beat_count(base_beats + 1, 32,
+        $sformatf("%s output survives coincident IDLE", case_id));
+      expect_last_trace_pair($sformatf("%s coincident IDLE output trace", case_id));
+      wait_cycles(4);
+      expect_hit0_ready(1'b0, $sformatf("%s IDLE after output", case_id));
+    endtask
+
+    task automatic do_corner_005_prepare_then_immediate_idle();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      send_ctrl(CTRL_IDLE, "IDLE_after_prepare");
+      wait_cycles(4);
+      expect_hit0_ready(1'b0, $sformatf("%s ready low after prepare abort", case_id));
+      expect_total_count(48'd0, $sformatf("%s counters clean after prepare abort", case_id));
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0, '0, 1'b0);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count,
+        24, $sformatf("%s prepare abort output quiet", case_id));
+    endtask
+
+    task automatic do_corner_006_sync_then_immediate_running();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      send_ctrl(CTRL_SYNC, "SYNC");
+      send_ctrl(CTRL_RUNNING, "RUNNING_immediate_after_sync");
+      wait_for_running_status(64, $sformatf("%s immediate running status", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s immediate running ready", case_id));
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s post-sync hit", case_id));
+      expect_total_count(48'd1, $sformatf("%s post-sync count", case_id));
+      expect_last_trace_pair($sformatf("%s post-sync trace", case_id));
+    endtask
+
+    task automatic do_corner_007_back_to_back_running_words();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      send_ctrl(CTRL_RUNNING, "RUNNING_first");
+      send_ctrl(CTRL_RUNNING, "RUNNING_second");
+      wait_for_running_status(64, $sformatf("%s repeated running status", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s repeated running ready", case_id));
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s repeated running hit", case_id));
+      expect_total_count(48'd1, $sformatf("%s repeated running counter", case_id));
+      expect_last_trace_pair($sformatf("%s repeated running trace", case_id));
+    endtask
+
+    task automatic do_corner_008_back_to_back_terminating_words();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+
+      wait_for_reset_release();
+      run_start();
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING_first");
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING_second");
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s repeated terminate close markers", case_id));
+      wait_cycles(16);
+      expect_close_markers_detail_since(base_history_size, 4'b1111, 4'b1111, 4, 0,
+        $sformatf("%s no duplicate close markers", case_id));
+      wait_for_ctrl_ready_high(128, $sformatf("%s repeated terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_009_illegal_ctrl_word_while_active();
+      int unsigned base_beats;
+      bit [31:0]   csr_word;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_RUNNING | CTRL_TERMINATING, "ILLEGAL_MULTI_HOT");
+      wait_cycles(4);
+      csr_read(3'd0, csr_word);
+      if (csr_word[0] !== 1'b1)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s illegal active control word must leave processor RUNNING, csr0=0x%08h",
+            case_id, csr_word))
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s illegal word input ready", case_id));
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s legal hit after illegal word", case_id));
+      expect_last_trace_pair($sformatf("%s illegal word containment trace", case_id));
+    endtask
+
+    task automatic do_corner_010_stale_ctrl_data_with_valid_gap();
+      int unsigned base_beats;
+      bit [31:0]   csr_word;
+
+      wait_for_reset_release();
+      run_start();
+      drive_ctrl_data_gap(CTRL_IDLE, "IDLE_data_valid_gap");
+      wait_cycles(4);
+      if (ctrl_vif.valid !== 1'b0 || ctrl_vif.data !== CTRL_IDLE)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected stale IDLE data with valid low, valid=%0b data=%09b",
+            case_id, ctrl_vif.valid, ctrl_vif.data))
+      csr_read(3'd0, csr_word);
+      if (csr_word[0] !== 1'b1)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s stale IDLE data with valid low must not abort RUNNING, csr0=0x%08h",
+            case_id, csr_word))
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s hit after valid gap", case_id));
+      expect_last_trace_pair($sformatf("%s valid gap trace", case_id));
+    endtask
+
     task automatic do_std_001_powerup_reset_idle();
       wait_for_reset_release();
       wait_cycles(8);
@@ -5158,6 +5373,16 @@
         "STD_MTS_128_upgrade_case_terminal_boundary_without_extra_hits": do_std_128_upgrade_case_terminal_boundary_without_extra_hits();
         "STD_MTS_129_upgrade_case_idle_after_boundary_only": do_std_129_upgrade_case_idle_after_boundary_only();
         "STD_MTS_130_full_standard_sequence_baseline": do_std_130_full_standard_sequence_baseline();
+        "CORNER_MTS_001_reset_release_with_ctrl_valid": do_corner_001_reset_release_with_ctrl_valid();
+        "CORNER_MTS_002_running_and_first_hit_same_cycle": do_corner_002_running_and_first_hit_same_cycle();
+        "CORNER_MTS_003_terminate_on_final_eop_cycle": do_corner_003_terminate_on_final_eop_cycle();
+        "CORNER_MTS_004_idle_on_output_valid_cycle": do_corner_004_idle_on_output_valid_cycle();
+        "CORNER_MTS_005_prepare_then_immediate_idle": do_corner_005_prepare_then_immediate_idle();
+        "CORNER_MTS_006_sync_then_immediate_running": do_corner_006_sync_then_immediate_running();
+        "CORNER_MTS_007_back_to_back_running_words": do_corner_007_back_to_back_running_words();
+        "CORNER_MTS_008_back_to_back_terminating_words": do_corner_008_back_to_back_terminating_words();
+        "CORNER_MTS_009_illegal_ctrl_word_while_active": do_corner_009_illegal_ctrl_word_while_active();
+        "CORNER_MTS_010_stale_ctrl_data_with_valid_gap": do_corner_010_stale_ctrl_data_with_valid_gap();
         "CORNER_MTS_011_expected_latency_zero": do_corner_011_expected_latency_zero();
         "CORNER_MTS_012_expected_latency_one": do_corner_012_expected_latency_one();
         "CORNER_MTS_013_expected_latency_large_16bit_value": do_corner_013_expected_latency_large_16bit_value();

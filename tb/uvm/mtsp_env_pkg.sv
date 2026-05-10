@@ -53,6 +53,8 @@ package mtsp_env_pkg;
     int unsigned post_accept_delay_cycles;
     int unsigned timeout_cycles;
     bit          wait_for_ready;
+    bit          hold_data_after;
+    bit          drive_valid;
     string       state_name;
     time         accept_time_ps;
 
@@ -61,6 +63,8 @@ package mtsp_env_pkg;
       post_accept_delay_cycles = 0;
       timeout_cycles           = 10000;
       wait_for_ready           = 1'b1;
+      hold_data_after          = 1'b0;
+      drive_valid              = 1'b1;
       state_name               = "";
       accept_time_ps           = 0;
     endfunction
@@ -303,7 +307,7 @@ package mtsp_env_pkg;
       forever begin
         seq_item_port.get_next_item(item);
         vif.data  <= item.cmd;
-        vif.valid <= 1'b1;
+        vif.valid <= item.drive_valid;
 
         if (item.wait_for_ready) begin
           wait_cycles = 0;
@@ -318,12 +322,14 @@ package mtsp_env_pkg;
 
           item.accept_time_ps = $time;
           vif.valid <= 1'b0;
-          vif.data  <= CTRL_IDLE;
+          if (!item.hold_data_after)
+            vif.data <= CTRL_IDLE;
         end else begin
           @(posedge vif.clk);
           item.accept_time_ps = $time;
           vif.valid <= 1'b0;
-          vif.data  <= CTRL_IDLE;
+          if (!item.hold_data_after)
+            vif.data <= CTRL_IDLE;
         end
 
         repeat (item.post_accept_delay_cycles)
@@ -825,6 +831,8 @@ package mtsp_env_pkg;
     int unsigned post_accept_delay_cycles;
     int unsigned timeout_cycles;
     bit          wait_for_ready;
+    bit          hold_data_after;
+    bit          drive_valid;
     string       state_name;
     time         accept_time_ps;
 
@@ -833,6 +841,8 @@ package mtsp_env_pkg;
       post_accept_delay_cycles = 0;
       timeout_cycles           = 10000;
       wait_for_ready           = 1'b1;
+      hold_data_after          = 1'b0;
+      drive_valid              = 1'b1;
       state_name               = "";
       accept_time_ps           = 0;
     endfunction
@@ -845,6 +855,8 @@ package mtsp_env_pkg;
       item.post_accept_delay_cycles = post_accept_delay_cycles;
       item.timeout_cycles           = timeout_cycles;
       item.wait_for_ready           = wait_for_ready;
+      item.hold_data_after          = hold_data_after;
+      item.drive_valid              = drive_valid;
       item.state_name               = state_name;
       finish_item(item);
       accept_time_ps = item.accept_time_ps;
@@ -1092,6 +1104,27 @@ package mtsp_env_pkg;
       seq.cmd            = cmd;
       seq.state_name     = state_name;
       seq.wait_for_ready = 1'b0;
+      seq.start(m_env.m_ctrl_sqr);
+    endtask
+
+    task automatic pulse_ctrl_hold_data(logic [8:0] cmd, string state_name);
+      mtsp_ctrl_seq seq;
+      seq                 = mtsp_ctrl_seq::type_id::create($sformatf("ctrl_hold_%s_%0t", state_name, $time));
+      seq.cmd             = cmd;
+      seq.state_name      = state_name;
+      seq.wait_for_ready  = 1'b0;
+      seq.hold_data_after = 1'b1;
+      seq.start(m_env.m_ctrl_sqr);
+    endtask
+
+    task automatic drive_ctrl_data_gap(logic [8:0] cmd, string state_name);
+      mtsp_ctrl_seq seq;
+      seq                 = mtsp_ctrl_seq::type_id::create($sformatf("ctrl_gap_%s_%0t", state_name, $time));
+      seq.cmd             = cmd;
+      seq.state_name      = state_name;
+      seq.wait_for_ready  = 1'b0;
+      seq.hold_data_after = 1'b1;
+      seq.drive_valid     = 1'b0;
       seq.start(m_env.m_ctrl_sqr);
     endtask
 

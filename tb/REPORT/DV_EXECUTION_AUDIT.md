@@ -1,16 +1,17 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 03:36 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 03:58 CEST
 
 ## Scope
 
 This audit records the current plan-to-UVM execution state after enabling the
 dual normal/debug monitor path, replacing the old generic documented-case
 fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
-adding the first EDGE CSR/input-protocol, overflow/bypass/latency, divider/ToT,
-and debug-threshold boundary batches, the EDGE reset and force-stop recovery
-batch, and the EDGE generic/configuration, ready-edge, termination-edge,
-counter-rollover seed/readout, sampled CSR mode, and output-marker batches.
+adding the first EDGE control-timing, CSR/input-protocol,
+overflow/bypass/latency, divider/ToT, and debug-threshold boundary batches,
+the EDGE reset and force-stop recovery batch, and the EDGE
+generic/configuration, ready-edge, termination-edge, counter-rollover
+seed/readout, sampled CSR mode, and output-marker batches.
 This refresh also records the `bypass_lapse` per-hit RTL fix and the hit0
 monitor timing fix required for input analysis-port evidence.
 
@@ -19,10 +20,10 @@ monitor timing fix required for input analysis-port evidence.
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
 | BASIC | 130 | 130 | 130 |
-| EDGE | 131 | 109 | 109 |
+| EDGE | 131 | 119 | 119 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 241 | 241 |
+| Total | 521 | 251 | 251 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -104,6 +105,14 @@ Notes:
 
 ## EDGE Reconciliation Notes
 
+- `CORNER_MTS_001` through `CORNER_MTS_010` now cover the initial
+  control-timing edges: reset release with a coincident control pulse,
+  same-cycle start/hit precedence, terminate/EOP coincidence, `IDLE` on the
+  output-valid edge, prepare abort, tight `SYNC -> RUNNING`, repeated
+  `RUNNING`, repeated `TERMINATING`, illegal active control words, and stale
+  `asi_ctrl_data` while `valid=0`. The batch adds a UVM control-driver
+  gap/hold mode so E010 can prove the RTL gates decode on `valid` rather than
+  merely seeing a stale command word on the bus.
 - `CORNER_MTS_012_expected_latency_one` calibrates the next output arrival,
   crafts a raw ROM symbol that produces `debug_delta=1`, and proves the strict
   `delta < expected_latency` comparison flags the equality case as an error.
@@ -237,21 +246,19 @@ Notes:
 ## Submodule Freshness Check
 
 The OPQ IP-core chain requested on 2026-05-09 was fetched and the parent
-pointers were advanced through the previous MTSP output-marker DV checkpoint
-before this overflow/bypass batch:
+pointers were advanced through the MTSP bypass-control RTL/DV checkpoint after
+the overflow/bypass batch:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mu3e-ip-cores` | `fc77baa` `[PATCH] Advance MTSP output-marker DV pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
-| `musip` | `9f9a44b` `[PATCH] Advance Mu3e IP cores output-marker DV pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
+| `mutrig_timestamp_processor` | `3245939` `[PATCH] Record MTSP bypass DV evidence` | `origin/master` |
+| `mu3e-ip-cores` | `b6f23e2` `[PATCH] Advance MTSP bypass DV pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
+| `musip` | `278fbaf` `[PATCH] Advance Mu3e IP cores MTSP bypass pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
-`musip 9f9a44b` -> `external/mu3e-ip-cores fc77baa` ->
-`packet_scheduler 245eb93` and `mutrig_timestamp_processor 075cbec`. The active
-`/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores` worktree remains separate
-from the published parent chain, so this new MTSP overflow/bypass checkpoint
-`6f4bf95` still requires a follow-up parent gitlink update after it is pushed.
+`musip 278fbaf` -> `external/mu3e-ip-cores b6f23e2` ->
+`packet_scheduler 245eb93` and `mutrig_timestamp_processor 3245939`.
 
 ## Evidence Commands
 
@@ -262,6 +269,19 @@ make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<B111-B130 case_id> SEE
 ```
 
 Result: `NEW_B111_B130_PASS`, then refreshed under the final full sweep.
+
+Focused EDGE control-timing batch:
+
+```bash
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E001-E010 case_id> SEED=1
+```
+
+Result: `EDGE_E001_E010_BATCH_PASS count=10`. E001, E002, E004, E006,
+E007, E009, and E010 each required at least one accepted payload plus a
+normal/debug trace pair. E003 required one payload followed by exactly four
+empty close markers. E005 required no accepted inputs or outputs after the
+prepare-abort sequence. E008 required exactly four empty close markers and no
+payload duplicates after repeated terminate commands.
 
 Focused EDGE CSR/input-protocol batch:
 
@@ -413,10 +433,10 @@ before close markers complete`; after RTL passes with
 Final explicit-case sweep:
 
 ```bash
-make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
+make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=241`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=251`.
 
 Combo terminate contract:
 
@@ -439,21 +459,21 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-vcover merge /tmp/mtsp_explicit_241.ucdb <241 dispatcher UCDBs>
-vcover report -details -code bcesft /tmp/mtsp_explicit_241.ucdb
+vcover merge /tmp/mtsp_explicit_251.ucdb <251 dispatcher UCDBs>
+vcover report -details -code bcesft /tmp/mtsp_explicit_251.ucdb
 ```
 
-Filtered instance coverage summary: `65.86%`. The DUT instance summary is
-statement `95.62%`, branch `94.19%`, condition `79.79%`, expression `100.00%`,
-FSM state `100.00%`, FSM transition `77.77%`, and toggle `52.46%`.
+Filtered instance coverage summary: `56.34%`. The DUT instance summary is
+statement `95.81%`, branch `94.60%`, condition `79.79%`, expression `100.00%`,
+FSM state `100.00%`, FSM transition `77.77%`, and toggle `52.49%`.
 
 Artifact check:
 
 ```text
-explicit_cases=241 missing_artifacts=0
+explicit_cases=251 missing_artifacts=0
 ```
 
-Additional checks for this overflow/bypass batch:
+Additional checks through this control-timing batch:
 
 ```bash
 git diff --check
@@ -480,14 +500,14 @@ Results:
 - `rtl_style_check.py mts_processor.vhd`: fail on 948 legacy alignment issues.
 - `./tb/run_mts_processor_tb.sh`: pass with `mts_processor_tb PASSED`.
 
-Current evidenced explicit cases are the 241 handlers in
+Current evidenced explicit cases are the 251 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 280 uncovered EDGE, PROF, and ERROR cases, including the
+the remaining 270 uncovered EDGE, PROF, and ERROR cases, including the
 expected-error ready trap `CORNER_MTS_105`, still-open EDGE protocol/math gaps
 such as E120-E130, then regenerate the ordered coverage/report dashboard from
 current artifacts instead of relying on stale proxy rows.
