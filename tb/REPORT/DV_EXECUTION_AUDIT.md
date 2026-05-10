@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 02:35 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 02:56 CEST
 
 ## Scope
 
@@ -10,17 +10,17 @@ fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
 adding the first EDGE CSR/input-protocol, divider/ToT, and debug-threshold
 boundary batches, the EDGE reset and force-stop recovery batch, and the EDGE
 generic/configuration, ready-edge, termination-edge, counter-rollover
-seed/readout, and sampled CSR mode batches.
+seed/readout, sampled CSR mode, and output-marker batches.
 
 ## Current Coverage Of Documented Cases
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
 | BASIC | 130 | 130 | 130 |
-| EDGE | 131 | 89 | 89 |
+| EDGE | 131 | 99 | 99 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 221 | 221 |
+| Total | 521 | 231 | 231 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -151,6 +151,14 @@ Notes:
   accepted hits; the current RTL carries the sampled mode bits through the
   ToT, delay-error, `debug_ts`, and `debug_burst` paths. `CORNER_MTS_059` and
   `CORNER_MTS_060` cover EFlag toggling and TFine extremes.
+- `CORNER_MTS_061` through `CORNER_MTS_070` now cover output marker edges:
+  first route-lane SOP after reset, no repeated SOP on interleaved lanes,
+  enabled input-window sideband bookkeeping separated from route-lane SOP
+  generation, terminal empty close-marker trains, ready-low close markers,
+  non-terminating local EOPs, and `empty=0` payload versus `empty=1` close
+  marker semantics. The accepted contract is that payload beats carry route
+  SOP but not terminal EOP; terminal EOP appears on empty close markers after
+  the input packet is closed by the legal upstream `endofrun` sequence.
 - `CORNER_MTS_071` through `CORNER_MTS_076` now calibrate exact debug-delay
   targets and prove the error flag at `-1`, `0`, `+1`, `expected_latency-1`,
   `expected_latency`, and `expected_latency+1`.
@@ -209,24 +217,25 @@ Notes:
 | Counter preload before `run_start()` was cleared by the legal `RUN_PREPARE -> SYNC` sequence, so the rollover stimulus never reached the intended boundary. | `STD_MTS_106_total_counter_hi_rollover` | No carry RTL bug was accepted. The DV-only seed is applied after standard run bring-up, and default CSR writes to counter words remain inert when the generic is zero. |
 | The VHDL debug report printed `total_pre` through a truncated integer conversion, which saturated the human trace near rollover. | `STD_MTS_106_total_counter_hi_rollover` | RTL report text now prints the full 48-bit counter in hex so rollover bring-up traces match CSR and scoreboard math. |
 | `derive_tot` and `delay_ts_field_use_t` were read live after hit acceptance, so a CSR write could reinterpret an in-flight hit. | `CORNER_MTS_057_toggle_derive_tot_between_hits`, `CORNER_MTS_058_toggle_delay_field_between_hits` | RTL now latches these mode fields on accepted hits and carries them through the ToT, delay-error, `debug_ts`, and `debug_burst` paths; before/after `prove_delta` fails on the old RTL and passes on the fixed RTL. |
+| Initial output-marker harness attempts expected terminal close markers while an input packet was still open, using SOP-only or no-EOP payload traffic. | `CORNER_MTS_069_sop_and_eop_same_output_beat`, `CORNER_MTS_070_empty_zero_on_all_output_classes` | No RTL change was accepted. The sequences now legally close the input packet before requiring empty terminal markers, while preserving payload SOP/empty checks and normal/debug trace pairing. |
 
 ## Submodule Freshness Check
 
 The OPQ IP-core chain requested on 2026-05-09 was fetched and the parent
-pointers were advanced through the previous MTSP rollover DV checkpoint before
-this sampled-mode batch:
+pointers were advanced through the previous MTSP sampled-mode DV checkpoint
+before this output-marker batch:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mu3e-ip-cores` | `ba9e742` `[PATCH] Advance MTSP rollover DV pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
-| `musip` | `0bf0c1a` `[PATCH] Advance Mu3e IP cores rollover DV pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
+| `mu3e-ip-cores` | `1add928` `[PATCH] Advance MTSP sampled-mode DV pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
+| `musip` | `01d3483` `[PATCH] Advance Mu3e IP cores sampled-mode DV pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
-`musip 0bf0c1a` -> `external/mu3e-ip-cores ba9e742` ->
-`packet_scheduler 245eb93` and `mutrig_timestamp_processor 2c65008`. The active
+`musip 01d3483` -> `external/mu3e-ip-cores 1add928` ->
+`packet_scheduler 245eb93` and `mutrig_timestamp_processor fa421e7`. The active
 `/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores` worktree remains separate
-from the published parent chain, so this new MTSP sampled-mode checkpoint still
+from the published parent chain, so this new MTSP output-marker checkpoint still
 requires a follow-up parent gitlink update after it is pushed.
 
 ## Evidence Commands
@@ -341,6 +350,18 @@ of the sampled short-mode `ET_1N6=0`. The before RTL failed
 delay source and asserted the error sideband. After the RTL fix both cases pass
 with two payloads, two debug traces, and two normal/debug trace pairs.
 
+Focused EDGE output-marker batch:
+
+```bash
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E061-E070 case_id> SEED=1
+```
+
+Result: `EDGE_E061_E070_BATCH_PASS count=10`. `CORNER_MTS_069` and
+`CORNER_MTS_070` were first reviewed for harness sequence sanity because the
+initial stimulus left the input packet open; after correction, the batch passed
+with payload marker checks, empty close-marker checks, and normal/debug trace
+pairing where payloads exist.
+
 RTL before/after bug proof:
 
 ```bash
@@ -357,7 +378,7 @@ Final explicit-case sweep:
 make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=221`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=231`.
 
 Combo terminate contract:
 
@@ -374,23 +395,28 @@ Coverage:
 make -C tb/uvm cov_report_total RTL_VARIANT=after
 ```
 
-Current merged report: `tb/uvm/cov_after/merged.txt`.
+`cov_report_total` writes `tb/uvm/cov_after/merged.txt` by merging every UCDB
+in `cov_after`; this directory currently also contains one stale non-dispatch
+`COMBO_MTSP_001_terminate_contract_test_s1.ucdb` file, so the accepted audit
+coverage was recomputed from the explicit dispatcher list only:
 
-Filtered instance coverage summary: `66.26%`.
+```bash
+vcover merge /tmp/mtsp_explicit_231.ucdb <231 dispatcher UCDBs>
+vcover report -details -code bcesft /tmp/mtsp_explicit_231.ucdb
+```
+
+Filtered instance coverage summary: `65.95%`.
 
 Artifact check:
 
 ```text
-explicit_cases=221 missing_artifacts=0
-combo_pass=True
+explicit_cases=231 missing_artifacts=0
 ```
 
-Additional checks:
+Additional checks for this output-marker batch:
 
 ```bash
 git diff --check
-./tb/run_mts_processor_tb.sh
-python3 /home/yifeng/.codex/skills/rtl-writing/scripts/rtl_style_check.py mts_processor.vhd
 python3 /home/yifeng/.codex/skills/rtl-doc-style/scripts/rtl_doc_style_check.py .
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/bug_history_format_check.py BUG_HISTORY.md
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py tb
@@ -398,10 +424,6 @@ python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py
 
 Results:
 - `git diff --check`: pass.
-- `./tb/run_mts_processor_tb.sh`: `mts_processor_tb PASSED`.
-- `rtl_style_check.py`: fail on 948 legacy style issues in `mts_processor.vhd`
-  such as tabs, legacy `i_` ports, constant naming, and alignment. This batch
-  did not attempt a broad file restyle.
 - `rtl_doc_style_check.py .`: fail on the legacy `tb/` documentation layout,
   including missing `tb/README.md`, `tb/DV_REPORT.json`, and canonical
   companion/header/footer sections. This batch updated the execution audit but
@@ -412,16 +434,19 @@ Results:
   because those files still use the older bullet-list layout instead of the
   canonical table/header format. Recent batches corrected specific stale EDGE
   timing and termination text inside the legacy EDGE file, and this audit now
-  records the sampled-mode evidence separately.
+  records the output-marker evidence separately.
+- `./tb/run_mts_processor_tb.sh` and the VHDL `rtl_style_check.py` were not
+  rerun in this output-marker batch because no RTL source changed from the
+  previous checkpoint.
 
-Current evidenced explicit cases are the 221 handlers in
+Current evidenced explicit cases are the 231 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 300 uncovered EDGE, PROF, and ERROR cases, including the
-expected-error ready trap `CORNER_MTS_105`, the still-open EDGE protocol/math
-gaps, then regenerate the ordered coverage/report dashboard from current
-artifacts instead of relying on stale proxy rows.
+the remaining 290 uncovered EDGE, PROF, and ERROR cases, including the
+expected-error ready trap `CORNER_MTS_105`, still-open EDGE protocol/math gaps
+such as E031-E040 and E120-E130, then regenerate the ordered coverage/report
+dashboard from current artifacts instead of relying on stale proxy rows.

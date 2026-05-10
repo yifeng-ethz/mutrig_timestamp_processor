@@ -86,14 +86,14 @@
 
 - `E061 | CORNER_MTS_061_first_sop_channel0_after_reset`: After reset, drive the first accepted hit for enabled channel 0; verify SOP appears exactly once. Covers the SOP reset edge.
 - `E062 | CORNER_MTS_062_first_sop_channel3_after_reset`: Repeat for enabled channel 3; verify SOP appears exactly once. Covers the upper enabled channel.
-- `E063 | CORNER_MTS_063_first_hit_disabled_channel_no_sop`: Drive the first accepted hit for a payload channel outside the enabled window; verify no SOP is emitted because `startofrun_sent` only loops over enabled channels. Documents the configurable marker scope.
+- `E063 | CORNER_MTS_063_first_hit_disabled_channel_no_sop`: Build with sideband channel 0 outside the enabled input window, drive a first accepted route-lane-0 hit, and verify the output route-lane SOP still appears while disabled input-side packet bookkeeping does not hold termination open. Documents the separation between input enabled-window tracking and output route-lane markers.
 - `E064 | CORNER_MTS_064_interleaved_channels_no_repeat_sop`: Interleave hits from enabled and already-seen channels; verify SOP does not repeat for the already-seen channel. Covers mixed-channel marker persistence.
-- `E065 | CORNER_MTS_065_single_terminating_eop_pulse`: Drive one accepted terminating EOP and verify exactly one delayed output EOP. Covers the happy-path boundary count.
-- `E066 | CORNER_MTS_066_eop_pipe_without_valid_alignment`: Create a case where the delayed EOP pulse would arrive when `hit_out.valid=0`; verify whether the current RTL drops the boundary and tag the exact behavior. Covers the known alignment hazard.
+- `E065 | CORNER_MTS_065_single_terminating_eop_pulse`: Drive one accepted terminating EOP and verify the payload drains without carrying output EOP, followed by exactly one empty close marker per route lane. Covers the current terminal-boundary count.
+- `E066 | CORNER_MTS_066_eop_pipe_without_valid_alignment`: Terminate with upstream `endofrun` while no payload is valid and verify the current close-marker generator still emits the empty marker train. Covers the former delayed-EOP alignment hazard.
 - `E067 | CORNER_MTS_067_nonterminating_eop_is_local_only`: Drive ordinary EOPs in `RUNNING`; verify they do not become output EOPs. Covers marker isolation before termination.
 - `E068 | CORNER_MTS_068_output_eop_with_ready_low`: Hold sink `ready=0` during the terminating output beat; verify the current RTL still emits the EOP. Documents the ignored-backpressure contract at the boundary.
-- `E069 | CORNER_MTS_069_sop_and_eop_same_output_beat`: Explore whether a first-hit SOP and delayed terminating EOP can coincide on the same output beat; capture the exact reachable behavior. Covers rare marker overlap.
-- `E070 | CORNER_MTS_070_empty_zero_on_all_output_classes`: Check `empty` on quiet, SOP, ordinary valid, and terminating EOP beats; expect zero throughout. Covers all marker classes.
+- `E069 | CORNER_MTS_069_sop_and_eop_same_output_beat`: Explore whether a first-hit SOP and terminal EOP can coincide; verify payload SOP is not combined with EOP, while unseen empty close markers assert SOP and EOP together. Covers rare marker overlap.
+- `E070 | CORNER_MTS_070_empty_zero_on_all_output_classes`: Check `empty` on quiet, SOP payload, ordinary payload, and terminal close markers; expect `empty=0` for payload classes and `empty=1` only for empty close markers. Covers all marker classes.
 
 ## 8. Debug / Error Threshold Edges
 

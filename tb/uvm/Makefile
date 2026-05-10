@@ -68,6 +68,9 @@ endif
 ifeq ($(CASE_ID),CORNER_MTS_018_counter_read_on_low_word_rollover)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DV_COUNTER_SEED_ENABLE=1
 endif
+ifeq ($(CASE_ID),CORNER_MTS_063_first_hit_disabled_channel_no_sop)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=1 -g/tb_top/dut/ENABLED_CHANNEL_HI=3
+endif
 ifeq ($(CASE_ID),CORNER_MTS_091_single_channel_window_index0)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=0 -g/tb_top/dut/ENABLED_CHANNEL_HI=0
 endif
