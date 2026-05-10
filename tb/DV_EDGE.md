@@ -114,7 +114,7 @@
 - `E081 | CORNER_MTS_081_force_stop_same_cycle_as_valid`: Assert `force_stop` in the same cycle a valid hit arrives; verify the precedence between control update and acceptance is deterministic. Covers tight control/data timing.
 - `E082 | CORNER_MTS_082_force_stop_clear_before_next_hit`: Clear `force_stop` one cycle before the next hit; verify acceptance resumes cleanly. Covers re-enable timing.
 - `E083 | CORNER_MTS_083_soft_reset_while_running_idle_pipe`: Pulse `soft_reset` while `RUNNING` but with no in-flight beats; verify counters clear and operation resumes. Covers the simplest software reset.
-- `E084 | CORNER_MTS_084_soft_reset_with_inflight_beats`: Pulse `soft_reset` while accepted beats are already in flight; verify counters clear and the model captures any remaining output beats. Covers reset/data overlap.
+- `E084 | CORNER_MTS_084_soft_reset_with_inflight_beats`: Pulse `soft_reset` while accepted beats are already in flight; verify counters clear, in-flight payload/debug output is flushed, and the next post-reset hit restarts cleanly. Covers reset/data overlap.
 - `E085 | CORNER_MTS_085_soft_reset_in_flushing`: Pulse `soft_reset` in `FLUSHING`; verify it clears counters without generating spurious output markers. Covers stop-time software reset.
 - `E086 | CORNER_MTS_086_global_reset_with_pending_term_eop`: Assert global reset while `terminating_eop_pipe` contains a pending pulse; verify the pulse is cleared. Covers asynchronous termination cleanup.
 - `E087 | CORNER_MTS_087_global_reset_with_debug_history`: Assert global reset while debug-burst history registers are nonzero; verify subsequent debug outputs start from zero. Covers history cleanup.

@@ -45,8 +45,10 @@
 --      Date: Apr 30, 2026
 -- Revision: 5.16 (Gate debug_ts to the same active output states as hit_type1)
 --      Date: May 9, 2026
--- Version : 26.0.10
--- Date    : 20260509
+-- Revision: 5.17 (Make CSR soft_reset clear local datapath, timing, and debug history)
+--      Date: May 10, 2026
+-- Version : 26.0.12
+-- Date    : 20260510
 -- Change  : Register the corrected divider numerators in hit_prediv, then split divider launch and
 --           ToT subtraction into separate cycles. A one-cycle delayed copy of the divider outputs keeps
 --           the quotient/remainder aligned with the metadata shift pipeline. External RESET / OUT_OF_DAQ
@@ -75,6 +77,9 @@
 --           The hit input ready window is now derived combinationally from the current processor state,
 --           removing stale ready assertions across RUN_PREPARE/SYNC/RUNNING handoff cycles while keeping
 --           the documented force_stop ready-high/drop-current-beat behavior.
+--           CSR soft_reset now also clears the local timestamp counters, datapath pipeline,
+--           packet-start bookkeeping, and debug delta history so software reset recovery does not inherit
+--           stale timing context from the previous traffic phase.
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -835,7 +840,7 @@ begin
         if (i_rst = '1') then 
             csr.go                      <= '1'; -- NOTE: default is go. If go is low, cmd from run_state_controller cannot send processor to run state.
             csr.force_stop              <= '0';
-            csr.soft_reset              <= '0'; -- only reset counters for now
+            csr.soft_reset              <= '0';
             csr.derive_tot              <= '0';
             csr.delay_ts_field_use_t    <= '1';
             csr.bypass_lapse            <= '0';
@@ -1034,7 +1039,7 @@ begin
     
     proc_in_ready : process (all)
     begin
-        if (i_rst = '1') then 
+        if (i_rst = '1' or csr.soft_reset = '1') then
             asi_hit_type0_ready_i       <= '0';
         else
             asi_hit_type0_ready_i       <= processor_accept_window;
@@ -1051,7 +1056,7 @@ begin
             counter_ov_base_1n6          <= (others => '0');
             fpga_overflow_lookback_cnt   <= (others => '0');
         elsif rising_edge(i_clk) then
-            if (processor_state = RESET and reset_flow = SYNC) then 
+            if ((processor_state = RESET and reset_flow = SYNC) or csr.soft_reset = '1') then
                  -- reset counter
                 counter_mts_1n6		<= (others => '0');
                 counter_ov_cnt		<= (others => '0');
@@ -1103,7 +1108,7 @@ begin
         if (i_rst = '1') then
             counter_gts_8n <= (others => '0');
         elsif rising_edge(i_clk) then
-            if (processor_state = RESET and reset_flow = SYNC) then 
+            if ((processor_state = RESET and reset_flow = SYNC) or csr.soft_reset = '1') then
                  -- reset counter
                 counter_gts_8n		<= (others => '0');
             else
@@ -1171,7 +1176,7 @@ begin
         hit_in_ok        <= '0';
         allow_input_v    := '0';
 
-        if (i_rst = '0') then
+        if (i_rst = '0' and csr.soft_reset = '0') then
             case processor_state is
                 when RESET =>
                     if (reset_flow = SCLR) then
@@ -1440,138 +1445,156 @@ begin
             hit_out.hiterr		<= '0';
             hit_out_delay_error <= '0';
 
-            -- input stage
-            if (asi_hit_type0_accept = '1' and hit_in_ok = '1') then
-                hit_in.asic		<= asi_hit_type0_data(I_ASIC_HI downto I_ASIC_LO);
-                hit_in.channel	<= asi_hit_type0_data(I_CHANNEL_HI downto I_CHANNEL_LO);
-                hit_in.t_fine	<= asi_hit_type0_data(I_TFINE_HI downto I_TFINE_LO);
-                hit_in.e_flag   <= asi_hit_type0_data(I_EFLAG_BIT_LOC);
+            if (csr.soft_reset = '1') then
+                tcc_div_quotient_d       <= (others => '0');
+                ecc_div_quotient_d       <= (others => '0');
+                tcc_div_remain_d         <= (others => '0');
+                ecc_div_remain_d         <= (others => '0');
+                for i in 0 to LPM_DIV_PIPELINE loop
+                    hit_div(i).asic       <= (others => '0');
+                    hit_div(i).channel    <= (others => '0');
+                    hit_div(i).t_fine     <= (others => '0');
+                    hit_div(i).e_cc       <= (others => '0');
+                    hit_div(i).et_1n6     <= (others => '0');
+                    hit_div(i).e_flag     <= '0';
+                    hit_div(i).delay_ts_field_use_t <= '1';
+                    hit_div(i).valid      <= '0';
+                    hit_div(i).hiterr     <= '0';
+                end loop;
+            else
+                -- input stage
+                if (asi_hit_type0_accept = '1' and hit_in_ok = '1') then
+                    hit_in.asic		<= asi_hit_type0_data(I_ASIC_HI downto I_ASIC_LO);
+                    hit_in.channel	<= asi_hit_type0_data(I_CHANNEL_HI downto I_CHANNEL_LO);
+                    hit_in.t_fine	<= asi_hit_type0_data(I_TFINE_HI downto I_TFINE_LO);
+                    hit_in.e_flag   <= asi_hit_type0_data(I_EFLAG_BIT_LOC);
 
-                hit_in.derive_tot              <= csr.derive_tot;
-                hit_in.delay_ts_field_use_t    <= csr.delay_ts_field_use_t;
-                hit_in.bypass_lapse            <= csr.bypass_lapse;
+                    hit_in.derive_tot              <= csr.derive_tot;
+                    hit_in.delay_ts_field_use_t    <= csr.delay_ts_field_use_t;
+                    hit_in.bypass_lapse            <= csr.bypass_lapse;
 
-                hit_in.valid	<= '1';
-                hit_in.hiterr	<= asi_hit_type0_error(HITERR_BIT_LOC);
-            end if;
-            
-            -- pipeline for lut ram
-            if (hit_in.valid = '1') then 
-                hit_padding.asic		<= hit_in.asic;
-                hit_padding.channel		<= hit_in.channel;
-                hit_padding.cc_out		<= cc_out; -- decoded
-                hit_padding.ecc_out		<= ecc_out; -- decoded
-                hit_padding.tot_t_adjust <= overflow_adjust_active;
-                hit_padding.tot_e_adjust <= overflow_adjust_active;
-                hit_padding.e_flag		<= hit_in.e_flag;
-
-                hit_padding.derive_tot              <= hit_in.derive_tot;
-                hit_padding.delay_ts_field_use_t    <= hit_in.delay_ts_field_use_t;
-                hit_padding.bypass_lapse            <= hit_in.bypass_lapse;
-
-                hit_padding.t_fine		<= hit_in.t_fine;
-                hit_padding.valid		<= '1';
-                hit_padding.hiterr		<= hit_in.hiterr;
-            end if;
-            
-            if (hit_padding.valid = '1') then 
-                hit_prediv.asic         <= hit_padding.asic;
-                hit_prediv.channel      <= hit_padding.channel;
-                hit_prediv.t_fine       <= hit_padding.t_fine;
-                hit_prediv.e_flag       <= hit_padding.e_flag;
-
-                hit_prediv.derive_tot              <= hit_padding.derive_tot;
-                hit_prediv.delay_ts_field_use_t    <= hit_padding.delay_ts_field_use_t;
-
-                hit_prediv.hiterr       <= hit_padding.hiterr;
-                hit_prediv.valid        <= '1';
-                if (hit_padding.bypass_lapse = '0') then  -- mts -> gts transformation enable
-                    hit_prediv.tcc_div_numer <= cc_gts_1n6_slv50;
-                    hit_prediv.ecc_div_numer <= ecc_gts_1n6_slv50;
-                else -- mts -> gts transformation disable (this would result in random dist., which is simply for sanity check.) 
-                    hit_prediv.tcc_div_numer(hit_padding.cc_out'high downto 0)  <= hit_padding.cc_out;
-                    hit_prediv.ecc_div_numer(hit_padding.ecc_out'high downto 0) <= hit_padding.ecc_out;
+                    hit_in.valid	<= '1';
+                    hit_in.hiterr	<= asi_hit_type0_error(HITERR_BIT_LOC);
                 end if;
-            end if;
 
-            if (hit_prediv.valid = '1') then
-                if (DEBUG /= 0) then
-                    report "MTS_STAGE[" & BANK & "] div_launch ch="
-                        & integer'image(to_integer(unsigned(hit_prediv.channel)))
-                        severity note;
+                -- pipeline for lut ram
+                if (hit_in.valid = '1') then
+                    hit_padding.asic		<= hit_in.asic;
+                    hit_padding.channel		<= hit_in.channel;
+                    hit_padding.cc_out		<= cc_out; -- decoded
+                    hit_padding.ecc_out		<= ecc_out; -- decoded
+                    hit_padding.tot_t_adjust <= overflow_adjust_active;
+                    hit_padding.tot_e_adjust <= overflow_adjust_active;
+                    hit_padding.e_flag		<= hit_in.e_flag;
+
+                    hit_padding.derive_tot              <= hit_in.derive_tot;
+                    hit_padding.delay_ts_field_use_t    <= hit_in.delay_ts_field_use_t;
+                    hit_padding.bypass_lapse            <= hit_in.bypass_lapse;
+
+                    hit_padding.t_fine		<= hit_in.t_fine;
+                    hit_padding.valid		<= '1';
+                    hit_padding.hiterr		<= hit_in.hiterr;
                 end if;
-                tcc_div_numer           <= hit_prediv.tcc_div_numer;
-                ecc_div_numer           <= hit_prediv.ecc_div_numer;
-                hit_totcalc.asic        <= hit_prediv.asic;
-                hit_totcalc.channel     <= hit_prediv.channel;
-                hit_totcalc.t_fine      <= hit_prediv.t_fine;
-                hit_totcalc.e_flag      <= hit_prediv.e_flag;
 
-                hit_totcalc.derive_tot              <= hit_prediv.derive_tot;
-                hit_totcalc.delay_ts_field_use_t    <= hit_prediv.delay_ts_field_use_t;
+                if (hit_padding.valid = '1') then
+                    hit_prediv.asic         <= hit_padding.asic;
+                    hit_prediv.channel      <= hit_padding.channel;
+                    hit_prediv.t_fine       <= hit_padding.t_fine;
+                    hit_prediv.e_flag       <= hit_padding.e_flag;
 
-                hit_totcalc.hiterr      <= hit_prediv.hiterr;
-                hit_totcalc.valid       <= '1';
-                hit_totcalc.tcc_div_numer <= hit_prediv.tcc_div_numer;
-                hit_totcalc.ecc_div_numer <= hit_prediv.ecc_div_numer;
-            end if;
+                    hit_prediv.derive_tot              <= hit_padding.derive_tot;
+                    hit_prediv.delay_ts_field_use_t    <= hit_padding.delay_ts_field_use_t;
 
-            if (hit_totcalc.valid = '1') then
-                hit_div(0).asic         <= hit_totcalc.asic;
-                hit_div(0).channel      <= hit_totcalc.channel;
-                hit_div(0).t_fine       <= hit_totcalc.t_fine;
-                hit_div(0).valid        <= '1';
-                hit_div(0).hiterr       <= hit_totcalc.hiterr;
-
-                hit_div(0).delay_ts_field_use_t <= hit_totcalc.delay_ts_field_use_t;
-
-                -- eflag[8] + ToT[8:0]
-                -- Q: seems eflag=1 is bad, which is inverted? A: no, flag=1 is good, it was a misunderstanding with BadHit bit
-                if hit_totcalc.derive_tot = '1' then
-                    if (hit_totcalc.e_flag = '0') then -- if no eflag, mask the ToT value to 0 (dec)
-                        hit_div(0).et_1n6       <= (others => '0');
-                    elsif (unsigned(hit_totcalc.ecc_div_numer) < unsigned(hit_totcalc.tcc_div_numer)) then -- if negative, underflow, mask the ToT to 0 (dec)
-                        hit_div(0).et_1n6       <= (others => '0');
-                    else
-                        et_delta_v := unsigned(hit_totcalc.ecc_div_numer) - unsigned(hit_totcalc.tcc_div_numer);
-                        hit_div(0).et_1n6       <= std_logic_vector(resize(et_delta_v, hit_div(0).et_1n6'length));
-                        if (et_delta_v > to_unsigned(511, et_delta_v'length)) then -- if too large, overflow, mask the ToT to 511 (dec)
-                            hit_div(0).et_1n6       <= (others => '1');
-                        end if;
+                    hit_prediv.hiterr       <= hit_padding.hiterr;
+                    hit_prediv.valid        <= '1';
+                    if (hit_padding.bypass_lapse = '0') then  -- mts -> gts transformation enable
+                        hit_prediv.tcc_div_numer <= cc_gts_1n6_slv50;
+                        hit_prediv.ecc_div_numer <= ecc_gts_1n6_slv50;
+                    else -- mts -> gts transformation disable (this would result in random dist., which is simply for sanity check.)
+                        hit_prediv.tcc_div_numer(hit_padding.cc_out'high downto 0)  <= hit_padding.cc_out;
+                        hit_prediv.ecc_div_numer(hit_padding.ecc_out'high downto 0) <= hit_padding.ecc_out;
                     end if;
-                else
-                    hit_div(0).et_1n6       <= (others => '0');
-                end if;
-            end if;
-            
-            -- lpm div pipeline output reg
-            if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- assemble the hit_out 
-                hit_out.asic		<= hit_div(LPM_DIV_PIPELINE).asic;
-                hit_out.channel		<= hit_div(LPM_DIV_PIPELINE).channel;
-                hit_out.tcc_8n		<= tcc_div_quotient_d(hit_out.tcc_8n'high downto 0); -- latch delayed div result (quotient)
-                hit_out.tcc_1n6		<= tcc_div_remain_d(hit_out.tcc_1n6'high downto 0); -- latch delayed div result (remainder)
-                hit_out.tfine		<= hit_div(LPM_DIV_PIPELINE).t_fine;
-                hit_out.et_1n6		<= hit_div(LPM_DIV_PIPELINE).et_1n6;
-                hit_out.valid		<= '1';
-                hit_out.hiterr		<= hit_div(LPM_DIV_PIPELINE).hiterr;
-
-                hit_delay_arrival_v          := resize(counter_gts_8n, hit_delay_arrival_v'length);
-                hit_delay_expected_latency_v := resize(unsigned(csr.expected_latency), hit_delay_expected_latency_v'length);
-                if (hit_div(LPM_DIV_PIPELINE).delay_ts_field_use_t = '1') then
-                    hit_delay_selected_ts_v := unsigned(tcc_div_quotient_d);
-                else
-                    hit_delay_selected_ts_v := unsigned(ecc_div_quotient_d);
                 end if;
 
-                if (hit_delay_arrival_v > hit_delay_selected_ts_v) then
-                    hit_delay_delta_v := hit_delay_arrival_v - hit_delay_selected_ts_v;
-                    if (hit_delay_delta_v < hit_delay_expected_latency_v) then
-                        hit_out_delay_error <= '0';
+                if (hit_prediv.valid = '1') then
+                    if (DEBUG /= 0) then
+                        report "MTS_STAGE[" & BANK & "] div_launch ch="
+                            & integer'image(to_integer(unsigned(hit_prediv.channel)))
+                            severity note;
+                    end if;
+                    tcc_div_numer           <= hit_prediv.tcc_div_numer;
+                    ecc_div_numer           <= hit_prediv.ecc_div_numer;
+                    hit_totcalc.asic        <= hit_prediv.asic;
+                    hit_totcalc.channel     <= hit_prediv.channel;
+                    hit_totcalc.t_fine      <= hit_prediv.t_fine;
+                    hit_totcalc.e_flag      <= hit_prediv.e_flag;
+
+                    hit_totcalc.derive_tot              <= hit_prediv.derive_tot;
+                    hit_totcalc.delay_ts_field_use_t    <= hit_prediv.delay_ts_field_use_t;
+
+                    hit_totcalc.hiterr      <= hit_prediv.hiterr;
+                    hit_totcalc.valid       <= '1';
+                    hit_totcalc.tcc_div_numer <= hit_prediv.tcc_div_numer;
+                    hit_totcalc.ecc_div_numer <= hit_prediv.ecc_div_numer;
+                end if;
+
+                if (hit_totcalc.valid = '1') then
+                    hit_div(0).asic         <= hit_totcalc.asic;
+                    hit_div(0).channel      <= hit_totcalc.channel;
+                    hit_div(0).t_fine       <= hit_totcalc.t_fine;
+                    hit_div(0).valid        <= '1';
+                    hit_div(0).hiterr       <= hit_totcalc.hiterr;
+
+                    hit_div(0).delay_ts_field_use_t <= hit_totcalc.delay_ts_field_use_t;
+
+                    -- eflag[8] + ToT[8:0]
+                    -- Q: seems eflag=1 is bad, which is inverted? A: no, flag=1 is good, it was a misunderstanding with BadHit bit
+                    if hit_totcalc.derive_tot = '1' then
+                        if (hit_totcalc.e_flag = '0') then -- if no eflag, mask the ToT value to 0 (dec)
+                            hit_div(0).et_1n6       <= (others => '0');
+                        elsif (unsigned(hit_totcalc.ecc_div_numer) < unsigned(hit_totcalc.tcc_div_numer)) then -- if negative, underflow, mask the ToT to 0 (dec)
+                            hit_div(0).et_1n6       <= (others => '0');
+                        else
+                            et_delta_v := unsigned(hit_totcalc.ecc_div_numer) - unsigned(hit_totcalc.tcc_div_numer);
+                            hit_div(0).et_1n6       <= std_logic_vector(resize(et_delta_v, hit_div(0).et_1n6'length));
+                            if (et_delta_v > to_unsigned(511, et_delta_v'length)) then -- if too large, overflow, mask the ToT to 511 (dec)
+                                hit_div(0).et_1n6       <= (others => '1');
+                            end if;
+                        end if;
+                    else
+                        hit_div(0).et_1n6       <= (others => '0');
+                    end if;
+                end if;
+
+                -- lpm div pipeline output reg
+                if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- assemble the hit_out
+                    hit_out.asic		<= hit_div(LPM_DIV_PIPELINE).asic;
+                    hit_out.channel		<= hit_div(LPM_DIV_PIPELINE).channel;
+                    hit_out.tcc_8n		<= tcc_div_quotient_d(hit_out.tcc_8n'high downto 0); -- latch delayed div result (quotient)
+                    hit_out.tcc_1n6		<= tcc_div_remain_d(hit_out.tcc_1n6'high downto 0); -- latch delayed div result (remainder)
+                    hit_out.tfine		<= hit_div(LPM_DIV_PIPELINE).t_fine;
+                    hit_out.et_1n6		<= hit_div(LPM_DIV_PIPELINE).et_1n6;
+                    hit_out.valid		<= '1';
+                    hit_out.hiterr		<= hit_div(LPM_DIV_PIPELINE).hiterr;
+
+                    hit_delay_arrival_v          := resize(counter_gts_8n, hit_delay_arrival_v'length);
+                    hit_delay_expected_latency_v := resize(unsigned(csr.expected_latency), hit_delay_expected_latency_v'length);
+                    if (hit_div(LPM_DIV_PIPELINE).delay_ts_field_use_t = '1') then
+                        hit_delay_selected_ts_v := unsigned(tcc_div_quotient_d);
+                    else
+                        hit_delay_selected_ts_v := unsigned(ecc_div_quotient_d);
+                    end if;
+
+                    if (hit_delay_arrival_v > hit_delay_selected_ts_v) then
+                        hit_delay_delta_v := hit_delay_arrival_v - hit_delay_selected_ts_v;
+                        if (hit_delay_delta_v < hit_delay_expected_latency_v) then
+                            hit_out_delay_error <= '0';
+                        else
+                            hit_out_delay_error <= '1';
+                        end if;
                     else
                         hit_out_delay_error <= '1';
                     end if;
-                else
-                    hit_out_delay_error <= '1';
                 end if;
             end if;
 
@@ -1582,7 +1605,7 @@ begin
     proc_debug_stage_trace : process (i_clk)
     begin
         if (rising_edge(i_clk)) then
-            if (DEBUG /= 0 and i_rst = '0') then
+            if (DEBUG /= 0 and i_rst = '0' and csr.soft_reset = '0') then
                 if (hit_in.valid = '1') then
                     report "MTS_STAGE[" & BANK & "] hit_in ch="
                         & integer'image(to_integer(unsigned(hit_in.channel)))
@@ -1655,7 +1678,7 @@ begin
             aso_hit_type1_empty           <= '0';
             aso_hit_type1_error           <= '0';
 
-            if (processor_state = RESET or processor_state = IDLE) then
+            if (processor_state = RESET or processor_state = IDLE or csr.soft_reset = '1') then
                 route_startofrun_sent     <= (others => '0');
                 route_terminate_sent      <= (others => '0');
                 upstream_endofrun_seen    <= '0';
@@ -1672,7 +1695,10 @@ begin
                 upstream_endofrun_seen    <= '1';
             end if;
 
-            if (processor_state = RUNNING or processor_state = FLUSHING) then 
+            if (
+                (processor_state = RUNNING or processor_state = FLUSHING)
+                and csr.soft_reset = '0'
+            ) then
                 if (hit_out.valid = '1' and (csr.drop_delay_error = '0' or hit_out_delay_error = '0')) then
                     route_lane_v := to_integer(unsigned(hit_out.tcc_8n(5 downto 4)));
                     aso_hit_type1_data(O_ASIC_HI downto O_ASIC_LO)               <= hit_out.asic;
@@ -1702,7 +1728,10 @@ begin
                 end if;
             end if;
 
-            if (processor_state = RUNNING or processor_state = FLUSHING) then
+            if (
+                (processor_state = RUNNING or processor_state = FLUSHING)
+                and csr.soft_reset = '0'
+            ) then
                 if (asi_hit_type0_accept = '1' and hit_in_ok = '1') then
                     input_lane_v := to_integer(unsigned(asi_hit_type0_channel));
                     if (input_lane_v >= ENABLED_CHANNEL_LO and input_lane_v <= ENABLED_CHANNEL_HI) then
@@ -1726,6 +1755,7 @@ begin
         elsif (rising_edge(i_clk)) then
             if (
                 (processor_state = RUNNING or processor_state = FLUSHING)
+                and csr.soft_reset = '0'
                 and (csr.drop_delay_error = '0' or hit_out_delay_error = '0')
             ) then
                 aso_debug_ts_data       <= int_aso_debug_ts_data;
@@ -1743,6 +1773,7 @@ begin
             if (
                 i_rst = '0'
                 and (processor_state = RUNNING or processor_state = FLUSHING)
+                and csr.soft_reset = '0'
                 and hit_div(LPM_DIV_PIPELINE).valid = '1'
             ) then -- 48 bit - 48 bit (no of/df)
                 if (hit_div(LPM_DIV_PIPELINE).delay_ts_field_use_t = '1') then
@@ -1771,7 +1802,7 @@ begin
         variable burst_v_arrival_delta   : unsigned(egress_arrival(0)'range);
     begin
         if (rising_edge(i_clk)) then 
-            if (processor_state = RUNNING and i_rst = '0') then 
+            if (processor_state = RUNNING and i_rst = '0' and csr.soft_reset = '0') then
                 -- default
                 egress_valid                <= '0';
                 delta_valid                 <= '0';
