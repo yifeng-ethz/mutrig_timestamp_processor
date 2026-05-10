@@ -131,6 +131,12 @@ endif
 ifeq ($(CASE_ID),STRESS_MTS_090_inert_parameter_sweep_compare)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/PADDING_EOP_WAIT_CYCLE=1 -g/tb_top/dut/CRCERR_BIT_LOC=2 -g/tb_top/dut/FRAME_CORRPT_BIT_LOC=1
 endif
+ifeq ($(CASE_ID),STRESS_MTS_106_smoke_vectors_div_pipeline_two)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/LPM_DIV_PIPELINE=2
+endif
+ifeq ($(CASE_ID),STRESS_MTS_107_smoke_vectors_div_pipeline_four)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/LPM_DIV_PIPELINE=4
+endif
 
 RTL_SRC = $(if $(filter before,$(RTL_VARIANT)),$(BUILD_DIR)/mts_processor.vhd,$(IP_SRC)/mts_processor.vhd)
 RUN_ID  = $(if $(CASE_ID),$(CASE_ID),$(TEST))

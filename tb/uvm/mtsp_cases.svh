@@ -7,6 +7,14 @@
     localparam bit [31:0] CSR_CTRL_MODE_MASK = 32'h7000_0000;
     localparam int unsigned MTSP_OVERFLOW_TIME_1N6 = 32767;
     localparam int unsigned MTSP_OVERFLOW_PADDING_UPPER_1N6 = 22766;
+    localparam int unsigned SMOKE_VEC_POSITIVE = 0;
+    localparam int unsigned SMOKE_VEC_EFLAG_ZERO = 1;
+    localparam int unsigned SMOKE_VEC_NEGATIVE_CLAMP = 2;
+    localparam int unsigned SMOKE_VEC_SATURATION = 3;
+    localparam int unsigned SMOKE_PATTERN_POSITIVE = 0;
+    localparam int unsigned SMOKE_PATTERN_EFLAG_ZERO = 1;
+    localparam int unsigned SMOKE_PATTERN_CLAMP_PAIR = 2;
+    localparam int unsigned SMOKE_PATTERN_ALL = 3;
     bit          raw_by_decoded_loaded;
     int unsigned raw_by_decoded[int unsigned];
 
@@ -711,6 +719,320 @@
           $sformatf("%s expected smoke ET_1N6=%0d got %0d data=0x%010h",
             ctx, expected_et[8:0], hit_obs.data[8:0], hit_obs.data))
       expect_last_trace_pair(ctx);
+    endtask
+
+    task automatic smoke_vector_params(int unsigned kind,
+                                       output int unsigned tcc_raw_value,
+                                       output int unsigned ecc_raw_value,
+                                       output bit eflag_value,
+                                       output int unsigned expected_tcc8n,
+                                       output int unsigned expected_tcc1n6,
+                                       output int unsigned expected_et1n6,
+                                       string ctx);
+      case (kind)
+        SMOKE_VEC_POSITIVE: begin
+          tcc_raw_value   = 15'h0003;
+          ecc_raw_value   = 15'h000F;
+          eflag_value     = 1'b1;
+          expected_tcc8n  = 0;
+          expected_tcc1n6 = 1;
+          expected_et1n6  = 2;
+        end
+        SMOKE_VEC_EFLAG_ZERO: begin
+          tcc_raw_value   = 15'h0003;
+          ecc_raw_value   = 15'h000F;
+          eflag_value     = 1'b0;
+          expected_tcc8n  = 0;
+          expected_tcc1n6 = 1;
+          expected_et1n6  = 0;
+        end
+        SMOKE_VEC_NEGATIVE_CLAMP: begin
+          tcc_raw_value   = 15'h000F;
+          ecc_raw_value   = 15'h0003;
+          eflag_value     = 1'b1;
+          expected_tcc8n  = 0;
+          expected_tcc1n6 = 3;
+          expected_et1n6  = 0;
+        end
+        SMOKE_VEC_SATURATION: begin
+          tcc_raw_value   = 15'h0001;
+          ecc_raw_value   = 15'h0000;
+          eflag_value     = 1'b1;
+          expected_tcc8n  = 0;
+          expected_tcc1n6 = 0;
+          expected_et1n6  = 511;
+        end
+        default:
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s unsupported smoke vector kind %0d", ctx, kind))
+      endcase
+    endtask
+
+    function automatic int unsigned smoke_pattern_len(int unsigned pattern);
+      case (pattern)
+        SMOKE_PATTERN_POSITIVE,
+        SMOKE_PATTERN_EFLAG_ZERO: return 1;
+        SMOKE_PATTERN_CLAMP_PAIR: return 2;
+        SMOKE_PATTERN_ALL: return 4;
+        default: return 0;
+      endcase
+    endfunction
+
+    function automatic int unsigned smoke_pattern_kind(int unsigned pattern,
+                                                       int unsigned pos);
+      case (pattern)
+        SMOKE_PATTERN_POSITIVE: return SMOKE_VEC_POSITIVE;
+        SMOKE_PATTERN_EFLAG_ZERO: return SMOKE_VEC_EFLAG_ZERO;
+        SMOKE_PATTERN_CLAMP_PAIR: begin
+          if (pos == 0)
+            return SMOKE_VEC_NEGATIVE_CLAMP;
+          return SMOKE_VEC_SATURATION;
+        end
+        SMOKE_PATTERN_ALL: begin
+          case (pos)
+            0: return SMOKE_VEC_POSITIVE;
+            1: return SMOKE_VEC_EFLAG_ZERO;
+            2: return SMOKE_VEC_NEGATIVE_CLAMP;
+            default: return SMOKE_VEC_SATURATION;
+          endcase
+        end
+        default: return SMOKE_VEC_POSITIVE;
+      endcase
+    endfunction
+
+    task automatic write_smoke_mode(bit bypass_lapse,
+                                    bit delay_ts_field_use_t);
+      bit [31:0] csr_word;
+
+      csr_word = 32'h4000_0001;
+      if (bypass_lapse)
+        csr_word |= 32'h0000_0008;
+      if (delay_ts_field_use_t)
+        csr_word |= 32'h2000_0000;
+      csr_write(3'd0, csr_word);
+      wait_cycles(2);
+    endtask
+
+    task automatic start_smoke_stress_run(bit standard_sequence,
+                                          bit bypass_lapse,
+                                          bit delay_ts_field_use_t,
+                                          bit ready_low,
+                                          bit wait_for_wrap,
+                                          string ctx);
+      wait_for_reset_release();
+      write_smoke_mode(bypass_lapse, delay_ts_field_use_t);
+      if (standard_sequence) begin
+        run_start();
+      end else begin
+        send_ctrl(CTRL_RUNNING, "RUNNING");
+        wait_for_running_status(64, ctx);
+        wait_for_hit0_ready(1'b1, 16, ctx);
+        wait_cycles(1);
+      end
+      hit1_drv_vif.ready <= ready_low ? 1'b0 : 1'b1;
+      wait_cycles(1);
+      if (wait_for_wrap)
+        wait_inside_one_wrap_lookback(ctx);
+    endtask
+
+    task automatic send_smoke_vector_kind(int unsigned kind,
+                                          int unsigned seq_idx,
+                                          string ctx);
+      int unsigned tcc_raw_value;
+      int unsigned ecc_raw_value;
+      int unsigned expected_tcc8n;
+      int unsigned expected_tcc1n6;
+      int unsigned expected_et1n6;
+      bit          eflag_value;
+
+      smoke_vector_params(kind, tcc_raw_value, ecc_raw_value, eflag_value,
+        expected_tcc8n, expected_tcc1n6, expected_et1n6, ctx);
+      send_hit_beat(2, 1, tcc_raw_value, ecc_raw_value, eflag_value,
+        seq_idx == 0, 1'b0, '0, 1'b1, 0);
+    endtask
+
+    task automatic expect_smoke_vector_kind_at(int unsigned history_idx,
+                                               int unsigned trace_idx,
+                                               int unsigned kind,
+                                               string ctx);
+      int unsigned tcc_raw_value;
+      int unsigned ecc_raw_value;
+      int unsigned expected_tcc8n;
+      int unsigned expected_tcc1n6;
+      int unsigned expected_et1n6;
+      bit          eflag_value;
+
+      smoke_vector_params(kind, tcc_raw_value, ecc_raw_value, eflag_value,
+        expected_tcc8n, expected_tcc1n6, expected_et1n6, ctx);
+      expect_payload_math_at(history_idx, 2, 1, 0, expected_tcc8n,
+        expected_tcc1n6, expected_et1n6, ctx);
+      expect_trace_pair_at(trace_idx, ctx);
+      expect_trace_math_self_consistent_at(trace_idx, ctx);
+      expect_trace_expected_latency_at(trace_idx, 2000, ctx);
+    endtask
+
+    task automatic run_smoke_replay_case(int unsigned repeat_count,
+                                         int unsigned pattern,
+                                         bit standard_sequence,
+                                         bit bypass_lapse,
+                                         bit delay_ts_field_use_t,
+                                         bit ready_low,
+                                         bit wait_for_wrap,
+                                         int unsigned expected_latency_cycles,
+                                         string ctx);
+      int unsigned pattern_count;
+      int unsigned expected_payloads;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+      int unsigned base_dual_pairs;
+      int unsigned seq_idx;
+
+      pattern_count = smoke_pattern_len(pattern);
+      if (pattern_count == 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s unsupported smoke replay pattern %0d", ctx, pattern))
+      expected_payloads = repeat_count * pattern_count;
+
+      start_smoke_stress_run(standard_sequence, bypass_lapse,
+        delay_ts_field_use_t, ready_low, wait_for_wrap, ctx);
+
+      base_inputs      = m_env.m_scb.hit0_history.size();
+      base_beats       = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces      = m_env.m_scb.trace_history.size();
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      base_dual_pairs  = m_env.m_scb.dual_path_pair_count;
+      seq_idx          = 0;
+
+      for (int unsigned rep = 0; rep < repeat_count; rep++) begin
+        for (int unsigned pos = 0; pos < pattern_count; pos++) begin
+          send_smoke_vector_kind(smoke_pattern_kind(pattern, pos), seq_idx,
+            $sformatf("%s rep=%0d pos=%0d", ctx, rep, pos));
+          seq_idx++;
+        end
+      end
+
+      wait_for_input_count(base_inputs + expected_payloads,
+        expected_payloads + 2048, ctx);
+      wait_for_beat_count(base_beats + expected_payloads,
+        expected_payloads + 4096, ctx);
+      wait_for_trace_count(base_traces + expected_payloads,
+        expected_payloads + 4096, ctx);
+      wait_for_debug_ts_count(base_debug_ts + expected_payloads,
+        expected_payloads + 1024, ctx);
+      wait_for_debug_burst_count(base_debug_burst + expected_payloads,
+        expected_payloads + 1024, ctx);
+      wait_for_ts_delta_count(base_ts_delta + expected_payloads,
+        expected_payloads + 1024, ctx);
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, expected_payloads, expected_payloads, expected_payloads,
+        ctx);
+      if (m_env.m_scb.dual_path_pair_count != base_dual_pairs + expected_payloads)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d new dual-path trace pairs, got %0d from base %0d",
+            ctx, expected_payloads,
+            m_env.m_scb.dual_path_pair_count - base_dual_pairs,
+            base_dual_pairs))
+
+      seq_idx = 0;
+      for (int unsigned rep = 0; rep < repeat_count; rep++) begin
+        for (int unsigned pos = 0; pos < pattern_count; pos++) begin
+          expect_smoke_vector_kind_at(base_history_size + seq_idx,
+            base_traces + seq_idx, smoke_pattern_kind(pattern, pos),
+            $sformatf("%s payload rep=%0d pos=%0d", ctx, rep, pos));
+          seq_idx++;
+        end
+      end
+
+      if (expected_latency_cycles != 0)
+        expect_latency_cycles_since(base_inputs, base_history_size,
+          expected_payloads, expected_latency_cycles, ctx);
+      expect_total_count(expected_payloads, ctx);
+      expect_discard_count(32'd0, ctx);
+      hit1_drv_vif.ready <= 1'b1;
+      wait_cycles(2);
+    endtask
+
+    task automatic run_smoke_soft_reset_case(int unsigned iterations,
+                                             string ctx);
+      int unsigned pattern_count;
+
+      pattern_count = smoke_pattern_len(SMOKE_PATTERN_ALL);
+      start_smoke_stress_run(1'b0, 1'b0, 1'b0, 1'b0, 1'b0, ctx);
+
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned base_inputs;
+        int unsigned base_beats;
+        int unsigned base_history_size;
+        int unsigned base_traces;
+        int unsigned base_debug_ts;
+        int unsigned base_debug_burst;
+        int unsigned base_ts_delta;
+        int unsigned base_dual_pairs;
+
+        wait_for_hit0_ready(1'b1, 64,
+          $sformatf("%s iter=%0d hit ready", ctx, iter));
+        base_inputs       = m_env.m_scb.hit0_history.size();
+        base_beats        = m_env.m_scb.beat_count;
+        base_history_size = m_env.m_scb.history.size();
+        base_traces       = m_env.m_scb.trace_history.size();
+        base_debug_ts     = m_env.m_scb.debug_ts_count;
+        base_debug_burst  = m_env.m_scb.debug_burst_count;
+        base_ts_delta     = m_env.m_scb.ts_delta_count;
+        base_dual_pairs   = m_env.m_scb.dual_path_pair_count;
+
+        for (int unsigned pos = 0; pos < pattern_count; pos++)
+          send_smoke_vector_kind(smoke_pattern_kind(SMOKE_PATTERN_ALL, pos),
+            pos, $sformatf("%s iter=%0d pos=%0d", ctx, iter, pos));
+
+        wait_for_input_count(base_inputs + pattern_count, pattern_count + 512,
+          $sformatf("%s iter=%0d inputs", ctx, iter));
+        wait_for_beat_count(base_beats + pattern_count, pattern_count + 1024,
+          $sformatf("%s iter=%0d beats", ctx, iter));
+        wait_for_trace_count(base_traces + pattern_count, pattern_count + 1024,
+          $sformatf("%s iter=%0d traces", ctx, iter));
+        wait_for_debug_ts_count(base_debug_ts + pattern_count,
+          pattern_count + 512, $sformatf("%s iter=%0d debug_ts", ctx, iter));
+        wait_for_debug_burst_count(base_debug_burst + pattern_count,
+          pattern_count + 512, $sformatf("%s iter=%0d debug_burst", ctx, iter));
+        wait_for_ts_delta_count(base_ts_delta + pattern_count,
+          pattern_count + 512, $sformatf("%s iter=%0d ts_delta", ctx, iter));
+        expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+          base_ts_delta, pattern_count, pattern_count, pattern_count,
+          $sformatf("%s iter=%0d", ctx, iter));
+        if (m_env.m_scb.dual_path_pair_count != base_dual_pairs + pattern_count)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s iter=%0d expected %0d new dual-path pairs, got %0d",
+              ctx, iter, pattern_count,
+              m_env.m_scb.dual_path_pair_count - base_dual_pairs))
+
+        for (int unsigned pos = 0; pos < pattern_count; pos++)
+          expect_smoke_vector_kind_at(base_history_size + pos,
+            base_traces + pos, smoke_pattern_kind(SMOKE_PATTERN_ALL, pos),
+            $sformatf("%s iter=%0d payload pos=%0d", ctx, iter, pos));
+        expect_latency_cycles_since(base_inputs, base_history_size,
+          pattern_count, 10, $sformatf("%s iter=%0d", ctx, iter));
+        expect_total_count(pattern_count,
+          $sformatf("%s iter=%0d total", ctx, iter));
+        expect_discard_count(32'd0,
+          $sformatf("%s iter=%0d discard", ctx, iter));
+
+        csr_write(3'd0, 32'h4000_0005);
+        wait_cycles(4);
+        expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0004,
+          $sformatf("%s iter=%0d soft_reset self-clear", ctx, iter));
+        expect_total_count(48'd0,
+          $sformatf("%s iter=%0d post-reset total", ctx, iter));
+        expect_discard_count(32'd0,
+          $sformatf("%s iter=%0d post-reset discard", ctx, iter));
+      end
     endtask
 
     task automatic calibrate_next_output_arrival(output int signed predicted_arrival,
@@ -9891,6 +10213,55 @@
       run_random_latency_rewrite_case(8, 8, case_id);
     endtask
 
+    task automatic do_stress_101_repeat_smoke_positive_vector_1k();
+      run_smoke_replay_case(1000, SMOKE_PATTERN_POSITIVE, 1'b0, 1'b0,
+        1'b0, 1'b0, 1'b0, 10, case_id);
+    endtask
+
+    task automatic do_stress_102_repeat_smoke_eflag_zero_vector_1k();
+      run_smoke_replay_case(1000, SMOKE_PATTERN_EFLAG_ZERO, 1'b0, 1'b0,
+        1'b0, 1'b0, 1'b0, 10, case_id);
+    endtask
+
+    task automatic do_stress_103_repeat_smoke_clamp_vector_1k();
+      run_smoke_replay_case(1000, SMOKE_PATTERN_CLAMP_PAIR, 1'b0, 1'b0,
+        1'b0, 1'b0, 1'b0, 10, case_id);
+    endtask
+
+    task automatic do_stress_104_smoke_vectors_under_standard_sequence();
+      run_smoke_replay_case(1, SMOKE_PATTERN_ALL, 1'b1, 1'b0, 1'b0, 1'b0,
+        1'b0, 10, case_id);
+    endtask
+
+    task automatic do_stress_105_smoke_vectors_with_ready_low();
+      run_smoke_replay_case(1, SMOKE_PATTERN_ALL, 1'b0, 1'b0, 1'b0, 1'b1,
+        1'b0, 10, case_id);
+    endtask
+
+    task automatic do_stress_106_smoke_vectors_div_pipeline_two();
+      run_smoke_replay_case(1, SMOKE_PATTERN_ALL, 1'b0, 1'b0, 1'b0, 1'b0,
+        1'b0, 8, case_id);
+    endtask
+
+    task automatic do_stress_107_smoke_vectors_div_pipeline_four();
+      run_smoke_replay_case(1, SMOKE_PATTERN_ALL, 1'b0, 1'b0, 1'b0, 1'b0,
+        1'b0, 10, case_id);
+    endtask
+
+    task automatic do_stress_108_smoke_vectors_bypass_on();
+      run_smoke_replay_case(1, SMOKE_PATTERN_ALL, 1'b0, 1'b1, 1'b0, 1'b0,
+        1'b1, 10, case_id);
+    endtask
+
+    task automatic do_stress_109_smoke_vectors_delay_field_e();
+      run_smoke_replay_case(1, SMOKE_PATTERN_ALL, 1'b0, 1'b0, 1'b0, 1'b0,
+        1'b0, 10, case_id);
+    endtask
+
+    task automatic do_stress_110_smoke_vectors_with_soft_reset_between_runs();
+      run_smoke_soft_reset_case(32, case_id);
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -10264,6 +10635,16 @@
         "STRESS_MTS_098_random_asic_ids": do_stress_098_random_asic_ids();
         "STRESS_MTS_099_random_payload_channels": do_stress_099_random_payload_channels();
         "STRESS_MTS_100_random_expected_latency_rewrites": do_stress_100_random_expected_latency_rewrites();
+        "STRESS_MTS_101_repeat_smoke_positive_vector_1k": do_stress_101_repeat_smoke_positive_vector_1k();
+        "STRESS_MTS_102_repeat_smoke_eflag_zero_vector_1k": do_stress_102_repeat_smoke_eflag_zero_vector_1k();
+        "STRESS_MTS_103_repeat_smoke_clamp_vector_1k": do_stress_103_repeat_smoke_clamp_vector_1k();
+        "STRESS_MTS_104_smoke_vectors_under_standard_sequence": do_stress_104_smoke_vectors_under_standard_sequence();
+        "STRESS_MTS_105_smoke_vectors_with_ready_low": do_stress_105_smoke_vectors_with_ready_low();
+        "STRESS_MTS_106_smoke_vectors_div_pipeline_two": do_stress_106_smoke_vectors_div_pipeline_two();
+        "STRESS_MTS_107_smoke_vectors_div_pipeline_four": do_stress_107_smoke_vectors_div_pipeline_four();
+        "STRESS_MTS_108_smoke_vectors_bypass_on": do_stress_108_smoke_vectors_bypass_on();
+        "STRESS_MTS_109_smoke_vectors_delay_field_e": do_stress_109_smoke_vectors_delay_field_e();
+        "STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs": do_stress_110_smoke_vectors_with_soft_reset_between_runs();
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("No explicit UVM stimulus handler for documented case '%s'", case_id))
