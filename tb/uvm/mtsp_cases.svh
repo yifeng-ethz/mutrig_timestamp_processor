@@ -5439,6 +5439,299 @@
         `uvm_fatal("MTSP_CASE", "Clean hit after expected_latency restore must not inherit the prior error")
     endtask
 
+    function automatic int unsigned stress_t_quotient(int unsigned idx);
+      return idx % 64;
+    endfunction
+
+    function automatic int unsigned stress_t_remainder(int unsigned idx);
+      return idx % 5;
+    endfunction
+
+    function automatic int unsigned stress_t_decoded(int unsigned idx);
+      return (stress_t_quotient(idx) * 5) + stress_t_remainder(idx);
+    endfunction
+
+    function automatic int unsigned stress_e_decoded(int unsigned idx,
+                                                     bit derive_tot);
+      if (!derive_tot)
+        return stress_t_decoded(idx);
+      return stress_t_decoded(idx) + 1 + (idx % 7);
+    endfunction
+
+    function automatic int unsigned stress_e_quotient(int unsigned idx,
+                                                      bit derive_tot);
+      return stress_e_decoded(idx, derive_tot) / 5;
+    endfunction
+
+    function automatic int unsigned stress_e_remainder(int unsigned idx,
+                                                       bit derive_tot);
+      return stress_e_decoded(idx, derive_tot) % 5;
+    endfunction
+
+    function automatic bit stress_eflag(int unsigned idx, bit derive_tot);
+      if (derive_tot)
+        return 1'b1;
+      return idx[0];
+    endfunction
+
+    function automatic int unsigned stress_expected_et(int unsigned idx,
+                                                       bit derive_tot);
+      int signed delta;
+
+      if (!derive_tot || !stress_eflag(idx, derive_tot))
+        return 0;
+      delta = int'(stress_e_decoded(idx, derive_tot)) -
+              int'(stress_t_decoded(idx));
+      if (delta <= 0)
+        return 0;
+      if (delta > 511)
+        return 511;
+      return int'(delta);
+    endfunction
+
+    function automatic int unsigned stress_asic(int unsigned idx);
+      return 2 + (idx % 2);
+    endfunction
+
+    function automatic int unsigned stress_channel(int unsigned idx);
+      return idx % 32;
+    endfunction
+
+    function automatic int unsigned stress_tfine(int unsigned idx);
+      return idx % 32;
+    endfunction
+
+    task automatic send_stress_hit(int unsigned idx,
+                                   bit derive_tot,
+                                   bit sop_value,
+                                   bit eop_value,
+                                   bit [2:0] error_value,
+                                   string ctx);
+      int unsigned t_raw_value;
+      int unsigned e_raw_value;
+
+      lookup_raw_for_quotient(stress_t_quotient(idx), stress_t_remainder(idx),
+        t_raw_value, $sformatf("%s stress T symbol idx=%0d", ctx, idx));
+      lookup_raw_for_quotient(stress_e_quotient(idx, derive_tot),
+        stress_e_remainder(idx, derive_tot), e_raw_value,
+        $sformatf("%s stress E symbol idx=%0d", ctx, idx));
+      send_hit_beat(stress_asic(idx), stress_channel(idx), t_raw_value,
+        e_raw_value, stress_eflag(idx, derive_tot), sop_value, eop_value,
+        error_value, 1'b1, stress_tfine(idx));
+    endtask
+
+    task automatic expect_stress_payload_at(int unsigned history_idx,
+                                            int unsigned trace_idx,
+                                            int unsigned stimulus_idx,
+                                            bit derive_tot,
+                                            string ctx);
+      expect_payload_math_at(history_idx, stress_asic(stimulus_idx),
+        stress_channel(stimulus_idx), stress_tfine(stimulus_idx),
+        stress_t_quotient(stimulus_idx), stress_t_remainder(stimulus_idx),
+        stress_expected_et(stimulus_idx, derive_tot), ctx);
+      expect_trace_pair_at(trace_idx, ctx);
+      expect_trace_error_at(trace_idx, 1'b0, ctx);
+    endtask
+
+    function automatic int unsigned stress_discard_count(int unsigned hit_count,
+                                                         int unsigned hiterr_period,
+                                                         bit discard_hiterr);
+      int unsigned count;
+
+      count = 0;
+      if (hiterr_period == 0 || !discard_hiterr)
+        return 0;
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        if (((idx + 1) % hiterr_period) == 0)
+          count++;
+      end
+      return count;
+    endfunction
+
+    task automatic expect_stress_stream_since(int unsigned base_history_size,
+                                              int unsigned base_traces,
+                                              int unsigned hit_count,
+                                              bit derive_tot,
+                                              int unsigned hiterr_period,
+                                              bit discard_hiterr,
+                                              string ctx);
+      int unsigned emitted_idx;
+
+      emitted_idx = 0;
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        bit dropped;
+
+        dropped = (hiterr_period != 0) &&
+                  (((idx + 1) % hiterr_period) == 0) &&
+                  discard_hiterr;
+        if (!dropped) begin
+          expect_stress_payload_at(base_history_size + emitted_idx,
+            base_traces + emitted_idx, idx, derive_tot,
+            $sformatf("%s payload idx=%0d", ctx, idx));
+          emitted_idx++;
+        end
+      end
+    endtask
+
+    task automatic run_stress_stream_case(int unsigned hit_count,
+                                          int unsigned gap_cycles,
+                                          bit derive_tot,
+                                          bit bypass_lapse,
+                                          bit delay_ts_field_use_t,
+                                          int unsigned burst_len,
+                                          int unsigned burst_gap_cycles,
+                                          int unsigned hiterr_period,
+                                          bit discard_hiterr,
+                                          bit ready_low,
+                                          string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned expected_discards;
+      int unsigned expected_payloads;
+      bit [31:0]   csr_word;
+
+      wait_for_reset_release();
+      configure_datapath_mode(bypass_lapse, derive_tot, delay_ts_field_use_t);
+      run_start();
+      if (!discard_hiterr) begin
+        csr_word = datapath_mode_word(bypass_lapse, derive_tot,
+          delay_ts_field_use_t) & ~32'h0000_0010;
+        csr_write(3'd0, csr_word);
+        wait_cycles(2);
+      end
+
+      hit1_drv_vif.ready <= ready_low ? 1'b0 : 1'b1;
+      wait_cycles(1);
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      expected_discards = stress_discard_count(hit_count, hiterr_period,
+        discard_hiterr);
+      expected_payloads = hit_count - expected_discards;
+
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        bit [2:0] error_value;
+
+        error_value = '0;
+        if (hiterr_period != 0 && (((idx + 1) % hiterr_period) == 0))
+          error_value = 3'b001;
+        send_stress_hit(idx, derive_tot, idx == 0, 1'b0, error_value, ctx);
+        if (gap_cycles != 0)
+          wait_cycles(gap_cycles);
+        if (burst_len != 0 && ((idx + 1) % burst_len) == 0 &&
+            (idx + 1) != hit_count)
+          wait_cycles(burst_gap_cycles);
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 512, ctx);
+      wait_for_beat_count(base_beats + expected_payloads, hit_count + 1024,
+        ctx);
+      wait_for_trace_count(base_traces + expected_payloads, hit_count + 1024,
+        ctx);
+      expect_stress_stream_since(base_history_size, base_traces, hit_count,
+        derive_tot, hiterr_period, discard_hiterr, ctx);
+
+      if (burst_len == 0)
+        expect_hit0_spacing(base_inputs, hit_count, 1 + gap_cycles, ctx);
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(expected_discards, ctx);
+
+      hit1_drv_vif.ready <= 1'b1;
+      wait_cycles(2);
+    endtask
+
+    task automatic do_stress_001_line_rate_short_mode();
+      run_stress_stream_case(64, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_002_line_rate_tot_mode();
+      run_stress_stream_case(64, 0, 1'b1, 1'b1, 1'b1, 0, 0, 0, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_003_every_other_cycle_stream();
+      run_stress_stream_case(64, 1, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_004_burst_of_eight_pattern();
+      run_stress_stream_case(64, 0, 1'b0, 1'b1, 1'b1, 8, 2, 0, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_005_clean_hiterr_free_soak();
+      run_stress_stream_case(128, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_006_mixed_hiterr_soak_keep_disabled();
+      run_stress_stream_case(128, 0, 1'b0, 1'b1, 1'b1, 0, 0, 8, 1'b0,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_007_mixed_hiterr_soak_discard_enabled();
+      run_stress_stream_case(128, 0, 1'b0, 1'b1, 1'b1, 0, 0, 8, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_008_sustained_output_ready_high();
+      run_stress_stream_case(64, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_009_sustained_output_ready_low();
+      run_stress_stream_case(64, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
+        1'b1, case_id);
+    endtask
+
+    task automatic do_stress_010_flushing_after_large_backlog();
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+      int unsigned hit_count;
+
+      hit_count = 33;
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+
+      for (int unsigned idx = 0; idx < hit_count - 1; idx++)
+        send_stress_hit(idx, 1'b0, idx == 0, 1'b0, '0, case_id);
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      send_stress_hit(hit_count - 1, 1'b0, 1'b0, 1'b1, '0, case_id);
+      send_endofrun_pulse();
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 512, case_id);
+      wait_for_beat_count(base_beats + hit_count + 4, hit_count + 1024,
+        case_id);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 1024,
+        case_id);
+      wait_for_empty_eop_count(base_empty_eops + 4, hit_count + 1024,
+        case_id);
+      expect_stress_stream_since(base_history_size, base_traces, hit_count,
+        1'b0, 0, 1'b1, case_id);
+      expect_close_markers_since(base_history_size, 4'b1111, hit_count,
+        $sformatf("%s close markers after loaded flush", case_id));
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore",
+        case_id));
+      expect_total_count(hit_count, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -5712,6 +6005,16 @@
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();
+        "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
+        "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
+        "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();
+        "STRESS_MTS_004_burst_of_eight_pattern": do_stress_004_burst_of_eight_pattern();
+        "STRESS_MTS_005_clean_hiterr_free_soak": do_stress_005_clean_hiterr_free_soak();
+        "STRESS_MTS_006_mixed_hiterr_soak_keep_disabled": do_stress_006_mixed_hiterr_soak_keep_disabled();
+        "STRESS_MTS_007_mixed_hiterr_soak_discard_enabled": do_stress_007_mixed_hiterr_soak_discard_enabled();
+        "STRESS_MTS_008_sustained_output_ready_high": do_stress_008_sustained_output_ready_high();
+        "STRESS_MTS_009_sustained_output_ready_low": do_stress_009_sustained_output_ready_low();
+        "STRESS_MTS_010_flushing_after_large_backlog": do_stress_010_flushing_after_large_backlog();
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("No explicit UVM stimulus handler for documented case '%s'", case_id))

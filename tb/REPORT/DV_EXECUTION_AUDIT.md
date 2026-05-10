@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 04:21 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 04:38 CEST
 
 ## Scope
 
@@ -12,7 +12,8 @@ overflow/bypass/latency, divider/ToT, and debug-threshold boundary batches,
 the EDGE reset and force-stop recovery batch, the EDGE
 generic/configuration, ready-edge, termination-edge, ready-X monitor-trap, and
 upgrade-readiness batches, plus the counter-rollover seed/readout, sampled CSR
-mode, and output-marker batches.
+mode, output-marker batches, and the first PROF/STRESS throughput and soak
+batch.
 This refresh also records the `bypass_lapse` per-hit RTL fix and the hit0
 monitor timing fix required for input analysis-port evidence.
 
@@ -22,9 +23,9 @@ monitor timing fix required for input analysis-port evidence.
 |---|---:|---:|---:|
 | BASIC | 130 | 130 | 130 |
 | EDGE | 131 | 131 | 131 |
-| PROF | 130 | 0 | 0 |
+| PROF | 130 | 10 | 10 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 263 | 263 |
+| Total | 521 | 273 | 273 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -32,7 +33,8 @@ Notes:
 - The old generic smoke fallback is no longer counted as evidence.
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
-- `DV_PROF.md` has no explicit UVM handlers yet.
+- `DV_PROF.md` has explicit UVM handlers for P001 through P010; the remaining
+  120 PROF stress cases still require real stimuli.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -233,6 +235,30 @@ Notes:
   terminal boundary per run stop, and `IDLE` acceptance only after terminal
   boundary work completes.
 
+## PROF Reconciliation Notes
+
+- `STRESS_MTS_001` through `STRESS_MTS_004` establish the first sustained
+  throughput baselines: dense short-mode hits, dense ToT-mode hits,
+  every-other-cycle hits, and repeated burst-of-eight microbursts. Each case
+  requires the scoreboard to observe the input analysis-port stream, output
+  payload stream, debug timestamp/burst stream, and normal/debug trace pairs
+  for every accepted payload.
+- `STRESS_MTS_005` through `STRESS_MTS_007` cover clean soak, periodic hiterr
+  keep mode, and periodic hiterr discard mode. The keep-mode bring-up first
+  exposed a testcase helper bug: the helper cleared CSR bit `0x2`
+  (`force_stop`) instead of bit `0x10` (`discard_hiterr`), causing an exact
+  16-hit discard deficit in a 128-hit stream. The helper was corrected before
+  accepting evidence; the existing `STD_MTS_019_discard_hiterr_readback`
+  control case also passed during review, so no RTL mismatch was accepted.
+- `STRESS_MTS_008` and `STRESS_MTS_009` record the current sink contract under
+  sustained traffic. With `aso_hit_type1_ready=1` and with it held low, the
+  emitted payload and debug-trace counts match exactly because the current RTL
+  ignores downstream backpressure.
+- `STRESS_MTS_010` drives a dense backlog, enters `FLUSHING`, then accepts a
+  final EOP-tagged hit and upstream `endofrun`. The accepted reference is 33
+  payload beats, four empty close markers, 33 debug traces, and 33
+  normal/debug trace pairs.
+
 ## Debug And RTL Findings From This Batch
 
 | Finding | First Seen In | Resolution |
@@ -257,19 +283,19 @@ Notes:
 ## Submodule Freshness Check
 
 The OPQ IP-core chain requested on 2026-05-09 was fetched and the parent
-pointers were advanced through the MTSP control-timing DV checkpoint before
-this EDGE-completion batch:
+pointers were advanced through the MTSP EDGE-completion checkpoint before this
+PROF/STRESS batch:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mutrig_timestamp_processor` | `f68799d` `[PATCH] Add MTSP control timing edge cases` | `origin/master` |
-| `mu3e-ip-cores` | `b0b3fd2` `[PATCH] Advance MTSP control timing DV pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
-| `musip` | `1232c43` `[PATCH] Advance Mu3e IP cores MTSP control timing pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
+| `mutrig_timestamp_processor` | `0bcac36` `[PATCH] Complete MTSP EDGE explicit coverage` | `origin/master` |
+| `mu3e-ip-cores` | `69cba7f` `[PATCH] Advance MTSP EDGE DV pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
+| `musip` | `4ed0230` `[PATCH] Advance Mu3e IP cores MTSP EDGE pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
-`musip 1232c43` -> `external/mu3e-ip-cores b0b3fd2` ->
-`packet_scheduler 245eb93` and `mutrig_timestamp_processor f68799d`.
+`musip 4ed0230` -> `external/mu3e-ip-cores 69cba7f` ->
+`packet_scheduler 245eb93` and `mutrig_timestamp_processor 0bcac36`.
 
 ## Evidence Commands
 
@@ -444,6 +470,28 @@ initial stimulus left the input packet open; after correction, the batch passed
 with payload marker checks, empty close-marker checks, and normal/debug trace
 pairing where payloads exist.
 
+Focused PROF/STRESS throughput and soak batch:
+
+```bash
+make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<P001-P010 case_id> SEED=1
+```
+
+Result: `STRESS_P001_P010_BATCH_PASS count=10`. Every case ran with
+`MTSP_DEBUG_PATH_REQUIRED=1` and a required scoreboard analysis-port summary.
+Representative summaries:
+- P001 line-rate short mode: `inputs=64 beats=64 payloads=64 debug_ts=64
+  debug_burst=64 ts_delta=64 dual_path_pairs=64 traces=64`.
+- P006 hiterr keep mode after the helper CSR-mask fix: `csr=7 inputs=128
+  beats=128 payloads=128 debug_ts=128 debug_burst=128 ts_delta=128
+  dual_path_pairs=128 traces=128`.
+- P007 hiterr discard mode: `inputs=128 beats=112 payloads=112 debug_ts=112
+  debug_burst=112 ts_delta=112 dual_path_pairs=112 traces=112`.
+- P009 ready-low sustained output: `inputs=64 beats=64 payloads=64
+  debug_ts=64 debug_burst=64 ts_delta=64 dual_path_pairs=64 traces=64`.
+- P010 flush after backlog: `inputs=33 beats=37 payloads=33 eops=4
+  empty_eops=4 debug_ts=33 debug_burst=23 ts_delta=23 dual_path_pairs=33
+  traces=33`.
+
 RTL before/after bug proof:
 
 ```bash
@@ -460,7 +508,10 @@ Final explicit-case sweep:
 make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=263`.
+Result from the previous EDGE checkpoint: `FULL_EXPLICIT_SWEEP_PASS
+count=263`. The current 273-case evidence is that sweep plus the focused
+P001-P010 stress batch above; a new all-273 ordered sweep is still useful
+before final closure.
 
 Combo terminate contract:
 
@@ -483,21 +534,21 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-vcover merge /tmp/mtsp_explicit_263.ucdb <263 dispatcher UCDBs>
-vcover report -details -code bcesft /tmp/mtsp_explicit_263.ucdb
+vcover merge /tmp/mtsp_explicit_273.ucdb <273 dispatcher UCDBs>
+vcover report -details -code bcesft /tmp/mtsp_explicit_273.ucdb
 ```
 
-Filtered instance coverage summary: `65.81%`. The DUT instance summary is
+Filtered instance coverage summary: `67.12%`. The DUT instance summary is
 statement `95.81%`, branch `94.60%`, condition `79.79%`, expression `100.00%`,
-FSM state `100.00%`, FSM transition `77.77%`, and toggle `52.49%`.
+FSM state `100.00%`, FSM transition `77.77%`, and toggle `52.98%`.
 
 Artifact check:
 
 ```text
-explicit_cases=263 missing_artifacts=0
+explicit_cases=273 missing_artifacts=0
 ```
 
-Additional checks through this EDGE-completion batch:
+Additional checks through this PROF/STRESS batch:
 
 ```bash
 git diff --check
@@ -515,7 +566,7 @@ Results:
   companion/header/footer sections. This batch updated the execution audit but
   did not migrate the whole documentation tree.
 - `bug_history_format_check.py BUG_HISTORY.md`: pass.
-- `dv_bucket_format_check.py tb`: fail on 77 legacy bucket-format errors across
+- `dv_bucket_format_check.py tb`: fail on 76 legacy bucket-format errors across
   `tb/DV_BASIC.md`, `tb/DV_EDGE.md`, `tb/DV_PROF.md`, and `tb/DV_ERROR.md`
   because those files still use the older bullet-list layout instead of the
   canonical table/header format. Recent batches corrected specific stale EDGE
@@ -524,13 +575,14 @@ Results:
 - `rtl_style_check.py mts_processor.vhd`: fail on 948 legacy alignment issues.
 - `./tb/run_mts_processor_tb.sh`: pass with `mts_processor_tb PASSED`.
 
-Current evidenced explicit cases are the 263 handlers in
+Current evidenced explicit cases are the 273 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 258 uncovered PROF and ERROR cases, then regenerate the ordered
+the remaining 248 uncovered PROF and ERROR cases, then regenerate the ordered
 coverage/report dashboard from current artifacts instead of relying on stale
-proxy rows. EDGE is now fully dispatched and evidenced.
+proxy rows. EDGE is now fully dispatched and evidenced; PROF has 10 evidenced
+stress handlers.
