@@ -12245,6 +12245,46 @@
       do_std_068_tfine_passthrough();
     endtask
 
+    task automatic do_neg_051_short_mode_nonzero_et_illegal();
+      do_corner_051_short_mode_with_eflag_high();
+    endtask
+
+    task automatic do_neg_052_tot_mode_eflag0_nonzero_et_illegal();
+      do_corner_052_tot_mode_eflag_zero_large_delta();
+    endtask
+
+    task automatic do_neg_053_positive_delta_missing_et();
+      do_corner_053_tot_mode_smallest_positive_delta();
+    endtask
+
+    task automatic do_neg_054_above_511_unsaturated_et();
+      do_corner_055_tot_mode_first_saturated_delta();
+    endtask
+
+    task automatic do_neg_055_negative_delta_wrong_clamp();
+      do_corner_056_tot_mode_negative_delta_case();
+    endtask
+
+    task automatic do_neg_056_stale_derive_tot_after_toggle();
+      do_corner_057_toggle_derive_tot_between_hits();
+    endtask
+
+    task automatic do_neg_057_stale_delay_field_after_toggle();
+      do_corner_058_toggle_delay_field_between_hits();
+    endtask
+
+    task automatic do_neg_058_eflag_pipeline_corruption();
+      do_corner_059_toggle_eflag_between_hits();
+    endtask
+
+    task automatic do_neg_059_legacy_positive_vector_regression();
+      do_std_101_replay_smoke_positive_et();
+    endtask
+
+    task automatic do_neg_060_legacy_clamp_vector_regression();
+      do_std_103_replay_smoke_clamp_vector();
+    endtask
+
     task automatic run_case_by_id();
       case (case_id)
         "STD_MTS_001_powerup_reset_idle": do_std_001_powerup_reset_idle();
@@ -12558,6 +12598,16 @@
         "NEG_MTS_048_quotient_remainder_mismatch_trap": do_neg_048_quotient_remainder_mismatch_trap();
         "NEG_MTS_049_route_channel_mismatch_trap": do_neg_049_route_channel_mismatch_trap();
         "NEG_MTS_050_tfine_corruption_trap": do_neg_050_tfine_corruption_trap();
+        "NEG_MTS_051_short_mode_nonzero_et_illegal": do_neg_051_short_mode_nonzero_et_illegal();
+        "NEG_MTS_052_tot_mode_eflag0_nonzero_et_illegal": do_neg_052_tot_mode_eflag0_nonzero_et_illegal();
+        "NEG_MTS_053_positive_delta_missing_et": do_neg_053_positive_delta_missing_et();
+        "NEG_MTS_054_above_511_unsaturated_et": do_neg_054_above_511_unsaturated_et();
+        "NEG_MTS_055_negative_delta_wrong_clamp": do_neg_055_negative_delta_wrong_clamp();
+        "NEG_MTS_056_stale_derive_tot_after_toggle": do_neg_056_stale_derive_tot_after_toggle();
+        "NEG_MTS_057_stale_delay_field_after_toggle": do_neg_057_stale_delay_field_after_toggle();
+        "NEG_MTS_058_eflag_pipeline_corruption": do_neg_058_eflag_pipeline_corruption();
+        "NEG_MTS_059_legacy_positive_vector_regression": do_neg_059_legacy_positive_vector_regression();
+        "NEG_MTS_060_legacy_clamp_vector_regression": do_neg_060_legacy_clamp_vector_regression();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
         "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
         "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();

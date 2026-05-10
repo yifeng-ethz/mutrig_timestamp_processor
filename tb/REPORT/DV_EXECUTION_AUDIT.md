@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 12:45 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 13:03 CEST
 
 ## Scope
 
@@ -23,8 +23,8 @@ entropy/control-noise batch, the PROF/STRESS legacy smoke-vector endurance
 batch, the PROF/STRESS post-upgrade drain/ready/boundary signoff batch, the
 initial ERROR/NEG illegal-control/protocol batch, and the ERROR/NEG CSR-misuse
 batch, the ERROR/NEG input-error batch, the ERROR/NEG
-ready/handshake/protocol-source batch, and the ERROR/NEG timestamp/window
-fault batch.
+ready/handshake/protocol-source batch, the ERROR/NEG timestamp/window fault
+batch, and the ERROR/NEG ToT/ET fault batch.
 This refresh also records the `bypass_lapse` per-hit RTL fix, the hit0 monitor
 timing fix required for input analysis-port evidence, and the `csr.soft_reset`
 RTL fix that clears local timing, datapath, output, and debug history. It also
@@ -45,6 +45,9 @@ fault was accepted in the X031-X040 batch.
 The X041-X050 refresh reused calibrated timestamp/window and payload-field
 reference helpers as explicit ERROR/NEG handlers, then passed focused and full
 ordered sweeps without any new math, delay, route, or TFine mismatch.
+The X051-X060 refresh reused ToT, EFlag, sampled-mode, and legacy smoke-vector
+reference helpers as explicit ERROR/NEG handlers, then passed focused and full
+ordered sweeps without any new ET, clamp, or sampled-control mismatch.
 
 ## Current Coverage Of Documented Cases
 
@@ -53,8 +56,8 @@ ordered sweeps without any new math, delay, route, or TFine mismatch.
 | BASIC | 130 | 130 | 130 |
 | EDGE | 131 | 131 | 131 |
 | PROF | 130 | 130 | 130 |
-| ERROR | 130 | 50 | 50 |
-| Total | 521 | 441 | 441 |
+| ERROR | 130 | 60 | 60 |
+| Total | 521 | 451 | 451 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -63,7 +66,7 @@ Notes:
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
 - `DV_PROF.md` has explicit UVM handlers for P001 through P130.
-- `DV_ERROR.md` has explicit UVM handlers for X001 through X050.
+- `DV_ERROR.md` has explicit UVM handlers for X001 through X060.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -466,11 +469,11 @@ checkpoint:
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
 | `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | contained by `codex/opq-feb-swb-parent-20260508`, current head before this batch `e105212` |
 | `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | contained by `yifeng-ip_sim-2604`, current head before this batch `99cd4fa` |
-| `mutrig_timestamp_processor` | local `master` with the X041-X050 timestamp/window ERROR/NEG checkpoint | source for `origin/master` and parent/top pointer publication |
+| `mutrig_timestamp_processor` | local `master` with the X051-X060 ToT/ET ERROR/NEG checkpoint | source for `origin/master` and parent/top pointer publication |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
 `packet_scheduler 245eb93` plus the local MTSP ERROR/NEG checkpoints. The
-X041-X050 checkpoint is the source for the parent and top-level gitlink commits.
+X051-X060 checkpoint is the source for the parent and top-level gitlink commits.
 
 ## Evidence Commands
 
@@ -1298,6 +1301,41 @@ No RTL or harness bug was accepted in this batch. The cases are explicit NEG
 dispatch aliases to existing calibrated reference-model helpers, so the ERROR
 bucket now carries its own log and UCDB evidence for these math traps.
 
+Focused ERROR/NEG ToT/ET batch:
+
+```bash
+make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<X051-X060 case_id> SEED=1
+```
+
+Result: `FOCUSED_NEG051_NEG060_PASS count=10`, followed by a full
+current-harness `FULL_EXPLICIT_451_PASS cases=451 elapsed=787s`. Key evidence:
+- X051/X052 prove ET remains zero in short mode and in ToT mode when `EFlag=0`,
+  even when the source fields could otherwise imply a nonzero ET.
+- X053 requires the smallest positive ToT delta to produce ET=1.
+- X054 requires a delta beyond the 9-bit ET range to saturate at 511.
+- X055 requires the agreed negative-delta clamp behavior.
+- X056/X057 toggle `derive_tot` and the delay-field selector after one accepted
+  hit. The scoreboard requires each accepted hit to use its sampled mode, with
+  two paired normal/debug traces.
+- X058 alternates `EFlag` values in ToT mode and requires ET behavior to follow
+  the per-hit flag.
+- X059/X060 replay the checked-in legacy positive and clamp/saturation vectors
+  through explicit NEG case IDs.
+
+Representative ToT/ET summaries:
+
+```text
+NEG_MTS_051: inputs=1 beats=1 dual_path_pairs=1 traces=1 ET=0
+NEG_MTS_054: inputs=1 beats=1 dual_path_pairs=1 traces=1 ET=511
+NEG_MTS_056: inputs=2 beats=2 dual_path_pairs=2 traces=2 sampled derive_tot
+NEG_MTS_057: inputs=2 beats=2 dual_path_pairs=2 traces=2 sampled delay field
+NEG_MTS_060: inputs=2 beats=2 dual_path_pairs=2 traces=2 clamp/saturation vector
+```
+
+No RTL or harness bug was accepted in this batch. The cases are explicit NEG
+dispatch aliases to existing ToT and smoke-vector reference helpers, so the
+ERROR bucket now carries its own log and UCDB evidence for these ET traps.
+
 RTL before/after bug proof:
 
 ```bash
@@ -1314,10 +1352,10 @@ Latest full explicit-case sweep and current artifact set:
 make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_441_PASS cases=441 elapsed=773s` on the final current
-UVM harness after the timestamp/window dispatcher bring-up. The per-case artifact
+Result: `FULL_EXPLICIT_451_PASS cases=451 elapsed=787s` on the final current
+UVM harness after the ToT/ET dispatcher bring-up. The per-case artifact
 audit now reports
-`ARTIFACT_AUDIT cases=441 missing_logs=0
+`ARTIFACT_AUDIT cases=451 missing_logs=0
 bad_or_incomplete_logs=0 missing_ucdb=0`.
 
 Combo terminate contract:
@@ -1341,13 +1379,13 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_441.ucdb <441 dispatcher UCDBs>
-/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_441.ucdb
+/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_451.ucdb <451 dispatcher UCDBs>
+/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_451.ucdb
 ```
 
 The merge used QuestaSim-64 `vcover` 2026.1_1 to match the UCDB generation
 version; the older Quartus-bundled 2022.4 `vcover` rejected the files as newer
-UCDBs. Filtered instance coverage summary: `71.49%`. The DUT instance summary is
+UCDBs. Filtered instance coverage summary: `71.52%`. The DUT instance summary is
 statement `97.61%`, branch `95.36%`, condition `84.82%`, expression `100.00%`,
 FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.93%`.
 The merge log was checked for source mismatch and reported none; the only
@@ -1356,10 +1394,10 @@ reported warning was the local missing `vcovkill` helper.
 Artifact check:
 
 ```text
-ARTIFACT_AUDIT cases=441 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
+ARTIFACT_AUDIT cases=451 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
 ```
 
-Additional checks through this ERROR/NEG timestamp/window batch:
+Additional checks through this ERROR/NEG ToT/ET batch:
 
 ```bash
 git diff --check
@@ -1383,30 +1421,31 @@ Results:
   text, input-error text, and X038 ready-handshake wording inside the legacy
   bucket files, and this audit now records the sink-ready,
   drain/ready/boundary, illegal-control, CSR-misuse, input-error,
-  ready/handshake, and timestamp/window evidence separately.
+  ready/handshake, timestamp/window, and ToT/ET evidence separately.
 - RTL changed in the first ERROR/NEG batch only to expose numeric run-control and
   processor-state debug mirrors for deterministic DV checkpointing; no
   functional RTL fault was accepted, and no new `BUG_HISTORY.md` entry was
   warranted. The P117 debug-burst/ts-delta check, the P121-P130 packet-close
   timing assumptions, the X001-X010 control expectations, the X011-X020 CSR
   misuse expectations, the X022-X030 input-error expectations, the
-  X031-X040 ready/handshake expectations, and the X041-X050 timestamp/window
-  expectations were aligned to the existing RTL contract after reviewing
-  normal/debug, hit0 fault, ready, and CSR analysis-port evidence.
+  X031-X040 ready/handshake expectations, the X041-X050 timestamp/window
+  expectations, and the X051-X060 ToT/ET expectations were aligned to the
+  existing RTL contract after reviewing normal/debug, hit0 fault, ready, and
+  CSR analysis-port evidence.
 - No RTL changed in the CSR-misuse, input-error, ready/handshake, or
-  timestamp/window batches, so Questa static screen was not rerun. The previous
-  static screen for the current RTL remains at
+  timestamp/window, or ToT/ET batches, so Questa static screen was not rerun.
+  The previous static screen for the current RTL remains at
   `/tmp/mtsp_static_neg001_neg010/questa_static_screen.log` with lint
   `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`.
 
-Current evidenced explicit cases are the 441 handlers in
+Current evidenced explicit cases are the 451 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 80 uncovered ERROR/NEG cases, then
+the remaining 70 uncovered ERROR/NEG cases, then
 regenerate the ordered coverage/report dashboard from current artifacts instead
 of relying on stale proxy rows. EDGE is now fully dispatched and evidenced;
 PROF has 130 evidenced stress handlers.
