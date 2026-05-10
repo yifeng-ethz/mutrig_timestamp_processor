@@ -12205,6 +12205,46 @@
       do_corner_001_reset_release_with_ctrl_valid();
     endtask
 
+    task automatic do_neg_041_negative_debug_ts_error();
+      do_corner_071_debug_ts_minus_one();
+    endtask
+
+    task automatic do_neg_042_zero_debug_ts_error();
+      do_corner_072_debug_ts_zero();
+    endtask
+
+    task automatic do_neg_043_equal_expected_latency_error();
+      do_corner_075_debug_ts_expected_exact();
+    endtask
+
+    task automatic do_neg_044_above_expected_latency_error();
+      do_corner_076_debug_ts_expected_plus_one();
+    endtask
+
+    task automatic do_neg_045_zero_window_fault_everything();
+      do_std_021_expected_latency_zero_write();
+    endtask
+
+    task automatic do_neg_046_bypass_toggle_midstream_mismatch();
+      do_corner_039_bypass_toggle_after_hit_accept();
+    endtask
+
+    task automatic do_neg_047_padding_upper_regression_trap();
+      do_corner_032_t_gray_one_above_upper();
+    endtask
+
+    task automatic do_neg_048_quotient_remainder_mismatch_trap();
+      do_corner_045_remainder_four_case();
+    endtask
+
+    task automatic do_neg_049_route_channel_mismatch_trap();
+      do_corner_050_route_change_across_boundary();
+    endtask
+
+    task automatic do_neg_050_tfine_corruption_trap();
+      do_std_068_tfine_passthrough();
+    endtask
+
     task automatic run_case_by_id();
       case (case_id)
         "STD_MTS_001_powerup_reset_idle": do_std_001_powerup_reset_idle();
@@ -12508,6 +12548,16 @@
         "NEG_MTS_038_ctrl_driver_assumes_stateful_ready": do_neg_038_ctrl_driver_assumes_stateful_ready();
         "NEG_MTS_039_hit_source_changes_payload_midbeat": do_neg_039_hit_source_changes_payload_midbeat();
         "NEG_MTS_040_ctrl_valid_on_reset_edge": do_neg_040_ctrl_valid_on_reset_edge();
+        "NEG_MTS_041_negative_debug_ts_error": do_neg_041_negative_debug_ts_error();
+        "NEG_MTS_042_zero_debug_ts_error": do_neg_042_zero_debug_ts_error();
+        "NEG_MTS_043_equal_expected_latency_error": do_neg_043_equal_expected_latency_error();
+        "NEG_MTS_044_above_expected_latency_error": do_neg_044_above_expected_latency_error();
+        "NEG_MTS_045_zero_window_fault_everything": do_neg_045_zero_window_fault_everything();
+        "NEG_MTS_046_bypass_toggle_midstream_mismatch": do_neg_046_bypass_toggle_midstream_mismatch();
+        "NEG_MTS_047_padding_upper_regression_trap": do_neg_047_padding_upper_regression_trap();
+        "NEG_MTS_048_quotient_remainder_mismatch_trap": do_neg_048_quotient_remainder_mismatch_trap();
+        "NEG_MTS_049_route_channel_mismatch_trap": do_neg_049_route_channel_mismatch_trap();
+        "NEG_MTS_050_tfine_corruption_trap": do_neg_050_tfine_corruption_trap();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
         "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
         "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();
