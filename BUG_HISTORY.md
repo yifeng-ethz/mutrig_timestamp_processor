@@ -41,8 +41,45 @@ Historical formal note:
 | [BUG-004-R](#bug-004-r-hit-ready-datapath-sampling-and-counters-could-diverge-during-bring-up) | R | soft error | `common (routine bring-up)` | fixed | `STD_MTS_006_running_from_sync`, `STD_MTS_030_total_counter_counts_all_valid`, `STD_MTS_038_force_stop_blocks_acceptance`, `NEG_MTS_028_valid_beat_under_force_stop` | `67ef6ac` | Hit ready, datapath sampling, and CSR counters could disagree around stale ready/accept windows. |
 | [BUG-005-R](#bug-005-r-control-commands-could-be-decoded-while-asi-ctrl-ready-0) | R | hard stuck error | `common (routine terminate-to-idle control)` | fixed | `STD_MTS_129_upgrade_case_idle_after_boundary_only` | `e61fc9f` | Control words could be decoded while `asi_ctrl_ready=0`, allowing premature IDLE acceptance before close markers. |
 | [BUG-006-H](#bug-006-h-counter-debug-report-saturated-near-rollover) | H | non-datapath-refactor | `directed-only (rollover debug observability)` | fixed | `STD_MTS_106_total_counter_hi_rollover` | `94d6320` | Counter debug report text truncated `total_pre` through an integer conversion near rollover. |
+| [BUG-007-R](#bug-007-r-csr-mode-fields-were-live-for-in-flight-hits) | R | soft error | `corner-only (CSR mode toggle while datapath pipeline is active)` | fixed | `CORNER_MTS_057_toggle_derive_tot_between_hits`, `CORNER_MTS_058_toggle_delay_field_between_hits` | `1e0d0cb` | CSR mode writes could reinterpret hits already accepted into the pipeline. |
 
 ## 2026-05-10
+
+### BUG-007-R: CSR mode fields were live for in-flight hits
+
+- First seen:
+  - UVM case `CORNER_MTS_057_toggle_derive_tot_between_hits`
+  - UVM case `CORNER_MTS_058_toggle_delay_field_between_hits`
+- Symptom:
+  - the before-fix E057 run accepted one hit in short mode, wrote `derive_tot=1`, and then produced `ET_1N6=4` for that first in-flight hit instead of the sampled short-mode value `0`
+  - the before-fix E058 run accepted one hit with the T delay source, wrote the E delay source, and then asserted `aso_hit_type1_error` for the first in-flight hit even though its sampled T-path delay was inside the expected-latency window
+- Root cause:
+  - `csr.derive_tot` was read live in the ToT calculation stage instead of being carried with the accepted hit
+  - `csr.delay_ts_field_use_t` was read live in the delay-error, `debug_ts`, and `debug_burst` stages instead of being carried with the accepted hit
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - RTL now latches `derive_tot` and `delay_ts_field_use_t` on `asi_hit_type0_accept && hit_in_ok`
+    - those sampled fields are carried through `hit_in`, `hit_padding`, `hit_prediv`, `hit_totcalc`, and the divider pipeline so normal payload and debug sideband math use the same per-hit mode decision
+  - before_fix_outcome:
+    - `make -C tb/uvm prove_delta TEST=mtsp_doc_case_test CASE_ID=CORNER_MTS_057_toggle_derive_tot_between_hits SEED=1` fails on the before RTL with `expected ET_1N6=0 got 4`
+    - `make -C tb/uvm prove_delta TEST=mtsp_doc_case_test CASE_ID=CORNER_MTS_058_toggle_delay_field_between_hits SEED=1` fails on the before RTL with `expected hit_type1 error=0 got 1`
+  - after_fix_outcome:
+    - both `prove_delta` commands pass on the after RTL
+    - each case produces two payloads, two debug traces, and two normal/debug trace pairs with `debug_path_required=1`
+    - E057 proves the first hit remains short-mode `ET_1N6=0` and the second hit uses ToT `ET_1N6=4`
+    - E058 proves the first hit remains T-delay clean and the second hit uses E-delay error classification
+  - potential_hazard:
+    - fixed for the current single-clock `derive_tot` and `delay_ts_field_use_t` pipeline contract; other runtime mode fields such as `bypass_lapse` remain covered by separate EDGE work
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - the sampled-mode batch advanced documented evidence to 221 explicit cases and filtered merged coverage to `66.26%`
+  - `FULL_EXPLICIT_SWEEP_PASS count=221`
+  - the artifact audit passed with `explicit_cases=221 missing_artifacts=0`
+- Commit:
+  - `1e0d0cb` (`[PATCH] Sample MTSP CSR modes per hit`)
 
 ### BUG-006-H: Counter debug report saturated near rollover
 
