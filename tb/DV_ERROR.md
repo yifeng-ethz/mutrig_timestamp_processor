@@ -6,16 +6,16 @@
 
 ## 1. Illegal Run-Control Cases
 
-- `X001 | NEG_MTS_001_all_zero_ctrl_word`: Drive control word `000000000`; expect `run_state_cmd=ERROR` and no silent legal-state interpretation. Covers the illegal-zero command.
-- `X002 | NEG_MTS_002_multi_hot_ctrl_word`: Drive a multi-hot control word such as `000001100`; expect `run_state_cmd=ERROR` and no silent legal-state interpretation. Covers the illegal-multi-hot command.
+- `X001 | NEG_MTS_001_all_zero_ctrl_word`: Drive control word `000000000`; expect the numeric run-control debug mirror to report `ERROR` and no silent legal-state interpretation. Covers the illegal-zero command.
+- `X002 | NEG_MTS_002_multi_hot_ctrl_word`: Drive a multi-hot control word such as `000001100`; expect the numeric run-control debug mirror to report `ERROR` and no silent legal-state interpretation. Covers the illegal-multi-hot command.
 - `X003 | NEG_MTS_003_illegal_ctrl_during_running`: Drive an illegal control word while traffic is flowing in `RUNNING`; verify later legal control commands still work. Covers hostile command injection in the active state.
-- `X004 | NEG_MTS_004_illegal_ctrl_during_flushing`: Drive an illegal control word while in `FLUSHING`; verify the current processor state remains deterministic. Covers hostile command injection during stop drain.
+- `X004 | NEG_MTS_004_illegal_ctrl_during_flushing`: Drive an illegal control word while `FLUSHING` holds control ready low; require it to be ignored until the stop drain completes. Covers hostile command injection during stop drain.
 - `X005 | NEG_MTS_005_ctrl_valid_high_data_changes`: Hold `asi_ctrl_valid=1` while changing `asi_ctrl_data`; require the driver/SVA layer to flag the protocol violation. Covers source misuse.
 - `X006 | NEG_MTS_006_ctrl_data_unknown_injection`: Inject X/Z into `asi_ctrl_data` in simulation and require monitor/SVA detection. Covers robustness against undefined control stimulus.
 - `X007 | NEG_MTS_007_running_without_sync_documented_nonstandard`: Jump directly to `RUNNING` without `RUN_PREPARE/SYNC`; tag it as a supported-but-nonstandard case so later regressions do not misclassify it. Covers a deliberate contract exception.
 - `X008 | NEG_MTS_008_terminate_from_idle`: Send `TERMINATING` directly from `IDLE`; expect no fake boundary or output activity. Covers a nonsensical stop command.
 - `X009 | NEG_MTS_009_link_test_during_running`: Send `LINK_TEST` during `RUNNING`; verify the unhandled command does not silently corrupt the processor state. Covers an unsupported in-run command.
-- `X010 | NEG_MTS_010_always_ready_masks_incomplete_work`: Tag the current always-ready control sink as a negative control-plane contract because it acknowledges commands before work completion. Anchors the upgrade motivation.
+- `X010 | NEG_MTS_010_always_ready_masks_incomplete_work`: Regress the former always-ready control gap; require terminate acknowledgement to wait for close-marker completion. Anchors the upgrade fix.
 
 ## 2. CSR Misuse Cases
 

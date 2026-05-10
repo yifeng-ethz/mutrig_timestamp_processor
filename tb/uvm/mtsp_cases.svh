@@ -11360,6 +11360,237 @@
       run_full_signoff_mixed_soak_case(case_id);
     endtask
 
+    task automatic expect_run_state_cmd_value(int unsigned expected_value,
+                                              string ctx);
+      int unsigned observed_value;
+
+      read_dut_uint("/tb_top/dut/run_state_cmd_code", observed_value, ctx);
+      if (observed_value != expected_value)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected run_state_cmd_code value %0d got %0d",
+            ctx, expected_value, observed_value))
+    endtask
+
+    task automatic force_tb_hdl(string slash_path,
+                                string dot_path,
+                                uvm_hdl_data_t value,
+                                string ctx);
+      if (!uvm_hdl_force(slash_path, value) &&
+          !uvm_hdl_force(dot_path, value))
+        `uvm_fatal("MTSP_HDL",
+          $sformatf("%s could not force HDL path %s or %s",
+            ctx, slash_path, dot_path))
+    endtask
+
+    task automatic release_tb_hdl(string slash_path,
+                                  string dot_path,
+                                  string ctx);
+      if (!uvm_hdl_release(slash_path) &&
+          !uvm_hdl_release(dot_path))
+        `uvm_fatal("MTSP_HDL",
+          $sformatf("%s could not release HDL path %s or %s",
+            ctx, slash_path, dot_path))
+    endtask
+
+    task automatic expect_illegal_ctrl_word_recovery(logic [8:0] illegal_cmd,
+                                                     bit active_running,
+                                                     string ctx);
+      int unsigned base_beats;
+      bit [31:0]   csr_word;
+
+      wait_for_reset_release();
+      if (active_running)
+        run_start();
+      base_beats = m_env.m_scb.beat_count;
+      pulse_ctrl(illegal_cmd, $sformatf("%s illegal ctrl", ctx));
+      wait_cycles(3);
+      expect_run_state_cmd_value(9, $sformatf("%s run_state ERROR", ctx));
+      csr_read(3'd0, csr_word);
+      if (!active_running && csr_word[0] !== 1'b0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s illegal idle command must not enter RUNNING csr0=0x%08h",
+            ctx, csr_word))
+      if (active_running && csr_word[0] !== 1'b1)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s illegal active command must not leave RUNNING csr0=0x%08h",
+            ctx, csr_word))
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 8,
+        $sformatf("%s illegal command output quiet", ctx));
+
+      if (!active_running)
+        run_start();
+      wait_for_hit0_ready(1'b1, 32,
+        $sformatf("%s legal recovery ready", ctx));
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s legal hit after illegal ctrl", ctx));
+      expect_last_trace_pair($sformatf("%s recovery trace", ctx));
+    endtask
+
+    task automatic run_illegal_ctrl_during_flushing_case(string ctx);
+      int unsigned base_history;
+      int unsigned base_empty_eops;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      base_history    = m_env.m_scb.history.size();
+      base_traces     = m_env.m_scb.trace_history.size();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b1);
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", ctx));
+      pulse_ctrl(CTRL_RUNNING | CTRL_TERMINATING,
+        $sformatf("%s illegal flushing ctrl", ctx));
+      wait_cycles(2);
+      expect_run_state_cmd_value(4,
+        $sformatf("%s illegal flushing ignored while ready-low", ctx));
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s retained flushing payload trace", ctx));
+      wait_for_empty_eop_count(base_empty_eops + 4, 256,
+        $sformatf("%s close markers after illegal flushing ctrl", ctx));
+      expect_payload_math_at(base_history, 2, 0, 0, 0, 1, 0,
+        $sformatf("%s retained payload", ctx));
+      expect_trace_pair_at(base_traces,
+        $sformatf("%s retained payload trace", ctx));
+      expect_close_markers_since(base_history, 4'b1111, 1,
+        $sformatf("%s close detail", ctx));
+      wait_for_ctrl_ready_high(256,
+        $sformatf("%s ready restore after illegal flushing ctrl", ctx));
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(2);
+      expect_hit0_ready(1'b0, $sformatf("%s post-IDLE ready", ctx));
+    endtask
+
+    task automatic run_ctrl_valid_data_change_violation_case(string ctx);
+      bit violation_seen;
+
+      wait_for_reset_release();
+      violation_seen = 1'b0;
+      @(posedge ctrl_vif.clk);
+      force_tb_hdl("/tb_top/ctrl_if/valid", "/tb_top.ctrl_if.valid",
+        1, $sformatf("%s force ctrl valid", ctx));
+      force_tb_hdl("/tb_top/ctrl_if/data", "/tb_top.ctrl_if.data",
+        CTRL_RUN_PREPARE, $sformatf("%s force ctrl prepare", ctx));
+      @(posedge ctrl_vif.clk);
+      force_tb_hdl("/tb_top/ctrl_if/data", "/tb_top.ctrl_if.data",
+        CTRL_SYNC, $sformatf("%s force ctrl sync", ctx));
+      if (ctrl_vif.valid === 1'b1 && ctrl_vif.data === CTRL_SYNC)
+        violation_seen = 1'b1;
+      @(posedge ctrl_vif.clk);
+      release_tb_hdl("/tb_top/ctrl_if/valid", "/tb_top.ctrl_if.valid",
+        $sformatf("%s release ctrl valid", ctx));
+      release_tb_hdl("/tb_top/ctrl_if/data", "/tb_top.ctrl_if.data",
+        $sformatf("%s release ctrl data", ctx));
+      drive_global_reset(4, 4);
+      if (!violation_seen)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s did not observe forced ctrl data change while valid",
+            ctx))
+      expect_no_new_beats(0, 0, 0, 8, ctx);
+    endtask
+
+    task automatic run_ctrl_data_unknown_violation_case(string ctx);
+      bit violation_seen;
+
+      wait_for_reset_release();
+      violation_seen = 1'b0;
+      @(posedge ctrl_vif.clk);
+      force_tb_hdl("/tb_top/ctrl_if/valid", "/tb_top.ctrl_if.valid",
+        1, $sformatf("%s force ctrl valid", ctx));
+      force_tb_hdl("/tb_top/ctrl_if/data", "/tb_top.ctrl_if.data",
+        'x, $sformatf("%s force ctrl X", ctx));
+      @(posedge ctrl_vif.clk);
+      if (ctrl_vif.valid === 1'b1 && $isunknown(ctrl_vif.data))
+        violation_seen = 1'b1;
+      release_tb_hdl("/tb_top/ctrl_if/valid", "/tb_top.ctrl_if.valid",
+        $sformatf("%s release ctrl valid", ctx));
+      release_tb_hdl("/tb_top/ctrl_if/data", "/tb_top.ctrl_if.data",
+        $sformatf("%s release ctrl data", ctx));
+      drive_global_reset(4, 4);
+      if (!violation_seen)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s did not observe forced X/Z ctrl data while valid",
+            ctx))
+      expect_no_new_beats(0, 0, 0, 8, ctx);
+    endtask
+
+    task automatic do_neg_001_all_zero_ctrl_word();
+      expect_illegal_ctrl_word_recovery(9'b000000000, 1'b0, case_id);
+    endtask
+
+    task automatic do_neg_002_multi_hot_ctrl_word();
+      expect_illegal_ctrl_word_recovery(CTRL_RUNNING | CTRL_TERMINATING,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_neg_003_illegal_ctrl_during_running();
+      expect_illegal_ctrl_word_recovery(CTRL_RUNNING | CTRL_TERMINATING,
+        1'b1, case_id);
+    endtask
+
+    task automatic do_neg_004_illegal_ctrl_during_flushing();
+      run_illegal_ctrl_during_flushing_case(case_id);
+    endtask
+
+    task automatic do_neg_005_ctrl_valid_high_data_changes();
+      run_ctrl_valid_data_change_violation_case(case_id);
+    endtask
+
+    task automatic do_neg_006_ctrl_data_unknown_injection();
+      run_ctrl_data_unknown_violation_case(case_id);
+    endtask
+
+    task automatic do_neg_007_running_without_sync_documented_nonstandard();
+      do_std_003_direct_running_entry_allowed();
+    endtask
+
+    task automatic do_neg_008_terminate_from_idle();
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      base_beats      = m_env.m_scb.beat_count;
+      base_eops       = m_env.m_scb.eop_count;
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING_FROM_IDLE");
+      wait_cycles(8);
+      expect_hit0_ready(1'b0, case_id);
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 16,
+        case_id);
+      expect_total_count(48'd0, case_id);
+      expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_neg_009_link_test_during_running();
+      int unsigned base_beats;
+      bit [31:0]   csr_word;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_LINK_TEST, "LINK_TEST_RUNNING");
+      wait_cycles(4);
+      csr_read(3'd0, csr_word);
+      if (csr_word[0] !== 1'b1)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s LINK_TEST must not leave RUNNING csr0=0x%08h",
+            case_id, csr_word))
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s legal hit after LINK_TEST", case_id));
+      expect_last_trace_pair($sformatf("%s LINK_TEST containment trace",
+        case_id));
+    endtask
+
+    task automatic do_neg_010_always_ready_masks_incomplete_work();
+      do_corner_128_accept_command_vs_complete_work_upgrade();
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -11631,6 +11862,16 @@
         "CORNER_MTS_129_one_boundary_per_run_upgrade": do_corner_129_one_boundary_per_run_upgrade();
         "CORNER_MTS_130_idle_after_boundary_upgrade": do_corner_130_idle_after_boundary_upgrade();
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
+        "NEG_MTS_001_all_zero_ctrl_word": do_neg_001_all_zero_ctrl_word();
+        "NEG_MTS_002_multi_hot_ctrl_word": do_neg_002_multi_hot_ctrl_word();
+        "NEG_MTS_003_illegal_ctrl_during_running": do_neg_003_illegal_ctrl_during_running();
+        "NEG_MTS_004_illegal_ctrl_during_flushing": do_neg_004_illegal_ctrl_during_flushing();
+        "NEG_MTS_005_ctrl_valid_high_data_changes": do_neg_005_ctrl_valid_high_data_changes();
+        "NEG_MTS_006_ctrl_data_unknown_injection": do_neg_006_ctrl_data_unknown_injection();
+        "NEG_MTS_007_running_without_sync_documented_nonstandard": do_neg_007_running_without_sync_documented_nonstandard();
+        "NEG_MTS_008_terminate_from_idle": do_neg_008_terminate_from_idle();
+        "NEG_MTS_009_link_test_during_running": do_neg_009_link_test_during_running();
+        "NEG_MTS_010_always_ready_masks_incomplete_work": do_neg_010_always_ready_masks_incomplete_work();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();

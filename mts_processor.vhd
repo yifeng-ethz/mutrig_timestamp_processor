@@ -49,6 +49,8 @@
 --      Date: May 10, 2026
 -- Revision: 5.18 (Allow legal run-control recovery after an illegal ERROR command)
 --      Date: May 10, 2026
+-- Revision: 5.19 (Expose numeric run-control state mirrors for DV checkpointing)
+--      Date: May 10, 2026
 -- Version : 26.0.12
 -- Date    : 20260510
 -- Change  : Register the corrected divider numerators in hit_prediv, then split divider launch and
@@ -382,6 +384,8 @@ architecture rtl of mts_processor is
     
     type run_state_t is (IDLE, RUN_PREPARE, SYNC, RUNNING, TERMINATING, LINK_TEST, SYNC_TEST, RESET, OUT_OF_DAQ, ERROR);
     signal run_state_cmd	: run_state_t;
+    signal run_state_cmd_code : std_logic_vector(3 downto 0);
+    signal processor_state_code : std_logic_vector(2 downto 0);
     signal terminating_done : std_logic;
     signal ctrl_ready_comb  : std_logic;
     
@@ -667,6 +671,23 @@ begin
     asi_ctrl_ready <= ctrl_ready_comb;
     asi_hit_type0_ready <= asi_hit_type0_ready_i;
     asi_hit_type0_accept <= asi_hit_type0_valid and asi_hit_type0_ready_i;
+    with run_state_cmd select run_state_cmd_code <=
+                      x"0" when IDLE,
+                      x"1" when RUN_PREPARE,
+                      x"2" when SYNC,
+                      x"3" when RUNNING,
+                      x"4" when TERMINATING,
+                      x"5" when LINK_TEST,
+                      x"6" when SYNC_TEST,
+                      x"7" when RESET,
+                      x"8" when OUT_OF_DAQ,
+                      x"9" when ERROR;
+    with processor_state select processor_state_code <=
+                      "000" when RUNNING,
+                      "001" when RESET,
+                      "010" when IDLE,
+                      "011" when FLUSHING,
+                      "100" when ERROR;
     ctrl_ready_comb <= '0' when i_rst = '1' else
                       '1' when (run_state_cmd = IDLE and processor_state = IDLE) else
                       '1' when (run_state_cmd = RUN_PREPARE and processor_state = RESET and reset_flow = SCLR) else
