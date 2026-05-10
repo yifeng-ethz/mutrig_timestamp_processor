@@ -8,6 +8,7 @@ package mtsp_env_pkg;
   `uvm_analysis_imp_decl(_hit0)
   `uvm_analysis_imp_decl(_hit1)
   `uvm_analysis_imp_decl(_dbg)
+  `uvm_analysis_imp_decl(_ready)
 
   localparam logic [8:0] CTRL_IDLE        = 9'b000000001;
   localparam logic [8:0] CTRL_RUN_PREPARE = 9'b000000010;
@@ -138,6 +139,17 @@ package mtsp_env_pkg;
     time       time_ps;
 
     function new(string name = "mtsp_hit1_obs_item");
+      super.new(name);
+    endfunction
+  endclass
+
+  class mtsp_ready_obs_item extends uvm_object;
+    `uvm_object_utils(mtsp_ready_obs_item)
+
+    logic ready;
+    time  time_ps;
+
+    function new(string name = "mtsp_ready_obs_item");
       super.new(name);
     endfunction
   endclass
@@ -484,6 +496,44 @@ package mtsp_env_pkg;
     endtask
   endclass
 
+  class mtsp_hit1_ready_monitor extends uvm_monitor;
+    `uvm_component_utils(mtsp_hit1_ready_monitor)
+
+    virtual mtsp_hit1_if.mon vif;
+    uvm_analysis_port #(mtsp_ready_obs_item) ap;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      ap = new("ap", this);
+      if (!uvm_config_db#(virtual mtsp_hit1_if.mon)::get(this, "", "vif", vif))
+        `uvm_fatal("MTSP_READY_MON", "Missing mtsp_hit1_if.mon")
+    endfunction
+
+    task run_phase(uvm_phase phase);
+      mtsp_ready_obs_item obs;
+
+      forever begin
+        @(posedge vif.clk);
+        #1ps;
+        if (vif.rst === 1'b1)
+          continue;
+
+        if ($isunknown(vif.ready)) begin
+          obs         = mtsp_ready_obs_item::type_id::create("ready_obs");
+          obs.ready   = vif.ready;
+          obs.time_ps = $time;
+          ap.write(obs);
+          `uvm_warning("MTSP_READY_X",
+            $sformatf("hit_type1 ready is unknown at %0t", $time))
+        end
+      end
+    endtask
+  endclass
+
   class mtsp_dbg_monitor extends uvm_monitor;
     `uvm_component_utils(mtsp_dbg_monitor)
 
@@ -544,6 +594,7 @@ package mtsp_env_pkg;
     uvm_analysis_imp_hit0 #(mtsp_hit0_obs_item, mtsp_scoreboard) hit0_imp;
     uvm_analysis_imp_hit1 #(mtsp_hit1_obs_item, mtsp_scoreboard) hit1_imp;
     uvm_analysis_imp_dbg  #(mtsp_dbg_obs_item,  mtsp_scoreboard) dbg_imp;
+    uvm_analysis_imp_ready #(mtsp_ready_obs_item, mtsp_scoreboard) ready_imp;
 
     int unsigned beat_count;
     int unsigned csr_access_count;
@@ -554,6 +605,7 @@ package mtsp_env_pkg;
     int unsigned debug_ts_count;
     int unsigned debug_burst_count;
     int unsigned ts_delta_count;
+    int unsigned hit1_ready_unknown_count;
     int unsigned dual_path_pair_count;
     int unsigned trace_seq;
     bit [31:0]   expected_latency;
@@ -569,6 +621,7 @@ package mtsp_env_pkg;
     mtsp_dbg_obs_item  debug_ts_history[$];
     mtsp_dbg_obs_item  debug_burst_history[$];
     mtsp_dbg_obs_item  ts_delta_history[$];
+    mtsp_ready_obs_item ready_unknown_history[$];
     mtsp_hit_trace_item trace_history[$];
 
     mtsp_hit1_obs_item pending_hit1[$];
@@ -587,6 +640,7 @@ package mtsp_env_pkg;
       hit0_imp         = new("hit0_imp", this);
       hit1_imp         = new("hit1_imp", this);
       dbg_imp          = new("dbg_imp", this);
+      ready_imp        = new("ready_imp", this);
       beat_count       = 0;
       csr_access_count = 0;
       payload_beat_count = 0;
@@ -596,6 +650,7 @@ package mtsp_env_pkg;
       debug_ts_count   = 0;
       debug_burst_count = 0;
       ts_delta_count   = 0;
+      hit1_ready_unknown_count = 0;
       dual_path_pair_count = 0;
       trace_seq        = 0;
       expected_latency = 32'd2000;
@@ -713,6 +768,11 @@ package mtsp_env_pkg;
       endcase
     endfunction
 
+    function void write_ready(mtsp_ready_obs_item item);
+      ready_unknown_history.push_back(item);
+      hit1_ready_unknown_count++;
+    endfunction
+
     function void report_phase(uvm_phase phase);
       if (debug_path_required && payload_beat_count > 0 && debug_ts_count == 0)
         `uvm_error("MTSP_DUAL_PATH",
@@ -723,10 +783,11 @@ package mtsp_env_pkg;
             pending_hit1.size(), pending_debug_ts.size()))
 
       `uvm_info("MTSP_SCB",
-        $sformatf("csr=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d dual_path_pairs=%0d traces=%0d debug_path_required=%0b expected_latency=%0d",
+        $sformatf("csr=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d ready_x=%0d dual_path_pairs=%0d traces=%0d debug_path_required=%0b expected_latency=%0d",
           csr_access_count, input_accept_count, beat_count, payload_beat_count, eop_count,
           empty_eop_count, debug_ts_count, debug_burst_count, ts_delta_count,
-          dual_path_pair_count, trace_history.size(), debug_path_required, expected_latency),
+          hit1_ready_unknown_count, dual_path_pair_count, trace_history.size(),
+          debug_path_required, expected_latency),
         UVM_LOW)
     endfunction
   endclass
@@ -743,6 +804,7 @@ package mtsp_env_pkg;
     mtsp_hit0_driver                m_hit0_drv;
     mtsp_hit0_monitor               m_hit0_mon;
     mtsp_hit1_monitor               m_hit1_mon;
+    mtsp_hit1_ready_monitor         m_ready_mon;
     mtsp_dbg_monitor                m_dbg_mon;
     mtsp_scoreboard                 m_scb;
 
@@ -761,6 +823,7 @@ package mtsp_env_pkg;
       m_hit0_drv = mtsp_hit0_driver::type_id::create("m_hit0_drv", this);
       m_hit0_mon = mtsp_hit0_monitor::type_id::create("m_hit0_mon", this);
       m_hit1_mon = mtsp_hit1_monitor::type_id::create("m_hit1_mon", this);
+      m_ready_mon = mtsp_hit1_ready_monitor::type_id::create("m_ready_mon", this);
       m_dbg_mon  = mtsp_dbg_monitor::type_id::create("m_dbg_mon", this);
       m_scb      = mtsp_scoreboard::type_id::create("m_scb", this);
     endfunction
@@ -773,6 +836,7 @@ package mtsp_env_pkg;
       m_csr_mon.ap.connect(m_scb.csr_imp);
       m_hit0_mon.ap.connect(m_scb.hit0_imp);
       m_hit1_mon.ap.connect(m_scb.hit1_imp);
+      m_ready_mon.ap.connect(m_scb.ready_imp);
       m_dbg_mon.ap.connect(m_scb.dbg_imp);
     endfunction
   endclass

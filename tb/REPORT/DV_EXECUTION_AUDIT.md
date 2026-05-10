@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 03:58 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 04:21 CEST
 
 ## Scope
 
@@ -9,9 +9,10 @@ dual normal/debug monitor path, replacing the old generic documented-case
 fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
 adding the first EDGE control-timing, CSR/input-protocol,
 overflow/bypass/latency, divider/ToT, and debug-threshold boundary batches,
-the EDGE reset and force-stop recovery batch, and the EDGE
-generic/configuration, ready-edge, termination-edge, counter-rollover
-seed/readout, sampled CSR mode, and output-marker batches.
+the EDGE reset and force-stop recovery batch, the EDGE
+generic/configuration, ready-edge, termination-edge, ready-X monitor-trap, and
+upgrade-readiness batches, plus the counter-rollover seed/readout, sampled CSR
+mode, and output-marker batches.
 This refresh also records the `bypass_lapse` per-hit RTL fix and the hit0
 monitor timing fix required for input analysis-port evidence.
 
@@ -20,10 +21,10 @@ monitor timing fix required for input analysis-port evidence.
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
 | BASIC | 130 | 130 | 130 |
-| EDGE | 131 | 119 | 119 |
+| EDGE | 131 | 131 | 131 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 251 | 251 |
+| Total | 521 | 263 | 263 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -113,6 +114,11 @@ Notes:
   `asi_ctrl_data` while `valid=0`. The batch adds a UVM control-driver
   gap/hold mode so E010 can prove the RTL gates decode on `valid` rather than
   merely seeing a stale command word on the bus.
+- `CORNER_MTS_105_output_ready_unknown_monitor_trap` now has a dedicated
+  `hit_type1.ready` monitor feeding a scoreboard analysis port. The case drives
+  `ready=X` during a real payload transfer, requires `ready_x=12` observations
+  in the scoreboard summary, and still requires the emitted payload to have a
+  paired normal/debug trace.
 - `CORNER_MTS_012_expected_latency_one` calibrates the next output arrival,
   crafts a raw ROM symbol that produces `debug_delta=1`, and proves the strict
   `delta < expected_latency` comparison flags the equality case as an error.
@@ -209,9 +215,7 @@ Notes:
   close-marker beats while sink ready is low or toggling. `CORNER_MTS_106`
   through `CORNER_MTS_110` cover hit-input ready state semantics in
   `FLUSHING`, `IDLE`, `RESET/SCLR`, `RESET/SYNC`, and output quietness outside
-  `RUNNING`/`FLUSHING`. `CORNER_MTS_105` remains open because its intended
-  result is an assertion/monitor trap for illegal `ready=X`, which needs a
-  separate expected-error execution mode rather than a normal passing UVM run.
+  `RUNNING`/`FLUSHING`.
 - `CORNER_MTS_111` through `CORNER_MTS_119` now cover current termination
   edges: no close markers before explicit upstream `endofrun`, tail EOP beats
   accepted one cycle before or on the same cycle as `TERMINATING`, post-EOP
@@ -221,6 +225,13 @@ Notes:
   and non-SOP/non-EOP flushing tail hits. These cases bind every payload to a
   normal/debug trace where a payload is expected and separately require the
   close-marker train.
+- `CORNER_MTS_120` through `CORNER_MTS_130` now close the documented
+  upgrade-readiness EDGE IDs. They prove stateful control-ready gaps across
+  prepare/sync/flush/terminate, upstream `endofrun` driven synthetic terminal
+  boundaries, EOP-alignment survival, inert CRCERR/frame-corrupt behavior
+  during termination, command-accept versus work-completion timing, one
+  terminal boundary per run stop, and `IDLE` acceptance only after terminal
+  boundary work completes.
 
 ## Debug And RTL Findings From This Batch
 
@@ -246,19 +257,19 @@ Notes:
 ## Submodule Freshness Check
 
 The OPQ IP-core chain requested on 2026-05-09 was fetched and the parent
-pointers were advanced through the MTSP bypass-control RTL/DV checkpoint after
-the overflow/bypass batch:
+pointers were advanced through the MTSP control-timing DV checkpoint before
+this EDGE-completion batch:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mutrig_timestamp_processor` | `3245939` `[PATCH] Record MTSP bypass DV evidence` | `origin/master` |
-| `mu3e-ip-cores` | `b6f23e2` `[PATCH] Advance MTSP bypass DV pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
-| `musip` | `278fbaf` `[PATCH] Advance Mu3e IP cores MTSP bypass pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
+| `mutrig_timestamp_processor` | `f68799d` `[PATCH] Add MTSP control timing edge cases` | `origin/master` |
+| `mu3e-ip-cores` | `b0b3fd2` `[PATCH] Advance MTSP control timing DV pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
+| `musip` | `1232c43` `[PATCH] Advance Mu3e IP cores MTSP control timing pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
-`musip 278fbaf` -> `external/mu3e-ip-cores b6f23e2` ->
-`packet_scheduler 245eb93` and `mutrig_timestamp_processor 3245939`.
+`musip 1232c43` -> `external/mu3e-ip-cores b0b3fd2` ->
+`packet_scheduler 245eb93` and `mutrig_timestamp_processor f68799d`.
 
 ## Evidence Commands
 
@@ -341,12 +352,13 @@ terminate-delay contract from `LPM_DIV_PIPELINE + 4` to the RTL-observable
 Focused EDGE ready/backpressure batch:
 
 ```bash
-make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E101-E104,E106-E110 case_id> SEED=1
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E101-E110 case_id> SEED=1
 ```
 
-Result: all nine implemented cases passed, then refreshed under the final full
-sweep. `CORNER_MTS_105_output_ready_unknown_monitor_trap` remains open pending
-an expected-error/SVA-trap regression mode.
+Result: all ten cases passed, then refreshed under the final full sweep. E105
+reported 12 `MTSP_READY_X` monitor warnings and the scoreboard summary
+`ready_x=12` while still proving one payload, one debug trace, and one
+normal/debug trace pair.
 
 Focused EDGE termination batch:
 
@@ -357,6 +369,18 @@ make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E111-E119 case_id> SEE
 Result: all nine cases passed, then refreshed under the final full sweep. The
 legacy EDGE text for E111-E119 was updated to the current explicit-upstream
 `endofrun` close-marker contract.
+
+Focused EDGE ready-X and upgrade-readiness batch:
+
+```bash
+make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<E105,E120-E130 case_id> SEED=1
+```
+
+Result: `EDGE_E105_E120_E130_BATCH_PASS count=12`. E129 initially exposed a
+test expectation overreach: the one-boundary requirement is exactly two late
+payload EOPs plus four empty terminal close markers, not an all-lane SOP-mask
+requirement when payload lanes already carried EOP. The assertion was narrowed
+to the documented invariant and the full batch passed.
 
 Focused counter rollover batch:
 
@@ -436,7 +460,7 @@ Final explicit-case sweep:
 make -C tb/uvm -s run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=251`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=263`.
 
 Combo terminate contract:
 
@@ -459,21 +483,21 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-vcover merge /tmp/mtsp_explicit_251.ucdb <251 dispatcher UCDBs>
-vcover report -details -code bcesft /tmp/mtsp_explicit_251.ucdb
+vcover merge /tmp/mtsp_explicit_263.ucdb <263 dispatcher UCDBs>
+vcover report -details -code bcesft /tmp/mtsp_explicit_263.ucdb
 ```
 
-Filtered instance coverage summary: `56.34%`. The DUT instance summary is
+Filtered instance coverage summary: `65.81%`. The DUT instance summary is
 statement `95.81%`, branch `94.60%`, condition `79.79%`, expression `100.00%`,
 FSM state `100.00%`, FSM transition `77.77%`, and toggle `52.49%`.
 
 Artifact check:
 
 ```text
-explicit_cases=251 missing_artifacts=0
+explicit_cases=263 missing_artifacts=0
 ```
 
-Additional checks through this control-timing batch:
+Additional checks through this EDGE-completion batch:
 
 ```bash
 git diff --check
@@ -500,14 +524,13 @@ Results:
 - `rtl_style_check.py mts_processor.vhd`: fail on 948 legacy alignment issues.
 - `./tb/run_mts_processor_tb.sh`: pass with `mts_processor_tb PASSED`.
 
-Current evidenced explicit cases are the 251 handlers in
+Current evidenced explicit cases are the 263 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 270 uncovered EDGE, PROF, and ERROR cases, including the
-expected-error ready trap `CORNER_MTS_105`, still-open EDGE protocol/math gaps
-such as E120-E130, then regenerate the ordered coverage/report dashboard from
-current artifacts instead of relying on stale proxy rows.
+the remaining 258 uncovered PROF and ERROR cases, then regenerate the ordered
+coverage/report dashboard from current artifacts instead of relying on stale
+proxy rows. EDGE is now fully dispatched and evidenced.

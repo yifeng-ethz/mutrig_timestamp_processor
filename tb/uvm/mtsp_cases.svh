@@ -4934,6 +4934,39 @@
       wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
     endtask
 
+    task automatic do_corner_105_output_ready_unknown_monitor_trap();
+      int unsigned base_beats;
+      int unsigned base_traces;
+      int unsigned base_ready_unknown;
+      mtsp_ready_obs_item ready_obs;
+
+      wait_for_reset_release();
+      run_start();
+      base_beats         = m_env.m_scb.beat_count;
+      base_traces        = m_env.m_scb.trace_history.size();
+      base_ready_unknown = m_env.m_scb.hit1_ready_unknown_count;
+
+      hit1_drv_vif.ready <= 1'bx;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s ready-X output still observed", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s ready-X debug trace", case_id));
+
+      if (m_env.m_scb.hit1_ready_unknown_count <= base_ready_unknown)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected ready-X analysis-port evidence", case_id))
+      ready_obs = m_env.m_scb.ready_unknown_history[
+        m_env.m_scb.ready_unknown_history.size() - 1];
+      if (!$isunknown(ready_obs.ready))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s ready monitor reported a non-unknown value %0b",
+            case_id, ready_obs.ready))
+      expect_last_trace_pair($sformatf("%s ready-X trace pair", case_id));
+      hit1_drv_vif.ready <= 1'b1;
+      wait_cycles(2);
+    endtask
+
     task automatic do_corner_106_input_ready_high_in_flushing();
       wait_for_reset_release();
       run_start();
@@ -5200,6 +5233,179 @@
         $sformatf("%s non-eop flushing close markers", case_id));
       expect_close_markers_since(base_history_size, 4'b1111, 2, case_id);
       wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_120_upgrade_ready_should_wait_for_drain();
+      do_std_127_upgrade_case_stateful_ready_on_terminate();
+    endtask
+
+    task automatic do_corner_121_prepare_ready_gap_upgrade();
+      wait_for_reset_release();
+      pulse_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_for_ctrl_ready_low(4, $sformatf("%s prepare ready low", case_id));
+      wait_for_ctrl_ready_high(16, $sformatf("%s prepare ready restore", case_id));
+      expect_hit0_ready(1'b1, $sformatf("%s prepare opens flush-ready window", case_id));
+    endtask
+
+    task automatic do_corner_122_sync_ready_gap_upgrade();
+      wait_for_reset_release();
+      pulse_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_for_ctrl_ready_low(4, $sformatf("%s prepare ready low", case_id));
+      wait_for_ctrl_ready_high(16, $sformatf("%s prepare ready restore", case_id));
+      pulse_ctrl(CTRL_SYNC, "SYNC");
+      wait_for_ctrl_ready_low(4, $sformatf("%s sync ready low", case_id));
+      wait_for_ctrl_ready_high(16, $sformatf("%s sync ready restore", case_id));
+      expect_hit0_ready(1'b0, $sformatf("%s sync keeps hit input blocked", case_id));
+    endtask
+
+    task automatic do_corner_123_flushing_ready_gap_upgrade();
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      run_start();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s flushing ready low", case_id));
+      wait_cycles(8);
+      if (ctrl_vif.ready !== 1'b0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s flushing must keep ctrl ready low until upstream endofrun",
+            case_id))
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s flushing close-marker drain", case_id));
+      wait_for_ctrl_ready_high(128, $sformatf("%s flushing ready restore", case_id));
+    endtask
+
+    task automatic do_corner_124_missing_synthetic_boundary_upgrade();
+      do_std_128_upgrade_case_terminal_boundary_without_extra_hits();
+    endtask
+
+    task automatic do_corner_125_eop_alignment_hole_upgrade();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", case_id));
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s terminal EOP payload trace", case_id));
+      wait_cycles(3);
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s terminal boundary after delayed EOP", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_126_crcerr_ignore_upgrade_gap();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", case_id));
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1, 3'b010);
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s CRCERR-inert payload trace", case_id));
+      expect_last_trace_pair($sformatf("%s CRCERR-inert payload trace", case_id));
+      expect_discard_count(32'd0, $sformatf("%s CRCERR remains inert", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s CRCERR-inert close markers", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_127_frame_corrupt_ignore_upgrade_gap();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", case_id));
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1, 3'b100);
+      send_endofrun_pulse();
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s frame-corrupt-inert payload trace", case_id));
+      expect_last_trace_pair($sformatf("%s frame-corrupt-inert payload trace", case_id));
+      expect_discard_count(32'd0, $sformatf("%s frame-corrupt remains inert", case_id));
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s frame-corrupt-inert close markers", case_id));
+      expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_128_accept_command_vs_complete_work_upgrade();
+      int unsigned base_empty_eops;
+      time         terminate_accept_time;
+
+      wait_for_reset_release();
+      run_start();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      send_ctrl_and_capture(CTRL_TERMINATING, "TERMINATING", terminate_accept_time);
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      if (m_env.m_scb.empty_eop_count != base_empty_eops)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s terminate command alone must not complete boundary work",
+            case_id))
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s work completion after endofrun", case_id));
+      if (terminate_accept_time >= m_env.m_scb.last_eop_time_ps)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s terminate accept time must precede terminal boundary: accept=%0t last_eop=%0t",
+            case_id, terminate_accept_time, m_env.m_scb.last_eop_time_ps))
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_129_one_boundary_per_run_upgrade();
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+
+      wait_for_reset_release();
+      run_start();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", case_id));
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
+      send_hit_beat(2, 1, 15'h0013, 15'h001F, 1'b1, 1'b0, 1'b1);
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s one terminal boundary", case_id));
+      wait_cycles(16);
+      if (m_env.m_scb.empty_eop_count != base_empty_eops + 4)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected exactly four close markers, got %0d new markers",
+            case_id, m_env.m_scb.empty_eop_count - base_empty_eops))
+      expect_close_markers_since(base_history_size, 4'b1111, 2,
+        $sformatf("%s one terminal boundary detail", case_id));
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_corner_130_idle_after_boundary_upgrade();
+      do_std_129_upgrade_case_idle_after_boundary_only();
     endtask
 
     task automatic do_corner_127_delay_error_sideband_tracks_hit();
@@ -5477,6 +5683,7 @@
         "CORNER_MTS_102_output_ready_low_multi_beat": do_corner_102_output_ready_low_multi_beat();
         "CORNER_MTS_103_output_ready_toggle_every_cycle": do_corner_103_output_ready_toggle_every_cycle();
         "CORNER_MTS_104_output_ready_low_on_eop": do_corner_104_output_ready_low_on_eop();
+        "CORNER_MTS_105_output_ready_unknown_monitor_trap": do_corner_105_output_ready_unknown_monitor_trap();
         "CORNER_MTS_106_input_ready_high_in_flushing": do_corner_106_input_ready_high_in_flushing();
         "CORNER_MTS_107_input_ready_low_in_idle": do_corner_107_input_ready_low_in_idle();
         "CORNER_MTS_108_input_ready_high_in_reset_sclr": do_corner_108_input_ready_high_in_reset_sclr();
@@ -5491,6 +5698,17 @@
         "CORNER_MTS_117_packet_open_then_abort": do_corner_117_packet_open_then_abort();
         "CORNER_MTS_118_terminating_eop_disabled_sideband_channel": do_corner_118_terminating_eop_disabled_sideband_channel();
         "CORNER_MTS_119_flushing_accepts_non_eop_hits": do_corner_119_flushing_accepts_non_eop_hits();
+        "CORNER_MTS_120_upgrade_ready_should_wait_for_drain": do_corner_120_upgrade_ready_should_wait_for_drain();
+        "CORNER_MTS_121_prepare_ready_gap_upgrade": do_corner_121_prepare_ready_gap_upgrade();
+        "CORNER_MTS_122_sync_ready_gap_upgrade": do_corner_122_sync_ready_gap_upgrade();
+        "CORNER_MTS_123_flushing_ready_gap_upgrade": do_corner_123_flushing_ready_gap_upgrade();
+        "CORNER_MTS_124_missing_synthetic_boundary_upgrade": do_corner_124_missing_synthetic_boundary_upgrade();
+        "CORNER_MTS_125_eop_alignment_hole_upgrade": do_corner_125_eop_alignment_hole_upgrade();
+        "CORNER_MTS_126_crcerr_ignore_upgrade_gap": do_corner_126_crcerr_ignore_upgrade_gap();
+        "CORNER_MTS_127_frame_corrupt_ignore_upgrade_gap": do_corner_127_frame_corrupt_ignore_upgrade_gap();
+        "CORNER_MTS_128_accept_command_vs_complete_work_upgrade": do_corner_128_accept_command_vs_complete_work_upgrade();
+        "CORNER_MTS_129_one_boundary_per_run_upgrade": do_corner_129_one_boundary_per_run_upgrade();
+        "CORNER_MTS_130_idle_after_boundary_upgrade": do_corner_130_idle_after_boundary_upgrade();
         "CORNER_MTS_127_delay_error_sideband_tracks_hit": do_corner_127_delay_error_sideband_tracks_hit();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();
