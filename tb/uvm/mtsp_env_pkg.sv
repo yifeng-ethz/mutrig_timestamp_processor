@@ -19,6 +19,7 @@ package mtsp_env_pkg;
   localparam logic [8:0] CTRL_RESET_WORD  = 9'b010000000;
   localparam logic [8:0] CTRL_OUT_OF_DAQ  = 9'b100000000;
   localparam time CLK_PERIOD_PS           = 8000ps;
+  localparam time MONITOR_SAMPLE_SKEW_PS  = 1ps;
 
   typedef enum int unsigned {
     MTSP_DBG_TS,
@@ -419,7 +420,6 @@ package mtsp_env_pkg;
 
       forever begin
         @(posedge vif.clk);
-        #1ps;
         if (vif.rst === 1'b1)
           continue;
         if (vif.valid === 1'b1 && vif.ready === 1'b1) begin
@@ -430,7 +430,7 @@ package mtsp_env_pkg;
           obs.endofrun = vif.endofrun;
           obs.error    = vif.error;
           obs.data     = vif.data;
-          obs.time_ps  = $time;
+          obs.time_ps  = $time + MONITOR_SAMPLE_SKEW_PS;
           ap.write(obs);
         end
       end

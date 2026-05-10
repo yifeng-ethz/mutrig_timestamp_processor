@@ -51,10 +51,10 @@
 - `E034 | CORNER_MTS_034_e_gray_one_above_upper`: Repeat the first-correcting case for the E branch; verify one subtraction. Covers the E threshold crossing.
 - `E035 | CORNER_MTS_035_mts_counter_wrap_pulse`: Run the local MTS counter through the `32766 -> 4` wrap and verify `fpga_overflow_happened` pulses exactly at the transition. Covers the explicit wrap logic.
 - `E036 | CORNER_MTS_036_overflow_lookback_expiry`: Observe the cycle where `fpga_overflow_lookback_cnt` reaches zero; verify `overflow_adjust_active` drops cleanly. Covers lookback expiration.
-- `E037 | CORNER_MTS_037_lpm_multi_valid_masks_adjust`: Create an overflow while `lpm_multi_valid_cnt` is nonzero; verify `overflow_adjust_active` stays low. Covers the divider-launch mask.
+- `E037 | CORNER_MTS_037_lpm_multi_valid_masks_adjust`: Create a dense hit burst across a one-tick overflow lookback window; verify the legal pre/active and expired output classes while the divider pipeline is busy. Covers the current per-hit overflow-adjust sampling contract; the old `lpm_multi_valid_cnt` mask no longer exists in the RTL.
 - `E038 | CORNER_MTS_038_bypass_toggle_before_hit`: Toggle `bypass_lapse` one cycle before an accepted hit; verify the hit uses the new mode. Covers control-to-data setup timing.
 - `E039 | CORNER_MTS_039_bypass_toggle_after_hit_accept`: Toggle `bypass_lapse` one cycle after a hit is accepted; verify the already accepted hit keeps the mode it latched. Covers in-flight stability.
-- `E040 | CORNER_MTS_040_latency_write_at_overflow_boundary`: Rewrite `expected_latency` near an overflow event; verify only subsequent hits see the new `padding_upper`. Covers control updates near the wrap window.
+- `E040 | CORNER_MTS_040_latency_write_at_overflow_boundary`: Rewrite `expected_latency` after an overflow-adjusted payload; verify padding math is unchanged and only subsequent debug trace metadata reports the new delay threshold. Covers the current split between the `MUTRIG_OVERFLOW_LOOKBACK_8N` padding threshold and the CSR delay-error threshold.
 
 ## 5. Divide / Remainder / Route Edges
 

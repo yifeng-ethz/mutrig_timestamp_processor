@@ -170,6 +170,19 @@
           ctx, expected_count, m_env.m_scb.trace_history.size()))
     endtask
 
+    task automatic wait_for_input_count(int unsigned expected_count,
+                                        int unsigned max_cycles,
+                                        string ctx);
+      repeat (max_cycles) begin
+        if (m_env.m_scb.hit0_history.size() >= expected_count)
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+      `uvm_fatal("MTSP_TIMEOUT",
+        $sformatf("%s timed out waiting for input_count=%0d, got %0d",
+          ctx, expected_count, m_env.m_scb.hit0_history.size()))
+    endtask
+
     task automatic expect_last_trace_delta(int signed min_delta,
                                            int signed max_delta,
                                            bit expected_error,
@@ -253,6 +266,48 @@
           $sformatf("%s expected error=%0b, got math_error=%0b hit_error=%0b debug_delta=%0d expected_latency=%0d",
             ctx, expected_error, trace.math_error, trace.hit1_error,
             trace.debug_delta, trace.expected_latency))
+    endtask
+
+    task automatic expect_trace_expected_latency_at(int unsigned trace_idx,
+                                                    int unsigned expected_latency,
+                                                    string ctx);
+      mtsp_hit_trace_item trace;
+
+      if (trace_idx >= m_env.m_scb.trace_history.size())
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected trace index %0d, size=%0d",
+            ctx, trace_idx, m_env.m_scb.trace_history.size()))
+      trace = m_env.m_scb.trace_history[trace_idx];
+      if (trace.expected_latency !== expected_latency[31:0])
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected trace latency=%0d got %0d",
+            ctx, expected_latency, trace.expected_latency))
+    endtask
+
+    task automatic read_dut_hdl(string path,
+                                output uvm_hdl_data_t value,
+                                input string ctx);
+      if (!uvm_hdl_read(path, value))
+        `uvm_fatal("MTSP_HDL",
+          $sformatf("%s could not read DUT HDL path %s", ctx, path))
+    endtask
+
+    task automatic read_dut_bit(string path,
+                                output bit value,
+                                input string ctx);
+      uvm_hdl_data_t hdl_value;
+
+      read_dut_hdl(path, hdl_value, ctx);
+      value = hdl_value[0];
+    endtask
+
+    task automatic read_dut_uint(string path,
+                                 output int unsigned value,
+                                 input string ctx);
+      uvm_hdl_data_t hdl_value;
+
+      read_dut_hdl(path, hdl_value, ctx);
+      value = hdl_value[31:0];
     endtask
 
     task automatic expect_payload_math_at(int unsigned history_idx,
@@ -692,6 +747,107 @@
         tcc8n_value, 3'd0, 9'd0, ctx);
       expect_last_output_flags(expected_sop, 1'b0, 1'b0, route_lane, ctx);
       expect_last_trace_pair(ctx);
+    endtask
+
+    task automatic send_decoded_hit_and_expect_math(int unsigned t_quotient,
+                                                    int unsigned t_remainder,
+                                                    int unsigned e_quotient,
+                                                    int unsigned e_remainder,
+                                                    int unsigned asic_value,
+                                                    int unsigned channel_value,
+                                                    bit eflag_value,
+                                                    int unsigned tfine_value,
+                                                    int unsigned expected_tcc8n,
+                                                    int unsigned expected_tcc1n6,
+                                                    int unsigned expected_et1n6,
+                                                    bit sop_value,
+                                                    string ctx);
+      int unsigned t_raw_value;
+      int unsigned e_raw_value;
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      lookup_raw_for_quotient(t_quotient, t_remainder, t_raw_value,
+        $sformatf("%s T decoded symbol", ctx));
+      lookup_raw_for_quotient(e_quotient, e_remainder, e_raw_value,
+        $sformatf("%s E decoded symbol", ctx));
+
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(asic_value, channel_value, t_raw_value, e_raw_value,
+        eflag_value, sop_value, 1'b0, '0, 1'b1, tfine_value);
+      wait_for_beat_count(base_beats + 1, 256, ctx);
+      wait_for_trace_count(base_traces + 1, 256, ctx);
+      expect_last_payload_math(asic_value, channel_value, tfine_value,
+        expected_tcc8n, expected_tcc1n6, expected_et1n6, ctx);
+      expect_last_trace_pair(ctx);
+    endtask
+
+    task automatic expect_wrap_burst_classes_since(int unsigned base_history_size,
+                                                   int unsigned expected_count,
+                                                   int unsigned pre_q,
+                                                   int unsigned pre_r,
+                                                   int unsigned pulse_q,
+                                                   int unsigned pulse_r,
+                                                   int unsigned post_q,
+                                                   int unsigned post_r,
+                                                   int unsigned min_pulse_count,
+                                                   int unsigned max_pulse_count,
+                                                   string ctx);
+      int unsigned pre_count;
+      int unsigned pulse_count;
+      int unsigned post_count;
+      int unsigned other_count;
+
+      pre_count   = 0;
+      pulse_count = 0;
+      post_count  = 0;
+      other_count = 0;
+
+      if (m_env.m_scb.history.size() < base_history_size + expected_count)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d burst outputs from history base %0d, got size=%0d",
+            ctx, expected_count, base_history_size, m_env.m_scb.history.size()))
+
+      for (int idx = 0; idx < expected_count; idx++) begin
+        mtsp_hit1_obs_item obs;
+        bit [12:0] q;
+        bit [2:0]  r;
+
+        obs = m_env.m_scb.history[base_history_size + idx];
+        if (obs.empty)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s burst idx=%0d unexpectedly empty", ctx, idx))
+        q = obs.data[29:17];
+        r = obs.data[16:14];
+        if (q === pre_q[12:0] && r === pre_r[2:0]) begin
+          pre_count++;
+        end else if (q === pulse_q[12:0] && r === pulse_r[2:0]) begin
+          pulse_count++;
+        end else if (q === post_q[12:0] && r === post_r[2:0]) begin
+          post_count++;
+        end else begin
+          other_count++;
+          `uvm_info("MTSP_WRAP",
+            $sformatf("%s burst idx=%0d unmatched q/r=%0d/%0d data=0x%010h",
+              ctx, idx, q, r, obs.data),
+            UVM_LOW)
+        end
+      end
+
+      if (pulse_count < min_pulse_count || pulse_count > max_pulse_count)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected pulse class count in [%0d,%0d], got %0d (pre=%0d post=%0d other=%0d)",
+            ctx, min_pulse_count, max_pulse_count, pulse_count,
+            pre_count, post_count, other_count))
+      if (pre_count == 0 || post_count == 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected both pre-wrap and post-wrap classes, got pre=%0d post=%0d pulse=%0d other=%0d",
+            ctx, pre_count, post_count, pulse_count, other_count))
+      if (other_count != 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s saw %0d outputs outside the expected wrap classes",
+            ctx, other_count))
     endtask
 
     task automatic wait_inside_one_wrap_lookback(string ctx);
@@ -2433,7 +2589,7 @@
       configure_datapath_mode(1'b1, 1'b0, 1'b1);
       run_start();
       send_quotient_hit_and_capture(0, 1, 2, 0, 5'd18, observed_delta, case_id);
-      expect_last_input_to_output_latency(11, case_id);
+      expect_last_input_to_output_latency(10, case_id);
     endtask
 
     task automatic do_std_112_compile_packaged_div_pipeline();
@@ -2443,7 +2599,7 @@
       configure_datapath_mode(1'b1, 1'b0, 1'b1);
       run_start();
       send_quotient_hit_and_capture(0, 1, 2, 0, 5'd19, observed_delta, case_id);
-      expect_last_input_to_output_latency(9, case_id);
+      expect_last_input_to_output_latency(8, case_id);
     endtask
 
     task automatic prove_enabled_window_bookkeeping(int unsigned inside_sideband,
@@ -3270,6 +3426,253 @@
         $sformatf("%s close markers outside sideband window", case_id));
       wait_for_ctrl_ready_high(128, $sformatf("%s ready restore", case_id));
       expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+    endtask
+
+    task automatic do_corner_031_t_gray_equal_padding_upper();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      send_decoded_hit_and_expect_math(4553, 1, 4553, 1, 2, 0, 1'b0,
+        5'd1, 11106, 3, 0, 1'b1,
+        $sformatf("%s T equal upper no subtract", case_id));
+    endtask
+
+    task automatic do_corner_032_t_gray_one_above_upper();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      send_decoded_hit_and_expect_math(4553, 2, 4553, 2, 2, 1, 1'b0,
+        5'd2, 4553, 2, 0, 1'b1,
+        $sformatf("%s T one above upper subtracts", case_id));
+    endtask
+
+    task automatic do_corner_033_e_gray_equal_padding_upper();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b1);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      send_decoded_hit_and_expect_math(4553, 2, 4553, 1, 2, 2, 1'b1,
+        5'd3, 4553, 2, 511, 1'b1,
+        $sformatf("%s E equal upper no subtract", case_id));
+    endtask
+
+    task automatic do_corner_034_e_gray_one_above_upper();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b1);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      send_decoded_hit_and_expect_math(4553, 2, 4553, 2, 2, 3, 1'b1,
+        5'd4, 4553, 2, 0, 1'b1,
+        $sformatf("%s E one above upper subtracts", case_id));
+    endtask
+
+    task automatic do_corner_035_mts_counter_wrap_pulse();
+      int unsigned raw_value;
+      int unsigned base_beats;
+      int unsigned base_traces;
+      int unsigned pulse_count;
+      int unsigned pulse_counter;
+      bit          will_happen;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      pulse_count   = 0;
+      pulse_counter = 0;
+      for (int idx = 0; idx < 7000; idx++) begin
+        @(posedge ctrl_vif.clk);
+        read_dut_bit("/tb_top/dut/fpga_overflow_will_happen", will_happen,
+          $sformatf("%s wrap pulse sample", case_id));
+        if (will_happen) begin
+          int unsigned counter_value;
+          pulse_count++;
+          read_dut_uint("/tb_top/dut/counter_mts_1n6", counter_value,
+            $sformatf("%s wrap counter sample", case_id));
+          pulse_counter = counter_value;
+        end
+      end
+      if (pulse_count != 1)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected exactly one wrap-pulse sample, got %0d",
+            case_id, pulse_count))
+      if (pulse_counter < 32762 || pulse_counter > 32766)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s wrap pulse at unexpected local counter=%0d",
+            case_id, pulse_counter))
+
+      base_beats   = m_env.m_scb.beat_count;
+      base_traces  = m_env.m_scb.trace_history.size();
+      lookup_raw_for_quotient(0, 0, raw_value, case_id);
+      send_hit_beat(2, 4, raw_value, raw_value, 1'b0, 1'b1, 1'b0,
+        '0, 1'b1, 5'd4);
+      wait_for_beat_count(base_beats + 1, 128, case_id);
+      wait_for_trace_count(base_traces + 1, 128, case_id);
+      expect_last_trace_pair($sformatf("%s post-wrap normal/debug pair", case_id));
+    endtask
+
+    task automatic do_corner_036_overflow_lookback_expiry();
+      int unsigned lookback_count;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      for (int idx = 0; idx < 7000; idx++) begin
+        @(posedge ctrl_vif.clk);
+        read_dut_uint("/tb_top/dut/fpga_overflow_lookback_cnt", lookback_count,
+          $sformatf("%s wait for lookback active", case_id));
+        if (lookback_count != 0)
+          break;
+      end
+      if (lookback_count == 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s never observed nonzero overflow lookback", case_id))
+      send_decoded_hit_and_expect_math(5000, 0, 5000, 0, 2, 4, 1'b0,
+        5'd5, 5000, 0, 0, 1'b1,
+        $sformatf("%s active lookback subtracts", case_id));
+      for (int idx = 0; idx < 2200; idx++) begin
+        @(posedge ctrl_vif.clk);
+        read_dut_uint("/tb_top/dut/fpga_overflow_lookback_cnt", lookback_count,
+          $sformatf("%s wait for lookback expiry", case_id));
+        if (lookback_count == 0)
+          break;
+      end
+      if (lookback_count != 0)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s lookback did not expire, count=%0d",
+            case_id, lookback_count))
+      send_decoded_hit_and_expect_math(5000, 0, 5000, 0, 2, 5, 1'b0,
+        5'd6, 11553, 2, 0, 1'b0,
+        $sformatf("%s expired lookback no longer subtracts", case_id));
+    endtask
+
+    task automatic do_corner_037_lpm_multi_valid_masks_adjust();
+      int unsigned raw_value;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+      bit          busy;
+      bit          active;
+      bit          saw_busy_and_active;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      lookup_raw_for_quotient(5000, 0, raw_value, case_id);
+      wait_cycles(6520);
+
+      base_beats          = m_env.m_scb.beat_count;
+      base_history        = m_env.m_scb.history.size();
+      base_traces         = m_env.m_scb.trace_history.size();
+      saw_busy_and_active = 1'b0;
+      for (int idx = 0; idx < 80; idx++) begin
+        send_hit_beat(2, idx[4:0], raw_value, raw_value, 1'b0,
+          idx == 0, 1'b0, '0, 1'b1, idx[4:0]);
+        read_dut_bit("/tb_top/dut/hit_div_busy", busy,
+          $sformatf("%s dense burst busy sample", case_id));
+        read_dut_bit("/tb_top/dut/overflow_adjust_active", active,
+          $sformatf("%s dense burst active sample", case_id));
+        if (busy && active)
+          saw_busy_and_active = 1'b1;
+      end
+
+      wait_for_beat_count(base_beats + 80, 512, case_id);
+      wait_for_trace_count(base_traces + 80, 512, case_id);
+      if (!saw_busy_and_active)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s never observed divider busy while overflow adjust active",
+            case_id))
+      for (int idx = 0; idx < 80; idx++) begin
+        mtsp_hit1_obs_item obs;
+        obs = m_env.m_scb.history[base_history + idx];
+        if (obs.data[29:17] !== 13'd5000 || obs.data[16:14] !== 3'd0)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s burst idx=%0d expected adjusted q/r=5000/0 got %0d/%0d data=0x%010h",
+              case_id, idx, obs.data[29:17], obs.data[16:14], obs.data))
+      end
+      expect_trace_pair_at(base_traces + 79,
+        $sformatf("%s continuous wrap burst normal/debug pair", case_id));
+    endtask
+
+    task automatic do_corner_038_bypass_toggle_before_hit();
+      int unsigned raw_value;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      lookup_raw_for_quotient(2, 0, raw_value, case_id);
+
+      csr_write(3'd0, datapath_mode_word(1'b1, 1'b0, 1'b1));
+      wait_cycles(1);
+      send_hit_and_expect_math(2, 6, raw_value, raw_value, 1'b0, 5'd7,
+        2, 0, 0, $sformatf("%s bypass sampled before hit", case_id));
+      expect_last_trace_pair(case_id);
+    endtask
+
+    task automatic do_corner_039_bypass_toggle_after_hit_accept();
+      int unsigned raw_value;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+      int unsigned base_inputs;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+      lookup_raw_for_quotient(2, 0, raw_value, case_id);
+
+      base_beats   = m_env.m_scb.beat_count;
+      base_history = m_env.m_scb.history.size();
+      base_traces  = m_env.m_scb.trace_history.size();
+      base_inputs  = m_env.m_scb.hit0_history.size();
+      send_hit_beat(2, 7, raw_value, raw_value, 1'b0, 1'b1, 1'b0,
+        '0, 1'b1, 5'd8);
+      csr_write(3'd0, datapath_mode_word(1'b0, 1'b0, 1'b1));
+      send_hit_beat(2, 8, raw_value, raw_value, 1'b0, 1'b1, 1'b0,
+        '0, 1'b1, 5'd9);
+
+      wait_for_input_count(base_inputs + 2, 64, case_id);
+      wait_for_beat_count(base_beats + 2, 256, case_id);
+      wait_for_trace_count(base_traces + 2, 256, case_id);
+      expect_payload_math_at(base_history, 2, 7, 8, 2, 0, 0,
+        $sformatf("%s first accepted hit keeps bypass-on mode", case_id));
+      expect_payload_math_at(base_history + 1, 2, 8, 9, 6555, 2, 0,
+        $sformatf("%s second hit uses bypass-off mode", case_id));
+      expect_trace_pair_at(base_traces,
+        $sformatf("%s first hit normal/debug pair", case_id));
+      expect_trace_pair_at(base_traces + 1,
+        $sformatf("%s second hit normal/debug pair", case_id));
+    endtask
+
+    task automatic do_corner_040_latency_write_at_overflow_boundary();
+      int unsigned base_history;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b0, 1'b0);
+      run_start();
+      wait_inside_one_wrap_lookback(case_id);
+
+      base_history = m_env.m_scb.history.size();
+      base_traces  = m_env.m_scb.trace_history.size();
+      send_decoded_hit_and_expect_math(5000, 0, 5000, 0, 2, 9, 1'b0,
+        5'd10, 5000, 0, 0, 1'b1,
+        $sformatf("%s default-latency overflow payload", case_id));
+      expect_trace_expected_latency_at(base_traces, 2000,
+        $sformatf("%s default trace latency", case_id));
+
+      csr_write(3'd2, 32'd4096);
+      wait_cycles(2);
+      send_decoded_hit_and_expect_math(5000, 0, 5000, 0, 2, 10, 1'b0,
+        5'd11, 5000, 0, 0, 1'b0,
+        $sformatf("%s relaxed-latency overflow payload", case_id));
+      expect_payload_math_at(base_history + 1, 2, 10, 11, 5000, 0, 0,
+        $sformatf("%s latency write does not change padding math", case_id));
+      expect_trace_expected_latency_at(base_traces + 1, 4096,
+        $sformatf("%s relaxed trace latency", case_id));
     endtask
 
     task automatic do_corner_041_remainder_zero_case();
@@ -4775,6 +5178,16 @@
         "CORNER_MTS_028_max_payload_fields": do_corner_028_max_payload_fields();
         "CORNER_MTS_029_nonzero_mux_bits_in_sideband": do_corner_029_nonzero_mux_bits_in_sideband();
         "CORNER_MTS_030_sideband_channel_outside_enabled_window": do_corner_030_sideband_channel_outside_enabled_window();
+        "CORNER_MTS_031_t_gray_equal_padding_upper": do_corner_031_t_gray_equal_padding_upper();
+        "CORNER_MTS_032_t_gray_one_above_upper": do_corner_032_t_gray_one_above_upper();
+        "CORNER_MTS_033_e_gray_equal_padding_upper": do_corner_033_e_gray_equal_padding_upper();
+        "CORNER_MTS_034_e_gray_one_above_upper": do_corner_034_e_gray_one_above_upper();
+        "CORNER_MTS_035_mts_counter_wrap_pulse": do_corner_035_mts_counter_wrap_pulse();
+        "CORNER_MTS_036_overflow_lookback_expiry": do_corner_036_overflow_lookback_expiry();
+        "CORNER_MTS_037_lpm_multi_valid_masks_adjust": do_corner_037_lpm_multi_valid_masks_adjust();
+        "CORNER_MTS_038_bypass_toggle_before_hit": do_corner_038_bypass_toggle_before_hit();
+        "CORNER_MTS_039_bypass_toggle_after_hit_accept": do_corner_039_bypass_toggle_after_hit_accept();
+        "CORNER_MTS_040_latency_write_at_overflow_boundary": do_corner_040_latency_write_at_overflow_boundary();
         "CORNER_MTS_041_remainder_zero_case": do_corner_041_remainder_zero_case();
         "CORNER_MTS_042_remainder_one_case": do_corner_042_remainder_one_case();
         "CORNER_MTS_043_remainder_two_case": do_corner_043_remainder_two_case();

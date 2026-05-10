@@ -305,6 +305,7 @@ architecture rtl of mts_processor is
 
         derive_tot              : std_logic;    -- Mode sampled with accepted hit
         delay_ts_field_use_t    : std_logic;    -- Delay-source mode sampled with accepted hit
+        bypass_lapse            : std_logic;    -- Timestamp-padding mode sampled with accepted hit
 
         valid           : std_logic;                     --data word valid flag
         hiterr			: std_logic;
@@ -324,6 +325,7 @@ architecture rtl of mts_processor is
 
         derive_tot              : std_logic;    -- Mode sampled with accepted hit
         delay_ts_field_use_t    : std_logic;    -- Delay-source mode sampled with accepted hit
+        bypass_lapse            : std_logic;    -- Timestamp-padding mode sampled with accepted hit
 
         valid           : std_logic;                     --data word valid flag
         hiterr			: std_logic;
@@ -1267,6 +1269,7 @@ begin
 
             hit_in.derive_tot              <= '0';
             hit_in.delay_ts_field_use_t    <= '1';
+            hit_in.bypass_lapse            <= '0';
 
             hit_in.valid    <= '0';
             hit_in.hiterr   <= '0';
@@ -1283,6 +1286,7 @@ begin
 
             hit_padding.derive_tot              <= '0';
             hit_padding.delay_ts_field_use_t    <= '1';
+            hit_padding.bypass_lapse            <= '0';
 
             hit_padding.valid        <= '0';
             hit_padding.hiterr       <= '0';
@@ -1354,6 +1358,7 @@ begin
 
             hit_in.derive_tot              <= '0';
             hit_in.delay_ts_field_use_t    <= '1';
+            hit_in.bypass_lapse            <= '0';
 
             hit_in.valid	<= '0';
             hit_in.hiterr	<= '0';
@@ -1370,6 +1375,7 @@ begin
 
             hit_padding.derive_tot              <= '0';
             hit_padding.delay_ts_field_use_t    <= '1';
+            hit_padding.bypass_lapse            <= '0';
 
             hit_padding.valid	<= '0';
             hit_padding.hiterr	<= '0';
@@ -1443,6 +1449,7 @@ begin
 
                 hit_in.derive_tot              <= csr.derive_tot;
                 hit_in.delay_ts_field_use_t    <= csr.delay_ts_field_use_t;
+                hit_in.bypass_lapse            <= csr.bypass_lapse;
 
                 hit_in.valid	<= '1';
                 hit_in.hiterr	<= asi_hit_type0_error(HITERR_BIT_LOC);
@@ -1460,6 +1467,7 @@ begin
 
                 hit_padding.derive_tot              <= hit_in.derive_tot;
                 hit_padding.delay_ts_field_use_t    <= hit_in.delay_ts_field_use_t;
+                hit_padding.bypass_lapse            <= hit_in.bypass_lapse;
 
                 hit_padding.t_fine		<= hit_in.t_fine;
                 hit_padding.valid		<= '1';
@@ -1477,7 +1485,7 @@ begin
 
                 hit_prediv.hiterr       <= hit_padding.hiterr;
                 hit_prediv.valid        <= '1';
-                if (csr.bypass_lapse = '0') then  -- mts -> gts transformation enable 
+                if (hit_padding.bypass_lapse = '0') then  -- mts -> gts transformation enable
                     hit_prediv.tcc_div_numer <= cc_gts_1n6_slv50;
                     hit_prediv.ecc_div_numer <= ecc_gts_1n6_slv50;
                 else -- mts -> gts transformation disable (this would result in random dist., which is simply for sanity check.) 
@@ -1588,6 +1596,7 @@ begin
                         & " ecc=" & integer'image(to_integer(unsigned(hit_padding.ecc_out)))
                         & " t_adj=" & std_logic'image(hit_padding.tot_t_adjust)
                         & " e_adj=" & std_logic'image(hit_padding.tot_e_adjust)
+                        & " bypass=" & std_logic'image(hit_padding.bypass_lapse)
                         severity note;
                 end if;
                 if (hit_div(0).valid = '1') then
