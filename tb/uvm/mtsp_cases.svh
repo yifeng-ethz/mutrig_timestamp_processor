@@ -5644,6 +5644,260 @@
       wait_cycles(2);
     endtask
 
+    task automatic expect_stress_toggle_derive_since(int unsigned base_history_size,
+                                                     int unsigned base_traces,
+                                                     int unsigned hit_count,
+                                                     int unsigned toggle_idx,
+                                                     string ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        bit derive_value;
+
+        derive_value = (idx >= toggle_idx);
+        expect_stress_payload_at(base_history_size + idx, base_traces + idx,
+          idx, derive_value, $sformatf("%s payload idx=%0d", ctx, idx));
+      end
+    endtask
+
+    task automatic run_stress_toggle_derive_case(int unsigned hit_count,
+                                                 int unsigned toggle_idx,
+                                                 string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        if (idx == toggle_idx) begin
+          csr_write(3'd0, datapath_mode_word(1'b1, 1'b1, 1'b1));
+          wait_cycles(2);
+        end
+        send_stress_hit(idx, (idx >= toggle_idx), idx == 0, 1'b0, '0, ctx);
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 1024, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 2048, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 2048, ctx);
+      expect_stress_toggle_derive_since(base_history_size, base_traces,
+        hit_count, toggle_idx, ctx);
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_stress_toggle_delay_case(int unsigned hit_count,
+                                                int unsigned toggle_idx,
+                                                string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b1, 1'b1);
+      run_start();
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        if (idx == toggle_idx) begin
+          csr_write(3'd0, datapath_mode_word(1'b1, 1'b1, 1'b0));
+          wait_cycles(2);
+        end
+        send_stress_hit(idx, 1'b1, idx == 0, 1'b0, '0, ctx);
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 1024, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 2048, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 2048, ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++)
+        expect_stress_payload_at(base_history_size + idx, base_traces + idx,
+          idx, 1'b1, $sformatf("%s payload idx=%0d", ctx, idx));
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_stress_bypass_stream_case(bit bypass_lapse,
+                                                 int unsigned hit_count,
+                                                 string ctx);
+      int unsigned raw_value;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned expected_q;
+      int unsigned expected_r;
+
+      wait_for_reset_release();
+      configure_datapath_mode(bypass_lapse, 1'b0, 1'b1);
+      run_start();
+      wait_inside_one_wrap_lookback(ctx);
+      lookup_raw_for_quotient(2, 0, raw_value, ctx);
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      expected_q        = bypass_lapse ? 2 : 6555;
+      expected_r        = bypass_lapse ? 0 : 2;
+
+      for (int unsigned idx = 0; idx < hit_count; idx++)
+        send_hit_beat(stress_asic(idx), stress_channel(idx), raw_value,
+          raw_value, 1'b0, idx == 0, 1'b0, '0, 1'b1, stress_tfine(idx));
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 1024, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 2048, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 2048, ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        bit expected_error;
+
+        expected_error = bypass_lapse;
+        expect_payload_math_at(base_history_size + idx, stress_asic(idx),
+          stress_channel(idx), stress_tfine(idx), expected_q, expected_r, 0,
+          $sformatf("%s payload idx=%0d", ctx, idx));
+        expect_trace_pair_at(base_traces + idx,
+          $sformatf("%s trace idx=%0d", ctx, idx));
+        expect_trace_error_at(base_traces + idx, expected_error,
+          $sformatf("%s trace error idx=%0d", ctx, idx));
+      end
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_stress_bypass_packet_toggle_case(int unsigned packet_count,
+                                                        int unsigned hits_per_packet,
+                                                        string ctx);
+      int unsigned raw_value;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned hit_count;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      wait_inside_one_wrap_lookback(ctx);
+      lookup_raw_for_quotient(2, 0, raw_value, ctx);
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      hit_count         = packet_count * hits_per_packet;
+
+      for (int unsigned pkt = 0; pkt < packet_count; pkt++) begin
+        bit bypass_value;
+
+        bypass_value = pkt[0];
+        csr_write(3'd0, datapath_mode_word(bypass_value, 1'b0, 1'b1));
+        wait_cycles(2);
+        for (int unsigned beat = 0; beat < hits_per_packet; beat++) begin
+          int unsigned idx;
+
+          idx = (pkt * hits_per_packet) + beat;
+          send_hit_beat(stress_asic(idx), stress_channel(idx), raw_value,
+            raw_value, 1'b0, beat == 0, beat == hits_per_packet - 1, '0,
+            1'b1, stress_tfine(idx));
+        end
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 1024, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 2048, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 2048, ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned pkt;
+        bit          bypass_value;
+        int unsigned expected_q;
+        int unsigned expected_r;
+
+        pkt          = idx / hits_per_packet;
+        bypass_value = pkt[0];
+        expected_q   = bypass_value ? 2 : 6555;
+        expected_r   = bypass_value ? 0 : 2;
+        expect_payload_math_at(base_history_size + idx, stress_asic(idx),
+          stress_channel(idx), stress_tfine(idx), expected_q, expected_r, 0,
+          $sformatf("%s payload idx=%0d", ctx, idx));
+        expect_trace_pair_at(base_traces + idx,
+          $sformatf("%s trace idx=%0d", ctx, idx));
+        expect_trace_error_at(base_traces + idx, bypass_value,
+          $sformatf("%s trace error idx=%0d", ctx, idx));
+      end
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_stress_latency_rewrite_case(int unsigned phase_hits,
+                                                   string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned hit_count;
+      int unsigned latencies[4];
+
+      latencies[0] = 1;
+      latencies[1] = 4096;
+      latencies[2] = 2;
+      latencies[3] = 4096;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      hit_count         = phase_hits * 4;
+
+      for (int unsigned phase = 0; phase < 4; phase++) begin
+        csr_write(3'd2, latencies[phase]);
+        wait_cycles(2);
+        for (int unsigned beat = 0; beat < phase_hits; beat++) begin
+          int unsigned idx;
+
+          idx = (phase * phase_hits) + beat;
+          send_stress_hit(idx, 1'b0, idx == 0, 1'b0, '0, ctx);
+        end
+        wait_for_beat_count(base_beats + ((phase + 1) * phase_hits),
+          phase_hits + 1024, $sformatf("%s phase %0d", ctx, phase));
+        wait_for_trace_count(base_traces + ((phase + 1) * phase_hits),
+          phase_hits + 1024, $sformatf("%s phase %0d", ctx, phase));
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 1024, ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned phase;
+        bit          expected_error;
+
+        phase          = idx / phase_hits;
+        expected_error = (latencies[phase] < 16);
+        expect_payload_math_at(base_history_size + idx, stress_asic(idx),
+          stress_channel(idx), stress_tfine(idx), stress_t_quotient(idx),
+          stress_t_remainder(idx), stress_expected_et(idx, 1'b0),
+          $sformatf("%s payload idx=%0d", ctx, idx));
+        expect_trace_pair_at(base_traces + idx,
+          $sformatf("%s trace idx=%0d", ctx, idx));
+        expect_trace_expected_latency_at(base_traces + idx, latencies[phase],
+          $sformatf("%s latency idx=%0d", ctx, idx));
+        expect_trace_error_at(base_traces + idx, expected_error,
+          $sformatf("%s error idx=%0d", ctx, idx));
+      end
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
     task automatic do_stress_001_line_rate_short_mode();
       run_stress_stream_case(64, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
         1'b0, case_id);
@@ -5730,6 +5984,50 @@
         case_id));
       expect_total_count(hit_count, case_id);
       expect_discard_count(32'd0, case_id);
+    endtask
+
+    task automatic do_stress_011_long_run_short_mode();
+      run_stress_stream_case(256, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_012_long_run_tot_mode();
+      run_stress_stream_case(256, 0, 1'b1, 1'b1, 1'b1, 0, 0, 0, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_013_toggle_derive_tot_every_256_hits();
+      run_stress_toggle_derive_case(512, 256, case_id);
+    endtask
+
+    task automatic do_stress_014_long_run_delay_field_t();
+      run_stress_stream_case(256, 0, 1'b1, 1'b1, 1'b1, 0, 0, 0, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_015_long_run_delay_field_e();
+      run_stress_stream_case(256, 0, 1'b1, 1'b1, 1'b0, 0, 0, 0, 1'b1,
+        1'b0, case_id);
+    endtask
+
+    task automatic do_stress_016_toggle_delay_field_every_256_hits();
+      run_stress_toggle_delay_case(512, 256, case_id);
+    endtask
+
+    task automatic do_stress_017_long_run_bypass_off();
+      run_stress_bypass_stream_case(1'b0, 64, case_id);
+    endtask
+
+    task automatic do_stress_018_long_run_bypass_on();
+      run_stress_bypass_stream_case(1'b1, 64, case_id);
+    endtask
+
+    task automatic do_stress_019_toggle_bypass_between_packets();
+      run_stress_bypass_packet_toggle_case(4, 8, case_id);
+    endtask
+
+    task automatic do_stress_020_rewrite_expected_latency_mid_run();
+      run_stress_latency_rewrite_case(16, case_id);
     endtask
 
     task automatic do_neg_021_hiterr_rejected_running();
@@ -6015,6 +6313,16 @@
         "STRESS_MTS_008_sustained_output_ready_high": do_stress_008_sustained_output_ready_high();
         "STRESS_MTS_009_sustained_output_ready_low": do_stress_009_sustained_output_ready_low();
         "STRESS_MTS_010_flushing_after_large_backlog": do_stress_010_flushing_after_large_backlog();
+        "STRESS_MTS_011_long_run_short_mode": do_stress_011_long_run_short_mode();
+        "STRESS_MTS_012_long_run_tot_mode": do_stress_012_long_run_tot_mode();
+        "STRESS_MTS_013_toggle_derive_tot_every_256_hits": do_stress_013_toggle_derive_tot_every_256_hits();
+        "STRESS_MTS_014_long_run_delay_field_t": do_stress_014_long_run_delay_field_t();
+        "STRESS_MTS_015_long_run_delay_field_e": do_stress_015_long_run_delay_field_e();
+        "STRESS_MTS_016_toggle_delay_field_every_256_hits": do_stress_016_toggle_delay_field_every_256_hits();
+        "STRESS_MTS_017_long_run_bypass_off": do_stress_017_long_run_bypass_off();
+        "STRESS_MTS_018_long_run_bypass_on": do_stress_018_long_run_bypass_on();
+        "STRESS_MTS_019_toggle_bypass_between_packets": do_stress_019_toggle_bypass_between_packets();
+        "STRESS_MTS_020_rewrite_expected_latency_mid_run": do_stress_020_rewrite_expected_latency_mid_run();
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("No explicit UVM stimulus handler for documented case '%s'", case_id))
