@@ -12522,6 +12522,188 @@
       do_corner_092_single_channel_window_index3();
     endtask
 
+    task automatic do_neg_091_debug_ts_without_processed_hit();
+      int unsigned base_beats;
+      int unsigned base_debug_ts;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      base_beats    = m_env.m_scb.beat_count;
+      base_debug_ts = m_env.m_scb.debug_ts_count;
+      base_traces   = m_env.m_scb.trace_history.size();
+
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0,
+        '0, 1'b0);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 16,
+        $sformatf("%s unprocessed IDLE hit", case_id));
+      if (m_env.m_scb.debug_ts_count != base_debug_ts ||
+          m_env.m_scb.trace_history.size() != base_traces)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s debug_ts advanced without a processed hit: debug_ts %0d/%0d traces %0d/%0d",
+            case_id, m_env.m_scb.debug_ts_count, base_debug_ts,
+            m_env.m_scb.trace_history.size(), base_traces))
+
+      run_start();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s processed recovery hit", case_id));
+      wait_for_debug_ts_count(base_debug_ts + 1, 128,
+        $sformatf("%s processed recovery debug_ts", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s processed recovery trace", case_id));
+      expect_last_trace_pair($sformatf("%s processed recovery trace",
+        case_id));
+    endtask
+
+    task automatic do_neg_092_stale_debug_ts_data();
+      mtsp_dbg_obs_item first_dbg;
+      mtsp_dbg_obs_item second_dbg;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_hit_for_debug_delta(3, 1'b0,
+        $sformatf("%s first exact debug_ts", case_id));
+      first_dbg =
+        m_env.m_scb.debug_ts_history[m_env.m_scb.debug_ts_history.size() - 1];
+      send_hit_for_debug_delta(5, 1'b0,
+        $sformatf("%s second exact debug_ts", case_id));
+      second_dbg =
+        m_env.m_scb.debug_ts_history[m_env.m_scb.debug_ts_history.size() - 1];
+      if (m_env.m_scb.signed16(first_dbg.data) != 3 ||
+          m_env.m_scb.signed16(second_dbg.data) != 5 ||
+          first_dbg.data === second_dbg.data)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s stale debug_ts data first=0x%04h second=0x%04h",
+            case_id, first_dbg.data, second_dbg.data))
+      expect_last_trace_delta(5, 5, 1'b0,
+        $sformatf("%s second exact trace", case_id));
+    endtask
+
+    task automatic do_neg_093_debug_burst_on_first_hit_without_history();
+      do_std_093_first_running_hit_warms_history();
+    endtask
+
+    task automatic do_neg_094_ts_delta_without_burst_context();
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      send_two_quotient_hits_and_expect_delta(0, 20, 20, case_id);
+      wait_for_debug_burst_count(base_debug_burst + 2, 64, case_id);
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, 2, 2, 2, case_id);
+      for (int unsigned idx = 0; idx < 2; idx++) begin
+        mtsp_dbg_obs_item burst_obs;
+        mtsp_dbg_obs_item delta_obs;
+
+        burst_obs = m_env.m_scb.debug_burst_history[base_debug_burst + idx];
+        delta_obs = m_env.m_scb.ts_delta_history[base_ts_delta + idx];
+        if (burst_obs.time_ps != delta_obs.time_ps)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s debug_burst/ts_delta time mismatch idx=%0d burst=%0t delta=%0t",
+              case_id, idx, burst_obs.time_ps, delta_obs.time_ps))
+      end
+    endtask
+
+    task automatic do_neg_095_debug_burst_and_ts_delta_sign_disagree();
+      int unsigned base_debug_burst;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      send_two_quotient_hits_and_expect_delta(0, 16, 16,
+        $sformatf("%s positive pair", case_id));
+      wait_for_debug_burst_count(base_debug_burst + 2, 64,
+        $sformatf("%s positive pair", case_id));
+      expect_last_debug_burst_timestamp_hi(8'h01,
+        $sformatf("%s positive debug_burst sign", case_id));
+      expect_last_ts_delta_polarity(1'b0,
+        $sformatf("%s positive ts_delta sign", case_id));
+
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      send_two_quotient_hits_and_expect_delta(16, 0, -16,
+        $sformatf("%s negative pair", case_id));
+      wait_for_debug_burst_count(base_debug_burst + 2, 64,
+        $sformatf("%s negative pair", case_id));
+      expect_last_debug_burst_timestamp_hi(8'h81,
+        $sformatf("%s negative debug_burst sign", case_id));
+      expect_last_ts_delta_polarity(1'b1,
+        $sformatf("%s negative ts_delta sign", case_id));
+    endtask
+
+    task automatic do_neg_096_arrival_delta_wrap_fault();
+      do_std_099_arrival_delta_uses_gts();
+    endtask
+
+    task automatic do_neg_097_signmag_conversion_extreme_negative();
+      int unsigned base_debug_burst;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      send_two_quotient_hits_and_expect_delta(2044, 0, -2044, case_id);
+      wait_for_debug_burst_count(base_debug_burst + 2, 64, case_id);
+      expect_last_debug_burst_timestamp_hi(8'hff, case_id);
+      expect_last_ts_delta_range(-2044, -2044, case_id);
+    endtask
+
+    task automatic do_neg_098_delay_field_switch_no_debug_source_change();
+      do_std_090_delay_field_changes_error_source();
+    endtask
+
+    task automatic do_neg_099_debug_outputs_active_in_idle();
+      do_std_100_debug_streams_clear_outside_running();
+    endtask
+
+    task automatic do_neg_100_debug_outputs_active_in_reset();
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      send_two_quotient_hits_and_expect_delta(0, 20, 20,
+        $sformatf("%s pre-reset debug history", case_id));
+      wait_for_debug_ts_count(2, 64, case_id);
+      wait_for_debug_burst_count(2, 64, case_id);
+      wait_for_ts_delta_count(2, 64, case_id);
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+
+      rst_vif.rst <= 1'b1;
+      repeat (4) begin
+        @(posedge rst_vif.clk);
+        #1ps;
+        expect_debug_valids_low(case_id);
+      end
+      rst_vif.rst <= 1'b0;
+      repeat (4)
+        @(posedge rst_vif.clk);
+      #1ps;
+      expect_debug_valids_low(case_id);
+      if (m_env.m_scb.debug_ts_count != base_debug_ts ||
+          m_env.m_scb.debug_burst_count != base_debug_burst ||
+          m_env.m_scb.ts_delta_count != base_ts_delta)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s debug monitor advanced across reset: debug_ts %0d/%0d debug_burst %0d/%0d ts_delta %0d/%0d",
+            case_id, m_env.m_scb.debug_ts_count, base_debug_ts,
+            m_env.m_scb.debug_burst_count, base_debug_burst,
+            m_env.m_scb.ts_delta_count, base_ts_delta))
+    endtask
+
     task automatic run_case_by_id();
       case (case_id)
         "STD_MTS_001_powerup_reset_idle": do_std_001_powerup_reset_idle();
@@ -12875,6 +13057,16 @@
         "NEG_MTS_088_frame_corrupt_bit_changes_behavior_today": do_neg_088_frame_corrupt_bit_changes_behavior_today();
         "NEG_MTS_089_invalid_enabled_window_compile_guard": do_neg_089_invalid_enabled_window_compile_guard();
         "NEG_MTS_090_out_of_range_enabled_values": do_neg_090_out_of_range_enabled_values();
+        "NEG_MTS_091_debug_ts_without_processed_hit": do_neg_091_debug_ts_without_processed_hit();
+        "NEG_MTS_092_stale_debug_ts_data": do_neg_092_stale_debug_ts_data();
+        "NEG_MTS_093_debug_burst_on_first_hit_without_history": do_neg_093_debug_burst_on_first_hit_without_history();
+        "NEG_MTS_094_ts_delta_without_burst_context": do_neg_094_ts_delta_without_burst_context();
+        "NEG_MTS_095_debug_burst_and_ts_delta_sign_disagree": do_neg_095_debug_burst_and_ts_delta_sign_disagree();
+        "NEG_MTS_096_arrival_delta_wrap_fault": do_neg_096_arrival_delta_wrap_fault();
+        "NEG_MTS_097_signmag_conversion_extreme_negative": do_neg_097_signmag_conversion_extreme_negative();
+        "NEG_MTS_098_delay_field_switch_no_debug_source_change": do_neg_098_delay_field_switch_no_debug_source_change();
+        "NEG_MTS_099_debug_outputs_active_in_idle": do_neg_099_debug_outputs_active_in_idle();
+        "NEG_MTS_100_debug_outputs_active_in_reset": do_neg_100_debug_outputs_active_in_reset();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
         "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
         "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();

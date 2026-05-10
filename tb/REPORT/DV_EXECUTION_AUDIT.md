@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 14:26 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 14:57 CEST
 
 ## Scope
 
@@ -67,6 +67,14 @@ X090 split the evidence intentionally: invalid or out-of-range channel windows
 are rejected by direct `_hw.tcl` validation checks, while legal boundary-window
 UVM companion runs provide log, UCDB, and normal/debug scoreboard continuity.
 No RTL bug was accepted in this batch.
+The X091-X100 refresh added debug-stream fault evidence for ghost debug traffic,
+stale debug data, first-hit history warm-up, `debug_burst` and `ts_delta`
+alignment, sign agreement, arrival-delta source math, extreme negative
+sign-magnitude conversion, delay-source switching, and idle/reset debug
+quiescence. X097 initially stopped on a reference expectation mismatch; RTL
+review showed `DELTA_TIMESTAMP_WIDTH=12` and `debug_burst` exports the trimmed
+high slice, so the stimulus was corrected to drive `-2044` before accepting
+evidence. No RTL bug was accepted in this batch.
 
 ## Current Coverage Of Documented Cases
 
@@ -75,8 +83,8 @@ No RTL bug was accepted in this batch.
 | BASIC | 130 | 130 | 130 |
 | EDGE | 131 | 131 | 131 |
 | PROF | 130 | 130 | 130 |
-| ERROR | 130 | 90 | 90 |
-| Total | 521 | 481 | 481 |
+| ERROR | 130 | 100 | 100 |
+| Total | 521 | 491 | 491 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -85,7 +93,7 @@ Notes:
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
 - `DV_PROF.md` has explicit UVM handlers for P001 through P130.
-- `DV_ERROR.md` has explicit UVM handlers for X001 through X090.
+- `DV_ERROR.md` has explicit UVM handlers for X001 through X100.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -476,6 +484,7 @@ Notes:
 | `DV_ERROR.md` X063 described "no SOP" for a disabled input channel and the first NEG wrapper reused a CORNER helper whose disabled sideband depended on a Makefile generic override. | `NEG_MTS_063_sop_on_disabled_channel` | No RTL change was accepted. RTL review showed route-lane SOP is generated from decoded output route, while input packet tracking only records enabled sideband lanes. X063 now drives default-window-disabled sideband 5, requires the route-lane SOP and normal/debug trace pair, then proves termination emits one close-marker train because disabled input bookkeeping did not hold a packet open. |
 | `DV_ERROR.md` X076 described force-stop as allowing no accepted hits, but delivered RTL counts ready-valid attempts and discards them while `force_stop` blocks payload output. | `NEG_MTS_076_force_stop_stuck_high` | No RTL change was accepted. The case now holds `force_stop`, drives four attempts, requires `beats=0` and `payloads=0`, and records the expected discard behavior. The plan text now distinguishes input-side attempts from emitted payloads. |
 | Invalid enabled-channel window configurations cannot also produce normal pass UCDB artifacts. | `NEG_MTS_089_invalid_enabled_window_compile_guard`, `NEG_MTS_090_out_of_range_enabled_values` | No RTL change was accepted. The package validation callback is checked directly by `hw_tcl_validate_check`, and legal boundary-window UVM companion cases still require log, UCDB, and normal/debug scoreboard evidence. |
+| Initial X097 debug-burst expectation used too small a negative delta for the 12-bit trim check. | `NEG_MTS_097_signmag_conversion_extreme_negative` | No RTL change was accepted. RTL review showed `DELTA_TIMESTAMP_WIDTH=12` and `aso_debug_burst_data(15 downto 8)` takes bits `[11:4]`, so the stimulus now drives `-2044`, requires trimmed high byte `0xff`, and still checks exact `ts_delta=-2044`. |
 
 ## Submodule Freshness Check
 
@@ -483,19 +492,19 @@ The OPQ IP-core chain requested on 2026-05-09 was fetched again on
 2026-05-10 with `--recurse-submodules`. The user-provided leading commits are
 contained on the expected branches. The parent and top branches are already
 ahead of those OPQ commits at the prior MTSP reset/recovery pointer, and this
-batch advances MTSP independently through the current generic/build ERROR/NEG
+batch advances MTSP independently through the current debug-stream ERROR/NEG
 checkpoint:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | contained by `codex/opq-feb-swb-parent-20260508`, current head before this batch `71f7e97` |
-| `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | contained by `yifeng-ip_sim-2604`, current head before this batch `e4210dc` |
-| `mutrig_timestamp_processor` | local `master` with the X081-X090 generic/build ERROR/NEG checkpoint | source for `origin/master` and parent/top pointer publication |
+| `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | contained by `codex/opq-feb-swb-parent-20260508`, current head before this batch `7029c8e` |
+| `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | contained by `yifeng-ip_sim-2604`, current head before this batch `5141e92` |
+| `mutrig_timestamp_processor` | local `master` with the X091-X100 debug-stream ERROR/NEG checkpoint | source for `origin/master` and parent/top pointer publication |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
 `packet_scheduler 245eb93` plus the local MTSP ERROR/NEG checkpoints. The
-X081-X090 checkpoint is the source for the parent and top-level gitlink commits.
+X091-X100 checkpoint is the source for the parent and top-level gitlink commits.
 
 ## Evidence Commands
 
@@ -1488,6 +1497,54 @@ package-level validation evidence by design; the UVM companions use valid
 generic windows so the normal/debug scoreboard can still produce highest-level
 runtime artifacts for the documented case IDs.
 
+Focused ERROR/NEG debug-stream fault batch:
+
+```bash
+make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<X091-X100 case_id> SEED=1
+```
+
+Result: `FOCUSED_NEG091_NEG100_PASS count=10`, followed by a full
+current-harness `FULL_EXPLICIT_491_PASS cases=491 elapsed=879s`. Every case ran
+with `MTSP_DEBUG_PATH_REQUIRED=1`, input and normal-output monitoring,
+debug-path monitoring, paired trace metadata, and scoreboard analysis-port
+summaries.
+Key evidence:
+- X091 rejects an unprocessed IDLE hit while holding `debug_ts` and trace
+  counts steady, then recovers with one processed payload and one paired trace:
+  `hit0_ready_low_rejects=1 hit0_protocol_faults=1 inputs=1 beats=1
+  debug_ts=1 dual_path_pairs=1 traces=1`.
+- X092 proves `debug_ts` data is not stale across exact deltas 3 and 5:
+  `inputs=6 beats=6 payloads=6 debug_ts=6 debug_burst=5 ts_delta=5
+  dual_path_pairs=6 traces=6`.
+- X093 proves first-hit history warm-up still reports one payload, one
+  `debug_ts`, one `debug_burst`, one `ts_delta`, and one paired trace.
+- X094 aligns `debug_burst` and `ts_delta` observations by timestamp for the
+  same two processed hits: `inputs=2 beats=2 debug_ts=2 debug_burst=2
+  ts_delta=2 dual_path_pairs=2 traces=2`.
+- X095 checks sign agreement between `debug_burst` trimmed timestamp high byte
+  and `ts_delta` polarity for positive and negative timestamp pairs:
+  `inputs=4 beats=4 payloads=4 debug_burst=4 ts_delta=4`.
+- X096 reuses the GTS arrival-delta reference and requires the normal/debug
+  trace pair to agree with the lower-byte arrival delta source.
+- X097 drives the corrected extreme-negative timestamp delta `-2044`, requires
+  `debug_burst` timestamp high byte `0xff`, and requires exact
+  `ts_delta=-2044`.
+- X098 reuses the T/E delay-source switching reference and requires the debug
+  metadata to follow the selected delay source: `csr=6 inputs=2 beats=2
+  debug_ts=2 debug_burst=1 ts_delta=1 dual_path_pairs=2 traces=2`.
+- X099 and X100 require debug outputs to remain quiescent in IDLE and across
+  global reset while preserving the accepted pre-reset debug history counts.
+
+Mismatch review in this batch:
+- The first X097 attempt used `-508` and expected `debug_burst` high byte
+  `0xff`; the run stopped with `got 0x9f`. RTL review found the correct
+  contract: `DELTA_TIMESTAMP_WIDTH=12`, `debug_burst` exports
+  `delta_timestamp(delta_timestamp'high downto delta_timestamp'high-7)`, and
+  `ts_delta` exports the full sign-magnitude conversion. The stimulus now uses
+  `-2044`, which exercises trimmed high byte `0xff`, while still checking exact
+  `ts_delta=-2044`. This was a pre-acceptance reference-stimulus correction,
+  not an RTL bug.
+
 RTL before/after bug proof:
 
 ```bash
@@ -1504,10 +1561,10 @@ Latest full explicit-case sweep and current artifact set:
 make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_481_PASS cases=481 elapsed=865s` on the final current
-UVM harness after the generic/build dispatcher bring-up. The per-case artifact
+Result: `FULL_EXPLICIT_491_PASS cases=491 elapsed=879s` on the final current
+UVM harness after the debug-stream fault dispatcher bring-up. The per-case artifact
 audit now reports
-`ARTIFACT_AUDIT cases=481 missing_logs=0
+`ARTIFACT_AUDIT cases=491 missing_logs=0
 bad_or_incomplete_logs=0 missing_ucdb=0`.
 
 Combo terminate contract:
@@ -1531,13 +1588,13 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_481.ucdb <481 dispatcher UCDBs>
-/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_481.ucdb
+/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_491.ucdb <491 dispatcher UCDBs>
+/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_491.ucdb
 ```
 
 The merge used QuestaSim-64 `vcover` 2026.1_1 to match the UCDB generation
 version; the older Quartus-bundled 2022.4 `vcover` rejected the files as newer
-UCDBs. Filtered instance coverage summary: `71.60%`. The DUT instance summary is
+UCDBs. Filtered instance coverage summary: `71.57%`. The DUT instance summary is
 statement `97.61%`, branch `95.36%`, condition `84.82%`, expression `100.00%`,
 FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.93%`.
 The merge log was checked for source mismatch and reported none; the only
@@ -1546,10 +1603,10 @@ reported warning was the local missing `vcovkill` helper.
 Artifact check:
 
 ```text
-ARTIFACT_AUDIT cases=481 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
+ARTIFACT_AUDIT cases=491 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
 ```
 
-Additional checks through this ERROR/NEG generic/build batch:
+Additional checks through this ERROR/NEG debug-stream fault batch:
 
 ```bash
 git diff --check
@@ -1574,7 +1631,7 @@ Results:
   wording inside the legacy bucket files, and this audit now records the
   sink-ready, drain/ready/boundary, illegal-control, CSR-misuse, input-error,
   ready/handshake, timestamp/window, ToT/ET, marker/boundary,
-  reset/recovery, and generic/build evidence separately.
+  reset/recovery, generic/build, and debug-stream fault evidence separately.
 - RTL changed in the first ERROR/NEG batch only to expose numeric run-control and
   processor-state debug mirrors for deterministic DV checkpointing; no
   functional RTL fault was accepted, and no new `BUG_HISTORY.md` entry was
@@ -1583,26 +1640,28 @@ Results:
   misuse expectations, the X022-X030 input-error expectations, the
   X031-X040 ready/handshake expectations, the X041-X050 timestamp/window
   expectations, the X051-X060 ToT/ET expectations, the X061-X070
-  marker/boundary expectations, the X071-X080 reset/recovery expectations, and
-  the X081-X090 generic/build expectations were aligned to the existing RTL
+  marker/boundary expectations, the X071-X080 reset/recovery expectations, the
+  X081-X090 generic/build expectations, and the X091-X100 debug-stream
+  expectations were aligned to the existing RTL
   contract after reviewing normal/debug, hit0 fault, ready,
-  terminal-boundary, reset, force-stop, package-validation, and CSR
+  terminal-boundary, reset, force-stop, package-validation, debug-burst
+  timestamp slicing, and CSR
   analysis-port evidence.
-- No RTL changed in the CSR-misuse, input-error, ready/handshake, or
-  timestamp/window, ToT/ET, marker/boundary, reset/recovery, or generic/build
-  batches, so Questa static screen was not rerun.
+- No RTL changed in the CSR-misuse, input-error, ready/handshake,
+  timestamp/window, ToT/ET, marker/boundary, reset/recovery, generic/build, or
+  debug-stream fault batches, so Questa static screen was not rerun.
   The previous static screen for the current RTL remains at
   `/tmp/mtsp_static_neg001_neg010/questa_static_screen.log` with lint
   `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`.
 
-Current evidenced explicit cases are the 481 handlers in
+Current evidenced explicit cases are the 491 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 40 uncovered ERROR/NEG cases, then
+the remaining 30 uncovered ERROR/NEG cases, then
 regenerate the ordered coverage/report dashboard from current artifacts instead
 of relying on stale proxy rows. EDGE is now fully dispatched and evidenced;
 PROF has 130 evidenced stress handlers.
