@@ -49,7 +49,7 @@ Historical formal note:
 | [BUG-012-R](#bug-012-r-illegal-run-control-error-state-could-wedge-ctrl-ready-low) | R | hard stuck error | `directed-only (illegal control injection)` | fixed | `STRESS_MTS_070_interspersed_illegal_ctrl_words` | `a975fe1` | An illegal run-control word decoded to `ERROR` and left `asi_ctrl_ready` low, blocking later legal recovery commands. |
 | [BUG-013-H](#bug-013-h-inert-parameter-terminate-stimulus-left-input-packet-open) | H | non-datapath-refactor | `directed-only (parameter-sweep terminate stimulus)` | fixed | `STRESS_MTS_090_inert_parameter_sweep_compare` | `c2789b0` | P090 opened an input packet on one sideband channel and placed the terminal EOP on another, so the legal RTL drain held close markers off. |
 | [BUG-014-H](#bug-014-h-soft-reset-smoke-loop-checked-debug-burst-before-monitor-settled) | H | non-datapath-refactor | `directed-only (soft-reset smoke-loop debug timing)` | fixed | `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs` | `dedab24` | P110 enforced exact debug-stream counts before bounded waits let the passive debug monitors report the final sample. |
-| [BUG-015-R](#bug-015-r-open-packet-could-block-terminal-close-markers-after-endofrun) | R | hard stuck error | `rare (routine stop while an input packet remains open or upstream EOP is missing)` | fixed | `NEG_MTS_118_missing_boundary_with_packet_open` | `pending-current-patch` | Stale open-packet bookkeeping could hold the terminal boundary generator busy forever after upstream end-of-run. |
+| [BUG-015-R](#bug-015-r-open-packet-could-block-terminal-close-markers-after-endofrun) | R | hard stuck error | `rare (routine stop while an input packet remains open or upstream EOP is missing)` | fixed | `NEG_MTS_118_missing_boundary_with_packet_open` | `a1d9155` | Stale open-packet bookkeeping could hold the terminal boundary generator busy forever after upstream end-of-run. |
 
 ## 2026-05-10
 
@@ -90,7 +90,7 @@ Historical formal note:
   - the explicit-only coverage merge reported filtered instance coverage `71.66%`; DUT statement `97.61%`, branch `95.36%`, condition `84.95%`, expression `100.00%`, FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.93%`
   - the hard Questa static screen passed with lint `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`
 - Commit:
-  - `pending-current-patch` (`[PATCH] Close MTSP termination negative evidence`)
+  - `a1d9155` (`[PATCH] Close MTSP termination negative evidence`)
 
 ### BUG-014-H: Soft-reset smoke loop checked debug burst before monitor settled
 
