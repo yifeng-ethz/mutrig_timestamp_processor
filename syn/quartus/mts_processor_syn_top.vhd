@@ -30,6 +30,7 @@ architecture rtl of mts_processor_syn_top is
     signal asi_hit_type0_data          : std_logic_vector(44 downto 0) := (others => '0');
     signal asi_hit_type0_valid         : std_logic := '0';
     signal asi_hit_type0_ready         : std_logic;
+    signal coe_hit_type0_sidecar_data  : std_logic_vector(63 downto 0) := (others => '0');
 
     signal aso_hit_type1_channel       : std_logic_vector(3 downto 0);
     signal aso_hit_type1_startofpacket : std_logic;
@@ -50,6 +51,9 @@ architecture rtl of mts_processor_syn_top is
     signal aso_debug_burst_data        : std_logic_vector(15 downto 0);
     signal aso_ts_delta_valid          : std_logic;
     signal aso_ts_delta_data           : std_logic_vector(15 downto 0);
+    signal coe_debug_status_data       : std_logic_vector(31 downto 0);
+    signal coe_hit_type1_sidecar_data  : std_logic_vector(63 downto 0);
+    signal coe_hit_type1_sidecar_valid : std_logic;
 begin
     rst <= '1' when rst_ctr < to_unsigned(32, rst_ctr'length) else '0';
     activity_probe <= probe_accum;
@@ -74,6 +78,7 @@ begin
             asi_hit_type0_data          => asi_hit_type0_data,
             asi_hit_type0_valid         => asi_hit_type0_valid,
             asi_hit_type0_ready         => asi_hit_type0_ready,
+            coe_hit_type0_sidecar_data  => coe_hit_type0_sidecar_data,
             aso_hit_type1_channel       => aso_hit_type1_channel,
             aso_hit_type1_startofpacket => aso_hit_type1_startofpacket,
             aso_hit_type1_endofpacket   => aso_hit_type1_endofpacket,
@@ -91,6 +96,9 @@ begin
             aso_debug_burst_data        => aso_debug_burst_data,
             aso_ts_delta_valid          => aso_ts_delta_valid,
             aso_ts_delta_data           => aso_ts_delta_data,
+            coe_debug_status_data       => coe_debug_status_data,
+            coe_hit_type1_sidecar_data  => coe_hit_type1_sidecar_data,
+            coe_hit_type1_sidecar_valid => coe_hit_type1_sidecar_valid,
             i_rst                       => rst,
             i_clk                       => clk
         );
@@ -119,6 +127,7 @@ begin
                 asi_hit_type0_data          <= (others => '0');
                 asi_hit_type0_valid         <= '0';
                 aso_hit_type1_ready         <= '1';
+                coe_hit_type0_sidecar_data  <= (others => '0');
                 asi_ctrl_data               <= (others => '0');
                 asi_ctrl_valid              <= '0';
             else
@@ -147,6 +156,7 @@ begin
                     asi_hit_type0_error         <= std_logic_vector(stim_ctr(10 downto 8));
                     asi_hit_type0_data          <= std_logic_vector(stim_ctr(12 downto 0)) & std_logic_vector(stim_ctr);
                     asi_hit_type0_endofrun      <= '0';
+                    coe_hit_type0_sidecar_data  <= std_logic_vector(stim_ctr) & std_logic_vector(stim_ctr xor x"5a5aa5a5");
                 end if;
 
                 aso_hit_type1_ready <= '1';
@@ -196,6 +206,10 @@ begin
                 end if;
                 if aso_ts_delta_valid = '1' then
                     probe_next(23 downto 8) := probe_next(23 downto 8) xor aso_ts_delta_data;
+                end if;
+                probe_next := probe_next xor coe_debug_status_data;
+                if coe_hit_type1_sidecar_valid = '1' then
+                    probe_next := probe_next xor coe_hit_type1_sidecar_data(31 downto 0);
                 end if;
                 probe_next(24) := probe_next(24) xor avs_csr_waitrequest;
                 probe_next(25) := probe_next(25) xor asi_hit_type0_ready;

@@ -1,5 +1,16 @@
 # Changelog
 
+## 26.1.0.0506 - 2026-05-06
+
+- Added the DEBUG sidecar contract for `mts_processor`: `DEBUG>=1` exposes a
+  packed synthesizable status conduit, and `DEBUG>=2` propagates a 64-bit
+  per-hit sidecar from accepted `hit_type0` payload beats to delivered
+  `hit_type1` payload beats.
+- Kept `DEBUG=0` nominal payload behavior unchanged, with deterministic zero
+  tieoffs on the new debug-status and sidecar outputs.
+- Updated Platform Designer packaging to materialize the new conduits only at
+  the requested DEBUG levels.
+
 ## 26.0.0404 - 2026-04-14
 
 - Reset the MuTRiG and global timestamp counter state on `i_rst` so the
