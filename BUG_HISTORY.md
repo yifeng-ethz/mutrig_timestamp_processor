@@ -48,8 +48,44 @@ Historical formal note:
 | [BUG-011-R](#bug-011-r-csr-soft-reset-left-timing-datapath-and-debug-history-live) | R | soft error | `occasional (routine CSR soft-reset recovery)` | fixed | `STRESS_MTS_035_soft_reset_every_10k_cycles` | `b1d45ba` | CSR soft reset cleared visible counters without clearing local timing, datapath, output, and debug history. |
 | [BUG-012-R](#bug-012-r-illegal-run-control-error-state-could-wedge-ctrl-ready-low) | R | hard stuck error | `directed-only (illegal control injection)` | fixed | `STRESS_MTS_070_interspersed_illegal_ctrl_words` | `a975fe1` | An illegal run-control word decoded to `ERROR` and left `asi_ctrl_ready` low, blocking later legal recovery commands. |
 | [BUG-013-H](#bug-013-h-inert-parameter-terminate-stimulus-left-input-packet-open) | H | non-datapath-refactor | `directed-only (parameter-sweep terminate stimulus)` | fixed | `STRESS_MTS_090_inert_parameter_sweep_compare` | `c2789b0` | P090 opened an input packet on one sideband channel and placed the terminal EOP on another, so the legal RTL drain held close markers off. |
+| [BUG-014-H](#bug-014-h-soft-reset-smoke-loop-checked-debug-burst-before-monitor-settled) | H | non-datapath-refactor | `directed-only (soft-reset smoke-loop debug timing)` | fixed | `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs` | `dedab24` | P110 enforced exact debug-stream counts before bounded waits let the passive debug monitors report the final sample. |
 
 ## 2026-05-10
+
+### BUG-014-H: Soft-reset smoke loop checked debug burst before monitor settled
+
+- First seen:
+  - UVM case `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs`
+  - The first focused P101-P110 batch stopped on iteration 0 after four normal outputs and four paired `debug_ts` traces had already been observed
+- Symptom:
+  - P110 failed at `292 ns` with `expected 4 new debug_burst samples, got 3 from base 0`
+  - the normal payload path, `debug_ts` path, and delay-math trace pairing were already sane for the four smoke vectors
+  - the failure was specific to the exact-count check running before the final passive `debug_burst` / `ts_delta` monitor sample had been bounded-waited
+- Root cause:
+  - the new soft-reset smoke-loop helper waited for input, output, and trace counts before checking exact debug-stream deltas
+  - unlike the replay helper, it did not first call `wait_for_debug_ts_count`, `wait_for_debug_burst_count`, and `wait_for_ts_delta_count`
+  - this made a monitor scheduling boundary look like a missing debug-burst event even though the RTL sideband was not lost
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - P110 now uses bounded waits for `debug_ts`, `debug_burst`, and `ts_delta` on every soft-reset iteration before enforcing exact per-iteration counts
+    - the fix preserves the strict scoreboard requirement: each emitted payload must still have matching normal output, debug timestamp, debug burst, `ts_delta`, and dual-path trace evidence
+  - before_fix_outcome:
+    - `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs` failed with three observed `debug_burst` samples when the fourth sample had not yet been waited into the scoreboard
+  - after_fix_outcome:
+    - `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs` passes with `csr=259 inputs=128 beats=128 payloads=128 debug_ts=128 debug_burst=128 ts_delta=128 dual_path_pairs=128 traces=128`
+    - the focused P101-P110 batch passes with `STRESS_P101_P110_BATCH_PASS count=10`
+    - the ordered explicit-case rerun passes with `FULL373_PASS cases=373 elapsed=659s`
+  - potential_hazard:
+    - fixed for the soft-reset smoke-loop helper. The exact-count check remains intentionally strict after the bounded monitor waits, so future missing debug samples still fail the case
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - the artifact audit passed with `ARTIFACT_AUDIT cases=373 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0`
+  - the explicit-only coverage merge reported filtered instance coverage `71.70%`; DUT statement `97.04%`, branch `95.49%`, condition `83.92%`, expression `100.00%`, FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.82%`
+- Commit:
+  - `dedab24` (`[PATCH] Add MTSP smoke endurance stress cases`)
 
 ### BUG-013-H: Inert parameter terminate stimulus left input packet open
 
