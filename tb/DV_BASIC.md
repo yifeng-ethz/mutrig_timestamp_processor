@@ -141,7 +141,7 @@
 - `B103 | STD_MTS_103_replay_smoke_clamp_vector`: Reproduce the smoke vector that expects the clamp/saturation path. Preserves the current directed check.
 - `B104 | STD_MTS_104_discard_counter_matches_rejections`: Drive a known mix of rejected hits and confirm the CSR discard counter matches exactly. Validates software observability of discard policy.
 - `B105 | STD_MTS_105_total_counter_matches_all_valid`: Drive a known mix of accepted and rejected hits and confirm the total counter matches all valid inputs. Validates software observability of ingress load.
-- `B106 | STD_MTS_106_total_counter_hi_rollover`: Run long enough to wrap the low 32-bit total counter and confirm the high word increments. Covers the 48-bit accounting path.
+- `B106 | STD_MTS_106_total_counter_hi_rollover`: Enable the DV-only counter seed generic, place the total counter at `0x0000_FFFF_FFFF`, accept one clean hit, and confirm the high word increments to `0x0001`. Covers the 48-bit accounting carry path without a 2^32-cycle simulation.
 - `B107 | STD_MTS_107_soft_reset_clears_counters`: Pulse `soft_reset` after traffic and confirm both counters clear without requiring global reset. Verifies the intended software reset path.
 - `B108 | STD_MTS_108_sync_clears_counters`: Use the standard `RUN_PREPARE -> SYNC` path after traffic and confirm the counters clear through `reset_flow=SYNC`. Verifies the run-sequence reset path.
 - `B109 | STD_MTS_109_running_status_bit_semantics`: Read CSR word `0x0` in `RUNNING` and outside `RUNNING`; expect bit 0 to mirror `processor_state==RUNNING` exactly. Documents the live-status semantics.

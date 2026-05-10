@@ -62,6 +62,12 @@ endif
 ifeq ($(CASE_ID),STD_MTS_120_debug_zero_is_functionally_equivalent)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DEBUG=0
 endif
+ifeq ($(CASE_ID),STD_MTS_106_total_counter_hi_rollover)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DV_COUNTER_SEED_ENABLE=1
+endif
+ifeq ($(CASE_ID),CORNER_MTS_018_counter_read_on_low_word_rollover)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DV_COUNTER_SEED_ENABLE=1
+endif
 ifeq ($(CASE_ID),CORNER_MTS_091_single_channel_window_index0)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=0 -g/tb_top/dut/ENABLED_CHANNEL_HI=0
 endif

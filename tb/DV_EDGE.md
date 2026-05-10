@@ -26,7 +26,7 @@
 - `E015 | CORNER_MTS_015_reserved_opmode_bit28_only`: Write only `op_mode[28]=1`; verify the bit has no functional effect and does not read back as an implemented mode. Documents the reserved field boundary.
 - `E016 | CORNER_MTS_016_multi_field_control_write`: Toggle `go`, `force_stop`, `soft_reset`, `bypass_lapse`, `discard_hiterr`, and op-mode bits in one write; verify all implemented fields settle correctly. Covers packed CSR updates.
 - `E017 | CORNER_MTS_017_read_during_soft_reset_window`: Read CSR word `0x0` immediately after pulsing `soft_reset`; verify the self-clearing bit and counters present a deterministic state. Covers self-clear timing.
-- `E018 | CORNER_MTS_018_counter_read_on_low_word_rollover`: Read total-hit high/low words across the exact low-word rollover boundary; verify the scoreboard can recover a coherent snapshot. Covers 48-bit readout edges.
+- `E018 | CORNER_MTS_018_counter_read_on_low_word_rollover`: Enable the DV-only counter seed generic, read the high word before an accepted hit rolls the low word from `0xFFFF_FFFF` to zero, then read low/high and recover the coherent high-low-high snapshot. Covers 48-bit readout edges and the software bring-up read sequence.
 - `E019 | CORNER_MTS_019_csr_access_in_flushing`: Perform reads and writes while `processor_state=FLUSHING`; verify the control plane remains functional and does not perturb marker generation. Covers stop-time software activity.
 - `E020 | CORNER_MTS_020_polling_unsupported_addr7`: Repeatedly poll an unsupported CSR address; verify constant zero readback and no latent side effects. Covers out-of-range access stability.
 

@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-09, refreshed through 2026-05-10 01:45 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 02:07 CEST
 
 ## Scope
 
@@ -9,29 +9,23 @@ dual normal/debug monitor path, replacing the old generic documented-case
 fallback with explicit case dispatch, completing the BASIC B111-B130 batch, and
 adding the first EDGE CSR/input-protocol, divider/ToT, and debug-threshold
 boundary batches, the EDGE reset and force-stop recovery batch, and the EDGE
-generic/configuration, ready-edge, and termination-edge batches.
+generic/configuration, ready-edge, termination-edge, and counter-rollover
+seed/readout batches.
 
 ## Current Coverage Of Documented Cases
 
 | Bucket | Documented Cases | Explicit UVM Handlers | Current Log + UCDB Evidence |
 |---|---:|---:|---:|
-| BASIC | 130 | 129 | 129 |
-| EDGE | 131 | 86 | 86 |
+| BASIC | 130 | 130 | 130 |
+| EDGE | 131 | 87 | 87 |
 | PROF | 130 | 0 | 0 |
 | ERROR | 130 | 2 | 2 |
-| Total | 521 | 217 | 217 |
+| Total | 521 | 219 | 219 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
   `No explicit UVM stimulus handler`.
 - The old generic smoke fallback is no longer counted as evidence.
-- `STD_MTS_106_total_counter_hi_rollover` remains intentionally open. It needs
-  a rollover-specific strategy, such as a legal long-run accelerator or a
-  separately justified counter preload hook, rather than a fake pass through a
-  short simulation.
-- `CORNER_MTS_018_counter_read_on_low_word_rollover` remains open for the same
-  class of rollover-snapshot strategy. It is not counted as covered by the new
-  CSR boundary batch.
 - `CORNER_MTS_057_toggle_derive_tot_between_hits` and
   `CORNER_MTS_058_toggle_delay_field_between_hits` remain open until the
   in-flight CSR mode-sampling contract is resolved. A weak post-output toggle
@@ -80,6 +74,10 @@ Notes:
   `STD_MTS_107_soft_reset_clears_counters` through
   `STD_MTS_110_force_stop_persists_until_cleared` preserve the checked-in VHDL
   smoke ET vectors and add CSR-visible counter checks.
+- `STD_MTS_106_total_counter_hi_rollover` now uses the disabled-by-default
+  `DV_COUNTER_SEED_ENABLE` generic after the normal `run_start()` bring-up,
+  seeds total count to `0x0000_ffff_ffff`, accepts one clean hit, and requires
+  the high word to increment with a paired normal/debug trace.
 - `STD_MTS_111_compile_rtl_default_div_pipeline` and
   `STD_MTS_112_compile_packaged_div_pipeline` now compile/run with
   `LPM_DIV_PIPELINE=4` and `LPM_DIV_PIPELINE=2` respectively. The observed
@@ -120,6 +118,10 @@ Notes:
   inserts an idle cycle after writes, which lets RTL self-clear `soft_reset`
   before the next read. The new no-idle write/read helper samples the asserted
   bit in the legal one-cycle visibility window and then checks counter clear.
+- `CORNER_MTS_018` now uses the same DV-only counter seed generic after
+  standard run bring-up, reads the high word before rollover, then reads
+  low/high after one accepted hit and recovers the coherent high-low-high
+  snapshot `0x0001_0000_0000`.
 - `CORNER_MTS_019` and `CORNER_MTS_020` prove CSR access during `FLUSHING` and
   stable zero readback for unsupported address 7 without perturbing close-marker
   generation or counters.
@@ -207,23 +209,28 @@ Notes:
 | A post-traffic SYNC reset cannot be driven as `RUNNING -> RUN_PREPARE -> SYNC`; current RTL only accepts `RUN_PREPARE` from `IDLE` or `FLUSHING`. | `STD_MTS_108_sync_clears_counters` | UVM now uses the legal `IDLE -> RUN_PREPARE -> SYNC` sequence before checking that counters clear in RESET/SYNC. |
 | `IDLE` could be decoded while `asi_ctrl_ready=0`, aborting close-marker generation. | `STD_MTS_129_upgrade_case_idle_after_boundary_only` | RTL fix `e61fc9f22e83` gates control decode on `asi_ctrl_valid && ctrl_ready_comb`; before fails and after passes under `prove_delta`. |
 | `DV_EDGE.md` documented E094/E095 terminate delay as `LPM_DIV_PIPELINE + 4`, but RTL emits close markers only after the full accepted payload path drains. | `CORNER_MTS_094_packaged_div_pipeline_delay` | No RTL change. The plan and checker now use the monitor-observable accepted-hit-to-first-empty-close-marker contract, `LPM_DIV_PIPELINE + 7`. |
+| Counter preload before `run_start()` was cleared by the legal `RUN_PREPARE -> SYNC` sequence, so the rollover stimulus never reached the intended boundary. | `STD_MTS_106_total_counter_hi_rollover` | No carry RTL bug was accepted. The DV-only seed is applied after standard run bring-up, and default CSR writes to counter words remain inert when the generic is zero. |
+| The VHDL debug report printed `total_pre` through a truncated integer conversion, which saturated the human trace near rollover. | `STD_MTS_106_total_counter_hi_rollover` | RTL report text now prints the full 48-bit counter in hex so rollover bring-up traces match CSR and scoreboard math. |
 
 ## Submodule Freshness Check
 
-The OPQ IP-core chain requested on 2026-05-09 was fetched and located:
+The OPQ IP-core chain requested on 2026-05-09 was fetched and the parent
+pointers were advanced through the previous MTSP DV checkpoint before this
+rollover batch:
 
 | Repository | Leading Commit | Branch |
 |---|---|---|
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
-| `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
-| `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
+| `mu3e-ip-cores` | `9aec359` `[PATCH] Advance MTSP DV package pointer` | `origin/codex/opq-feb-swb-parent-20260508` |
+| `musip` | `31a3d58` `[PATCH] Advance Mu3e IP cores MTSP DV pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
 
 `/home/yifeng/packages/musip_2604/external` contains the clean chain:
-`musip d3f4c05` -> `external/mu3e-ip-cores c9ca241` ->
-`packet_scheduler 245eb93`. The active
+`musip 31a3d58` -> `external/mu3e-ip-cores 9aec359` ->
+`packet_scheduler 245eb93` and `mutrig_timestamp_processor 47d47fa`. The active
 `/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores` and
 `packet_scheduler` worktrees were dirty and divergent from those branch tips, so
-no in-place checkout or pull was performed there.
+no in-place checkout or pull was performed there. This new MTSP rollover
+checkpoint still requires a follow-up parent gitlink update after it is pushed.
 
 ## Evidence Commands
 
@@ -299,6 +306,30 @@ Result: all nine cases passed, then refreshed under the final full sweep. The
 legacy EDGE text for E111-E119 was updated to the current explicit-upstream
 `endofrun` close-marker contract.
 
+Focused counter rollover batch:
+
+```bash
+for case_id in STD_MTS_106_total_counter_hi_rollover CORNER_MTS_018_counter_read_on_low_word_rollover; do
+  make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID="$case_id" SEED=1
+done
+```
+
+Result: both cases passed after correcting the bring-up sequence to seed the
+counter after `run_start()`. `STD_MTS_106` required one payload, one
+normal/debug trace pair, and total count `0x0001_0000_0000`; `CORNER_MTS_018`
+required the high-low-high snapshot to recover the same total.
+
+Default-generic counter-write guard:
+
+```bash
+for case_id in STD_MTS_025_unsupported_write_addr3_inert STD_MTS_026_unsupported_write_addr4_inert; do
+  make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID="$case_id" SEED=1
+done
+```
+
+Result: both cases passed, proving CSR words 3 and 4 remain inert write targets
+when `DV_COUNTER_SEED_ENABLE=0`.
+
 RTL before/after bug proof:
 
 ```bash
@@ -312,10 +343,10 @@ before close markers complete`; after RTL passes with
 Final explicit-case sweep:
 
 ```bash
-make -C tb/uvm run_after TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
+make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_SWEEP_PASS count=217`.
+Result: `FULL_EXPLICIT_SWEEP_PASS count=219`.
 
 Combo terminate contract:
 
@@ -334,12 +365,12 @@ make -C tb/uvm cov_report_total RTL_VARIANT=after
 
 Current merged report: `tb/uvm/cov_after/merged.txt`.
 
-Filtered instance coverage summary: `66.36%`.
+Filtered instance coverage summary: `66.51%`.
 
 Artifact check:
 
 ```text
-explicit_cases=217 missing_artifacts=0
+explicit_cases=219 missing_artifacts=0
 combo_pass=True
 ```
 
@@ -356,7 +387,7 @@ python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py
 Results:
 - `git diff --check`: pass.
 - `./tb/run_mts_processor_tb.sh`: `mts_processor_tb PASSED`.
-- `rtl_style_check.py`: fail on 952 legacy style issues in `mts_processor.vhd`
+- `rtl_style_check.py`: fail on 965 legacy style issues in `mts_processor.vhd`
   such as tabs, legacy `i_` ports, constant naming, and alignment. This batch
   did not attempt a broad file restyle.
 - `bug_history_format_check.py BUG_HISTORY.md`: pass.
@@ -366,16 +397,15 @@ Results:
   canonical table/header format. Recent batches corrected specific stale EDGE
   timing and termination text inside the legacy EDGE file.
 
-Current evidenced explicit cases are the 217 handlers in
+Current evidenced explicit cases are the 219 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 304 uncovered BASIC, EDGE, PROF, and ERROR cases, including
-`STD_MTS_106_total_counter_hi_rollover` and
-`CORNER_MTS_018_counter_read_on_low_word_rollover`, plus the in-flight CSR
-mode-sampling cases `CORNER_MTS_057` and `CORNER_MTS_058`, the expected-error
-ready trap `CORNER_MTS_105`, then regenerate the ordered coverage/report
-dashboard from current artifacts instead of relying on stale proxy rows.
+the remaining 302 uncovered EDGE, PROF, and ERROR cases, including the
+in-flight CSR mode-sampling cases `CORNER_MTS_057` and `CORNER_MTS_058`, the
+expected-error ready trap `CORNER_MTS_105`, then regenerate the ordered
+coverage/report dashboard from current artifacts instead of relying on stale
+proxy rows.

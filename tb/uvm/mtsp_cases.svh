@@ -2162,6 +2162,28 @@
       expect_discard_count(32'd1, case_id);
     endtask
 
+    task automatic do_std_106_total_counter_hi_rollover();
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      seed_total_count_dv(48'h0000_ffff_ffff,
+        $sformatf("%s seed low word at rollover edge", case_id));
+
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s rollover hit output", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s rollover hit debug trace", case_id));
+      expect_last_trace_pair($sformatf("%s rollover hit trace pair", case_id));
+      expect_total_count(48'h0001_0000_0000,
+        $sformatf("%s high word increment after low wrap", case_id));
+      expect_discard_count(32'd0, case_id);
+    endtask
+
     task automatic do_std_107_soft_reset_clears_counters();
       do_std_017_soft_reset_self_clear();
     endtask
@@ -2697,6 +2719,54 @@
         $sformatf("%s soft_reset self-clear", case_id));
       expect_discard_count(32'd0, case_id);
       expect_total_count(48'd0, case_id);
+    endtask
+
+    task automatic do_corner_018_counter_read_on_low_word_rollover();
+      bit [31:0]   hi_raw_before;
+      bit [31:0]   hi_raw_after;
+      bit [31:0]   lo_after;
+      bit [15:0]   hi_before;
+      bit [15:0]   hi_after;
+      bit [47:0]   recovered_total;
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      seed_total_count_dv(48'h0000_ffff_ffff,
+        $sformatf("%s seed low word at rollover edge", case_id));
+
+      csr_read(3'd3, hi_raw_before);
+      hi_before = hi_raw_before[15:0];
+
+      base_beats  = m_env.m_scb.beat_count;
+      base_traces = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s rollover hit output", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s rollover hit debug trace", case_id));
+
+      csr_read(3'd4, lo_after);
+      csr_read(3'd3, hi_raw_after);
+      hi_after = hi_raw_after[15:0];
+
+      if (hi_before !== 16'h0000 || lo_after !== 32'h0000_0000 ||
+          hi_after !== 16'h0001)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s rollover read edge mismatch hi_before=0x%04h lo_after=0x%08h hi_after=0x%04h",
+            case_id, hi_before, lo_after, hi_after))
+
+      recovered_total = (hi_before == hi_after) ?
+        {hi_before, lo_after} : {hi_after, lo_after};
+      if (recovered_total !== 48'h0001_0000_0000)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s coherent high-low-high recovery expected 0x000100000000 got 0x%012h",
+            case_id, recovered_total))
+
+      expect_last_trace_pair($sformatf("%s rollover hit trace pair", case_id));
+      expect_total_count(recovered_total,
+        $sformatf("%s final coherent counter read", case_id));
     endtask
 
     task automatic do_corner_019_csr_access_in_flushing();
@@ -4206,6 +4276,7 @@
         "STD_MTS_103_replay_smoke_clamp_vector": do_std_103_replay_smoke_clamp_vector();
         "STD_MTS_104_discard_counter_matches_rejections": do_std_104_discard_counter_matches_rejections();
         "STD_MTS_105_total_counter_matches_all_valid": do_std_105_total_counter_matches_all_valid();
+        "STD_MTS_106_total_counter_hi_rollover": do_std_106_total_counter_hi_rollover();
         "STD_MTS_107_soft_reset_clears_counters": do_std_107_soft_reset_clears_counters();
         "STD_MTS_108_sync_clears_counters": do_std_108_sync_clears_counters();
         "STD_MTS_109_running_status_bit_semantics": do_std_109_running_status_bit_semantics();
@@ -4237,6 +4308,7 @@
         "CORNER_MTS_015_reserved_opmode_bit28_only": do_corner_015_reserved_opmode_bit28_only();
         "CORNER_MTS_016_multi_field_control_write": do_corner_016_multi_field_control_write();
         "CORNER_MTS_017_read_during_soft_reset_window": do_corner_017_read_during_soft_reset_window();
+        "CORNER_MTS_018_counter_read_on_low_word_rollover": do_corner_018_counter_read_on_low_word_rollover();
         "CORNER_MTS_019_csr_access_in_flushing": do_corner_019_csr_access_in_flushing();
         "CORNER_MTS_020_polling_unsupported_addr7": do_corner_020_polling_unsupported_addr7();
         "CORNER_MTS_021_plain_hit_no_markers": do_corner_021_plain_hit_no_markers();

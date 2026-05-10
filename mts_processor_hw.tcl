@@ -19,9 +19,9 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
 set VERSION_MINOR_DEFAULT_CONST            0
-set VERSION_PATCH_DEFAULT_CONST            10
-set BUILD_DEFAULT_CONST                    509
-set VERSION_DATE_DEFAULT_CONST             20260509
+set VERSION_PATCH_DEFAULT_CONST            11
+set BUILD_DEFAULT_CONST                    510
+set VERSION_DATE_DEFAULT_CONST             20260510
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -370,6 +370,12 @@ set_parameter_property MUTRIG_OVERFLOW_LOOKBACK_8N DESCRIPTION "Post-wrap epoch-
 add_parameter DEBUG NATURAL 1
 set_parameter_property DEBUG DISPLAY_NAME "Debug Level"
 set_parameter_property DEBUG HDL_PARAMETER true
+
+add_parameter DV_COUNTER_SEED_ENABLE NATURAL 0
+set_parameter_property DV_COUNTER_SEED_ENABLE DISPLAY_NAME "DV Counter Seed Enable"
+set_parameter_property DV_COUNTER_SEED_ENABLE HDL_PARAMETER true
+set_parameter_property DV_COUNTER_SEED_ENABLE VISIBLE false
+set_parameter_property DV_COUNTER_SEED_ENABLE DESCRIPTION "DV-only rollover accelerator. Leave at 0 for synthesis and normal packaged systems."
 
 add_parameter IP_UID INTEGER $IP_UID_DEFAULT_CONST
 set_parameter_property IP_UID DISPLAY_NAME "IP UID"

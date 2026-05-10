@@ -1008,6 +1008,14 @@ package mtsp_env_pkg;
       total_count = {hi_word[15:0], lo_word};
     endtask
 
+    task automatic seed_total_count_dv(bit [47:0] seed_value, string ctx);
+      csr_write(3'd3, {16'd0, seed_value[47:32]});
+      wait_cycles(2);
+      csr_write(3'd4, seed_value[31:0]);
+      wait_cycles(2);
+      expect_total_count(seed_value, ctx);
+    endtask
+
     task automatic expect_total_count(bit [47:0] expected, string ctx);
       bit [47:0] total_count;
       read_total_count(total_count);

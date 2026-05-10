@@ -155,7 +155,8 @@ generic (
     LPM_DIV_PIPELINE		: natural := 4;
     MUTRIG_BUFFER_EXPECTED_LATENCY_8N		: natural := 2000; -- affects the error signal on <hit_type1>
     MUTRIG_OVERFLOW_LOOKBACK_8N               : natural := 2000; -- controls post-wrap epoch disambiguation only
-    DEBUG					: natural := 1
+    DEBUG					: natural := 1;
+    DV_COUNTER_SEED_ENABLE                    : natural := 0 -- DV-only: enables CSR writes to seed total_hit_cnt for rollover checks
 );
 port (
 
@@ -404,6 +405,10 @@ architecture rtl of mts_processor is
         total_hit_cnt		: unsigned(47 downto 0);
     end record;
     signal debug_msg		: debug_msg_t;
+    signal dv_total_hit_seed_hi_valid : std_logic := '0';
+    signal dv_total_hit_seed_lo_valid : std_logic := '0';
+    signal dv_total_hit_seed_hi       : unsigned(15 downto 0) := (others => '0');
+    signal dv_total_hit_seed_lo       : unsigned(31 downto 0) := (others => '0');
     
     -- dual port rom (2^15 depth - 15 bit wide)
     component dual_port_rom
@@ -821,10 +826,14 @@ begin
             csr.expected_latency        <= std_logic_vector(to_unsigned(MUTRIG_BUFFER_EXPECTED_LATENCY_8N, csr.expected_latency'length));
             expected_latency_1n6        <= to_unsigned(MUTRIG_BUFFER_EXPECTED_LATENCY_8N * 5, expected_latency_1n6'length);
             csr.discard_hiterr          <= '1'; -- NOTE: default is discard hiterr
+            dv_total_hit_seed_hi_valid  <= '0';
+            dv_total_hit_seed_lo_valid  <= '0';
         elsif (rising_edge(i_clk)) then
             -- default
             avs_csr_waitrequest         <= '1'; 
             avs_csr_readdata            <= (others => '0');
+            dv_total_hit_seed_hi_valid  <= '0';
+            dv_total_hit_seed_lo_valid  <= '0';
             -- write logic
             if (avs_csr_write = '1') then 
                 avs_csr_waitrequest             <= '0'; -- ack 
@@ -858,6 +867,16 @@ begin
                         csr_v_expected_latency_1n6 := csr_v_expected_latency_1n6 + shift_left(csr_v_expected_latency_1n6, 2);
                         csr.expected_latency       <= avs_csr_writedata;
                         expected_latency_1n6       <= csr_v_expected_latency_1n6;
+                    when 3 =>
+                        if (DV_COUNTER_SEED_ENABLE /= 0) then
+                            dv_total_hit_seed_hi       <= unsigned(avs_csr_writedata(15 downto 0));
+                            dv_total_hit_seed_hi_valid <= '1';
+                        end if;
+                    when 4 =>
+                        if (DV_COUNTER_SEED_ENABLE /= 0) then
+                            dv_total_hit_seed_lo       <= unsigned(avs_csr_writedata);
+                            dv_total_hit_seed_lo_valid <= '1';
+                        end if;
                     when others =>
                         null;
                 end case;
@@ -1184,13 +1203,20 @@ begin
                     & " hit_in_ok=" & std_logic'image(hit_in_ok)
                     & " state=" & processor_state_t'image(processor_state)
                     & " reset_flow=" & reset_flow_t'image(reset_flow)
-                    & " total_pre=" & integer'image(to_integer(debug_msg.total_hit_cnt(30 downto 0)))
+                    & " total_pre=0x" & to_hstring(std_logic_vector(debug_msg.total_hit_cnt))
                     severity note;
             end if;
 
             if ((processor_state = RESET and reset_flow = SYNC) or csr.soft_reset = '1') then -- soft reset by csr
                 debug_msg.discard_hit_cnt		<= (others => '0'); -- sclr the counter
                 debug_msg.total_hit_cnt			<= (others => '0');
+            elsif (dv_total_hit_seed_hi_valid = '1' or dv_total_hit_seed_lo_valid = '1') then
+                if (dv_total_hit_seed_hi_valid = '1') then
+                    debug_msg.total_hit_cnt(47 downto 32) <= dv_total_hit_seed_hi;
+                end if;
+                if (dv_total_hit_seed_lo_valid = '1') then
+                    debug_msg.total_hit_cnt(31 downto 0) <= dv_total_hit_seed_lo;
+                end if;
             elsif (asi_hit_type0_accept = '1') then -- count only accepted ready/valid beats
                 debug_msg.total_hit_cnt			<= debug_msg.total_hit_cnt + 1;
                 if (hit_in_ok = '0') then -- capture invalid error
