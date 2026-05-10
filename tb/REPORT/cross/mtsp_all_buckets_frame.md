@@ -33,13 +33,13 @@
 
 | metric | pct |
 |---|---|
-| stmt | 85.92 |
-| branch | 76.17 |
-| cond | 55.75 |
+| stmt | 85.87 |
+| branch | 76.37 |
+| cond | 55.17 |
 | expr | 50.00 |
 | fsm_state | 100.00 |
 | fsm_trans | 44.44 |
-| toggle | 30.90 |
+| toggle | 32.34 |
 
 ## Scoreboard Evidence
 

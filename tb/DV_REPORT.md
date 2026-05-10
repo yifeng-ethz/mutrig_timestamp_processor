@@ -31,11 +31,11 @@ This page is the chief-architect dashboard. All per-case evidence lives under [`
 | DEBUG_REQUIRED_CASES | `521/521` |
 | DUAL_PATH_PAIRS | `19323` |
 | SCOREBOARD_TRACES | `19323` |
-| TRACE_DETAIL_LINES | `19195` |
+| TRACE_DETAIL_LINES | `19199` |
 | BUCKET_FRAME_RUNS | `4/4` |
 | ALL_BUCKETS_FRAME_RUNS | `1/1` |
 | EVIDENCE_GIT_BRANCH | `master` |
-| EVIDENCE_GIT_COMMIT | `10732a0` |
+| EVIDENCE_GIT_COMMIT | `fe4e14d` |
 | probe_only_exclusions | `none` |
 
 ## Non-Claims
@@ -48,22 +48,22 @@ This page is the chief-architect dashboard. All per-case evidence lives under [`
 
 | status | bucket | catalog_planned | promoted | evidenced | backlog | merged | promoted functional |
 |:---:|---|---:|---:|---:|---:|---|---|
-| ⚠️ | [`BASIC`](REPORT/buckets/BASIC.md) | 130 | 130 | 130 | 0 | stmt=95.77, branch=92.27, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=50.64 | 100.0% (130/130) |
-| ⚠️ | [`EDGE`](REPORT/buckets/EDGE.md) | 131 | 131 | 131 | 0 | stmt=95.58, branch=90.69, cond=82.30, expr=100.00, fsm_state=100.00, fsm_trans=88.88, toggle=51.26 | 100.0% (131/131) |
-| ⚠️ | [`PROF`](REPORT/buckets/PROF.md) | 130 | 130 | 130 | 0 | stmt=95.37, branch=87.54, cond=80.53, expr=50.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.69 | 100.0% (130/130) |
-| ⚠️ | [`ERROR`](REPORT/buckets/ERROR.md) | 130 | 130 | 130 | 0 | stmt=95.58, branch=91.89, cond=82.30, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=53.12 | 100.0% (130/130) |
+| ⚠️ | [`BASIC`](REPORT/buckets/BASIC.md) | 130 | 130 | 130 | 0 | stmt=95.70, branch=92.21, cond=81.03, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=53.02 | 100.0% (130/130) |
+| ⚠️ | [`EDGE`](REPORT/buckets/EDGE.md) | 131 | 131 | 131 | 0 | stmt=95.88, branch=91.01, cond=81.03, expr=100.00, fsm_state=100.00, fsm_trans=100.00, toggle=53.84 | 100.0% (131/131) |
+| ⚠️ | [`PROF`](REPORT/buckets/PROF.md) | 130 | 130 | 130 | 0 | stmt=95.29, branch=87.45, cond=79.31, expr=50.00, fsm_state=100.00, fsm_trans=66.66, toggle=53.45 | 100.0% (130/130) |
+| ⚠️ | [`ERROR`](REPORT/buckets/ERROR.md) | 130 | 130 | 130 | 0 | stmt=96.26, branch=92.60, cond=86.20, expr=100.00, fsm_state=100.00, fsm_trans=88.88, toggle=56.01 | 100.0% (130/130) |
 
 ## Totals
 
 | status | metric | pct | target |
 |:---:|---|---|---|
-| ✅ | stmt | 98.34 | 95.0 |
-| ✅ | branch | 96.13 | 90.0 |
-| ℹ️ | cond | 85.84 | - |
+| ✅ | stmt | 98.31 | 95.0 |
+| ✅ | branch | 96.10 | 90.0 |
+| ℹ️ | cond | 88.79 | - |
 | ℹ️ | expr | 100.00 | - |
 | ✅ | fsm_state | 100.00 | 95.0 |
 | ✅ | fsm_trans | 100.00 | 90.0 |
-| ⚠️ | toggle | 55.93 | 80.0 |
+| ⚠️ | toggle | 58.95 | 80.0 |
 
 - catalog_planned_cases: `521`
 - promoted_signoff_cases: `521`
@@ -76,7 +76,7 @@ This page is the chief-architect dashboard. All per-case evidence lives under [`
 
 | status | run_id | kind | build | seq | txns | cross_pct |
 |:---:|---|---|---|---|---:|---:|
-| ✅ | [`mtsp_explicit_521_ordered_isolated_merge`](REPORT/cross/mtsp_explicit_521_ordered_isolated_merge.md) | ordered_isolated_merge | after | mtsp_doc_case_test plus MTSP_CASE_ID for all explicit handlers | 29214 | 100.0 |
+| ✅ | [`mtsp_explicit_521_ordered_isolated_merge`](REPORT/cross/mtsp_explicit_521_ordered_isolated_merge.md) | ordered_isolated_merge | after | mtsp_doc_case_test plus MTSP_CASE_ID for all explicit handlers | 29215 | 100.0 |
 | ✅ | [`mtsp_bucket_frame_BASIC`](REPORT/cross/mtsp_bucket_frame_BASIC.md) | bucket_frame | after | mtsp_continuous_frame_test ordered checkpoint stream | 130 | 100.0 |
 | ✅ | [`mtsp_bucket_frame_EDGE`](REPORT/cross/mtsp_bucket_frame_EDGE.md) | bucket_frame | after | mtsp_continuous_frame_test ordered checkpoint stream | 131 | 100.0 |
 | ✅ | [`mtsp_bucket_frame_PROF`](REPORT/cross/mtsp_bucket_frame_PROF.md) | bucket_frame | after | mtsp_continuous_frame_test ordered checkpoint stream | 130 | 100.0 |

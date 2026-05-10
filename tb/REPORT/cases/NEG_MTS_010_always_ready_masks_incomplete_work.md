@@ -28,7 +28,7 @@
 | ℹ️ | log | [`uvm/logs/NEG_MTS_010_always_ready_masks_incomplete_work_after_s1.log`](../../uvm/logs/NEG_MTS_010_always_ready_masks_incomplete_work_after_s1.log) |
 | ℹ️ | ucdb | [`uvm/cov_after/NEG_MTS_010_always_ready_masks_incomplete_work_s1.ucdb`](../../uvm/cov_after/NEG_MTS_010_always_ready_masks_incomplete_work_s1.ucdb) |
 | ℹ️ | log.beats | `4` |
-| ℹ️ | log.csr | `2` |
+| ℹ️ | log.csr | `4` |
 | ℹ️ | log.debug_burst | `0` |
 | ℹ️ | log.debug_path_required | `1` |
 | ℹ️ | log.debug_ts | `0` |
@@ -51,13 +51,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 60.74 | 15.19 | 0.00 | 84.25 | 0.00 |
-| branch | 55.07 | 13.77 | 0.00 | 75.00 | 0.00 |
-| cond | 38.05 | 9.51 | 0.00 | 57.52 | 0.00 |
-| expr | 0.00 | 0.00 | 0.00 | 50.00 | 0.00 |
+| stmt | 60.82 | 15.21 | 0.57 | 85.12 | 0.14 |
+| branch | 56.69 | 14.17 | 0.79 | 75.59 | 0.20 |
+| cond | 37.93 | 9.48 | 0.87 | 58.62 | 0.22 |
+| expr | 0.00 | 0.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 100.00 | 25.00 | 0.00 | 100.00 | 0.00 |
-| fsm_trans | 33.33 | 8.33 | 0.00 | 55.55 | 0.00 |
-| toggle | 2.75 | 0.69 | 0.00 | 9.83 | 0.00 |
+| fsm_trans | 55.55 | 13.89 | 22.22 | 77.77 | 5.55 |
+| toggle | 3.02 | 0.76 | 0.00 | 10.37 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/ERROR.md) &middot; [dashboard](../../DV_REPORT.md)_

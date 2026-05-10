@@ -2233,13 +2233,30 @@
 
     task automatic do_std_003_direct_running_entry_allowed();
       int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
 
       wait_for_reset_release();
-      send_ctrl(CTRL_RUNNING, "RUNNING");
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT & ~32'h0000_0001);
+      send_ctrl(CTRL_RUNNING, "RUNNING_go_clear");
+      wait_cycles(4);
+      expect_hit0_ready(1'b0, $sformatf("%s go-clear blocks direct RUNNING", case_id));
+      base_beats      = m_env.m_scb.beat_count;
+      base_eops       = m_env.m_scb.eop_count;
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0, '0, 1'b0);
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 16,
+        $sformatf("%s go-clear output quiet", case_id));
+
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT);
       wait_cycles(2);
+      send_ctrl(CTRL_RUNNING, "RUNNING");
+      wait_for_running_status(64, $sformatf("%s go-set direct RUNNING", case_id));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s go-set direct ready", case_id));
       base_beats = m_env.m_scb.beat_count;
       send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0);
       wait_for_beat_count(base_beats + 1, 128, case_id);
+      expect_last_trace_pair($sformatf("%s go-set direct trace", case_id));
     endtask
 
     task automatic do_std_004_run_prepare_enters_reset_sclr();
@@ -4146,13 +4163,13 @@
 
     task automatic do_corner_016_multi_field_control_write();
       wait_for_reset_release();
-      csr_write(3'd0, 32'h6000_001f);
+      csr_write(3'd0, 32'h6000_003f);
       wait_cycles(2);
-      expect_csr_mask(3'd0, 32'h6000_001a, 32'h6000_001e,
+      expect_csr_mask(3'd0, 32'h6000_003a, 32'h6000_003e,
         $sformatf("%s packed control field settle", case_id));
       csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT);
       wait_cycles(2);
-      expect_csr_mask(3'd0, 32'h2000_0010, 32'h6000_001e,
+      expect_csr_mask(3'd0, 32'h2000_0010, 32'h6000_003e,
         $sformatf("%s restored default control fields", case_id));
     endtask
 
@@ -12280,7 +12297,52 @@
     endtask
 
     task automatic do_neg_045_zero_window_fault_everything();
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+      int unsigned base_traces;
+      bit [47:0]   expected_total;
+
       do_std_021_expected_latency_zero_write();
+      wait_for_debug_ts_count(m_env.m_scb.payload_beat_count, 128,
+        $sformatf("%s baseline debug_ts drain", case_id));
+      wait_for_debug_burst_count(m_env.m_scb.payload_beat_count, 128,
+        $sformatf("%s baseline debug_burst drain", case_id));
+      wait_for_ts_delta_count(m_env.m_scb.payload_beat_count, 128,
+        $sformatf("%s baseline ts_delta drain", case_id));
+      base_inputs      = m_env.m_scb.input_accept_count;
+      base_beats       = m_env.m_scb.beat_count;
+      base_eops        = m_env.m_scb.eop_count;
+      base_empty_eops  = m_env.m_scb.empty_eop_count;
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      base_traces      = m_env.m_scb.trace_history.size();
+      expected_total    = base_inputs + 1;
+
+      csr_write(3'd0, datapath_mode_word(1'b0, 1'b0, 1'b1) | 32'h0000_0020);
+      wait_cycles(2);
+      send_hit_beat(2, 1, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_input_count(base_inputs + 1, 64,
+        $sformatf("%s drop-delay-error accepted hit", case_id));
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 128,
+        $sformatf("%s drop-delay-error suppresses normal output", case_id));
+      if (m_env.m_scb.debug_ts_count != base_debug_ts ||
+          m_env.m_scb.debug_burst_count != base_debug_burst ||
+          m_env.m_scb.ts_delta_count != base_ts_delta ||
+          m_env.m_scb.trace_history.size() != base_traces)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s drop-delay-error leaked debug path: debug_ts %0d/%0d debug_burst %0d/%0d ts_delta %0d/%0d traces %0d/%0d",
+            case_id, m_env.m_scb.debug_ts_count, base_debug_ts,
+            m_env.m_scb.debug_burst_count, base_debug_burst,
+            m_env.m_scb.ts_delta_count, base_ts_delta,
+            m_env.m_scb.trace_history.size(), base_traces))
+      expect_total_count(expected_total,
+        $sformatf("%s dropped hit still counted as accepted", case_id));
     endtask
 
     task automatic do_neg_046_bypass_toggle_midstream_mismatch();

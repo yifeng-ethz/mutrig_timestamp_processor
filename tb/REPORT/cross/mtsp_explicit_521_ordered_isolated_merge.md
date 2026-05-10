@@ -21,7 +21,7 @@
 | ℹ️ | effort | `signoff` |
 | ℹ️ | iter_cap | `None` |
 | ℹ️ | payload_cap | `None` |
-| ℹ️ | txns | `29214` |
+| ℹ️ | txns | `29215` |
 | ✅ | functional_cross_pct | `100.0` |
 | ℹ️ | queued_overlap | `0` |
 | ✅ | counter_checks_failed | `0` |
@@ -33,13 +33,13 @@
 
 | metric | pct |
 |---|---|
-| stmt | 98.34 |
-| branch | 96.13 |
-| cond | 85.84 |
+| stmt | 98.31 |
+| branch | 96.10 |
+| cond | 88.79 |
 | expr | 100.00 |
 | fsm_state | 100.00 |
 | fsm_trans | 100.00 |
-| toggle | 55.93 |
+| toggle | 58.95 |
 
 ## Transaction growth curve
 

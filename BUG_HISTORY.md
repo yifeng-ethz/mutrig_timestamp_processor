@@ -51,8 +51,51 @@ Historical formal note:
 | [BUG-014-H](#bug-014-h-soft-reset-smoke-loop-checked-debug-burst-before-monitor-settled) | H | non-datapath-refactor | `directed-only (soft-reset smoke-loop debug timing)` | fixed | `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs` | `dedab24` | P110 enforced exact debug-stream counts before bounded waits let the passive debug monitors report the final sample. |
 | [BUG-015-R](#bug-015-r-open-packet-could-block-terminal-close-markers-after-endofrun) | R | hard stuck error | `rare (routine stop while an input packet remains open or upstream EOP is missing)` | fixed | `NEG_MTS_118_missing_boundary_with_packet_open` | `a1d9155` | Stale open-packet bookkeeping could hold the terminal boundary generator busy forever after upstream end-of-run. |
 | [BUG-016-H](#bug-016-h-continuous-frame-checkpoint-token-metadata-was-cleared-by-implicit-port-direction) | H | non-datapath-refactor | `directed-only (continuous-frame reporting metadata)` | fixed | `mtsp_bucket_frame_BASIC` | `5e60c20` | The new no-restart frame run passed datapath checks but emitted blank or malformed checkpoint tokens, weakening machine-readable cross-run traceability. |
+| [BUG-017-R](#bug-017-r-debug-burst-and-ts-delta-leaked-dropped-delay-error-hits) | R | non-datapath-refactor | `directed-only (drop-delay-error debug observability)` | fixed | `NEG_MTS_045_zero_window_fault_everything` | `pending` | Debug burst and timestamp-delta sidebands could report a hit intentionally dropped by `drop_delay_error`. |
 
 ## 2026-05-10
+
+### BUG-017-R: Debug burst and ts delta leaked dropped delay error hits
+
+- First seen:
+  - UVM case `NEG_MTS_045_zero_window_fault_everything`
+  - The drop-delay-error extension to X045 was added after the zero-latency delay-error sanity check already passed for normal payload and `debug_ts`
+- Symptom:
+  - with `expected_latency=0` and `csr.drop_delay_error=1`, a second accepted hit was intentionally suppressed from the normal `hit_type1` path and from the paired `debug_ts` trace
+  - before the RTL fix, the checker failed with `debug_ts 1/1 debug_burst 2/0 ts_delta 2/0 traces 1/1`, proving that the burst and `ts_delta` sidebands advanced for a hit that normal output had dropped
+  - after the RTL gate was added, one late baseline burst sample from the first visible hit remained; X045 now drains the baseline debug streams before checking that the dropped hit adds no new sideband samples
+- Root cause:
+  - `proc_debug_burst` latched from `hit_div(LPM_DIV_PIPELINE).valid` and the live divider quotient path
+  - the normal output path and `debug_ts` path qualify visibility one cycle later through `hit_out.valid` plus `(csr.drop_delay_error = '0' or hit_out_delay_error = '0')`
+  - the debug-burst path therefore observed a pre-drop internal hit instead of the visible hit contract used by the normal/debug scoreboard
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - registered the selected T/E debug timestamp at the `hit_out` assembly point as `hit_out_debug_timestamp`
+    - changed `proc_debug_burst` to latch timestamps and arrival history only when the same visible-hit gate used by the normal path is true
+    - kept the strict X045 scoreboard requirement, with an explicit baseline drain before asserting that the dropped accepted hit does not advance `debug_ts`, `debug_burst`, `ts_delta`, or dual-path trace counts
+  - before_fix_outcome:
+    - `NEG_MTS_045_zero_window_fault_everything` failed with `drop-delay-error leaked debug path: debug_ts 1/1 debug_burst 2/0 ts_delta 2/0 traces 1/1`
+  - after_fix_outcome:
+    - `NEG_MTS_045_zero_window_fault_everything` passes with `csr=7 inputs=2 beats=1 payloads=1 debug_ts=1 debug_burst=1 ts_delta=1 dual_path_pairs=1 traces=1`
+    - `STD_MTS_091_debug_burst_only_running`, `NEG_MTS_094_ts_delta_without_burst_context`, `CORNER_MTS_078_debug_burst_positive_trim_edge`, and `CORNER_MTS_079_debug_burst_negative_trim_edge` pass after the visible-hit retiming
+    - `STRESS_MTS_113_ready_toggle_1010` passes with `inputs=64 beats=64 payloads=64 debug_ts=64 debug_burst=64 ts_delta=64 dual_path_pairs=64 traces=64`
+    - the ordered isolated refresh passes with `FULL_REFRESH_PASS cases=521 frames=5`
+    - the hard Questa static screen passes for `mts_processor.vhd` using `syn/quartus/mts_processor_static.f`
+  - potential_hazard:
+    - fixed for the current single-clock debug sideband contract. Future changes to the normal output drop policy must keep the debug-burst gate tied to the same visible-hit boundary
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - X045 now proves the reference-model rule that controlled `drop_delay_error` loss is not allowed to leak into any debug analysis port
+  - the dense ready-toggle run preserves one-for-one normal/debug analysis-port evidence after the burst retiming
+  - the refreshed dashboard reports `521/521` explicit isolated cases, all `5` continuous frame baselines, `DUAL_PATH_PAIRS=19323`, and `SCOREBOARD_TRACES=19323`
+  - the ordered isolated merge reports DUT statement `98.31%`, branch `96.10%`, condition `88.79%`, expression `100.00%`, FSM state `100.00%`, FSM transition `100.00%`, and raw toggle `58.95%`
+  - the raw toggle result remains a non-claim in `DV_REPORT.md`; no structural waiver or signoff tag is claimed for that metric
+  - the hard static screen passed with lint `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`
+- Commit:
+  - `pending` (`[PATCH] Gate MTSP debug burst on visible hits`)
 
 ### BUG-016-H: Continuous-frame checkpoint token metadata was cleared by implicit port direction
 

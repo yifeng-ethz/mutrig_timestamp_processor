@@ -28,7 +28,7 @@
 | ℹ️ | log | [`uvm/logs/NEG_MTS_124_terminate_ack_after_drain_upgrade_after_s1.log`](../../uvm/logs/NEG_MTS_124_terminate_ack_after_drain_upgrade_after_s1.log) |
 | ℹ️ | ucdb | [`uvm/cov_after/NEG_MTS_124_terminate_ack_after_drain_upgrade_s1.ucdb`](../../uvm/cov_after/NEG_MTS_124_terminate_ack_after_drain_upgrade_s1.ucdb) |
 | ℹ️ | log.beats | `5` |
-| ℹ️ | log.csr | `2` |
+| ℹ️ | log.csr | `4` |
 | ℹ️ | log.debug_burst | `1` |
 | ℹ️ | log.debug_path_required | `1` |
 | ℹ️ | log.debug_ts | `1` |
@@ -51,13 +51,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 81.85 | 16.37 | 0.00 | 95.58 | 0.00 |
-| branch | 69.92 | 13.98 | 0.00 | 91.89 | 0.00 |
-| cond | 51.32 | 10.26 | 0.00 | 82.30 | 0.00 |
+| stmt | 82.48 | 16.50 | 0.38 | 96.26 | 0.08 |
+| branch | 71.25 | 14.25 | 0.39 | 92.60 | 0.08 |
+| cond | 50.86 | 10.17 | 0.00 | 86.20 | 0.00 |
 | expr | 50.00 | 10.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 100.00 | 20.00 | 0.00 | 100.00 | 0.00 |
-| fsm_trans | 33.33 | 6.67 | 0.00 | 66.66 | 0.00 |
-| toggle | 8.66 | 1.73 | 0.00 | 51.46 | 0.00 |
+| fsm_trans | 55.55 | 11.11 | 11.11 | 88.88 | 2.22 |
+| toggle | 9.49 | 1.90 | 0.00 | 54.07 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/ERROR.md) &middot; [dashboard](../../DV_REPORT.md)_

@@ -23,27 +23,27 @@
 
 | status | field | value |
 |:---:|---|---|
-| ✅ | observed_txn | `1` |
+| ✅ | observed_txn | `2` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
 | ℹ️ | log | [`uvm/logs/NEG_MTS_045_zero_window_fault_everything_after_s1.log`](../../uvm/logs/NEG_MTS_045_zero_window_fault_everything_after_s1.log) |
 | ℹ️ | ucdb | [`uvm/cov_after/NEG_MTS_045_zero_window_fault_everything_s1.ucdb`](../../uvm/cov_after/NEG_MTS_045_zero_window_fault_everything_s1.ucdb) |
 | ℹ️ | log.beats | `1` |
-| ℹ️ | log.csr | `4` |
-| ℹ️ | log.debug_burst | `0` |
+| ℹ️ | log.csr | `7` |
+| ℹ️ | log.debug_burst | `1` |
 | ℹ️ | log.debug_path_required | `1` |
 | ℹ️ | log.debug_ts | `1` |
 | ℹ️ | log.dual_path_pairs | `1` |
 | ℹ️ | log.empty_eops | `0` |
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
-| ℹ️ | log.inputs | `1` |
+| ℹ️ | log.inputs | `2` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `1` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
 | ℹ️ | log.trace_detail_lines | `0` |
 | ℹ️ | log.traces | `1` |
-| ℹ️ | log.ts_delta | `0` |
+| ℹ️ | log.ts_delta | `1` |
 
 ## Coverage
 
@@ -51,13 +51,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 78.88 | 78.88 | 0.00 | 92.22 | 0.00 |
-| branch | 62.89 | 62.89 | 0.00 | 83.98 | 0.00 |
-| cond | 38.93 | 38.93 | 0.00 | 74.33 | 0.00 |
-| expr | 50.00 | 50.00 | 0.00 | 100.00 | 0.00 |
-| fsm_state | 75.00 | 75.00 | 0.00 | 100.00 | 0.00 |
-| fsm_trans | 22.22 | 22.22 | 0.00 | 66.66 | 0.00 |
-| toggle | 8.39 | 8.39 | 0.00 | 34.98 | 0.00 |
+| stmt | 80.60 | 40.30 | 0.00 | 92.46 | 0.00 |
+| branch | 64.17 | 32.09 | 0.00 | 84.25 | 0.00 |
+| cond | 42.24 | 21.12 | 3.44 | 78.44 | 1.72 |
+| expr | 50.00 | 25.00 | 0.00 | 100.00 | 0.00 |
+| fsm_state | 75.00 | 37.50 | 0.00 | 100.00 | 0.00 |
+| fsm_trans | 22.22 | 11.11 | 0.00 | 77.77 | 0.00 |
+| toggle | 9.93 | 4.96 | 0.08 | 36.70 | 0.04 |
 
 ---
 _Back to [bucket](../buckets/ERROR.md) &middot; [dashboard](../../DV_REPORT.md)_

@@ -29,7 +29,7 @@
 | ℹ️ | ucdb | [`uvm/cov_after/STRESS_MTS_010_flushing_after_large_backlog_s1.ucdb`](../../uvm/cov_after/STRESS_MTS_010_flushing_after_large_backlog_s1.ucdb) |
 | ℹ️ | log.beats | `37` |
 | ℹ️ | log.csr | `6` |
-| ℹ️ | log.debug_burst | `23` |
+| ℹ️ | log.debug_burst | `22` |
 | ℹ️ | log.debug_path_required | `1` |
 | ℹ️ | log.debug_ts | `33` |
 | ℹ️ | log.dual_path_pairs | `33` |
@@ -43,7 +43,7 @@
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
 | ℹ️ | log.trace_detail_lines | `33` |
 | ℹ️ | log.traces | `33` |
-| ℹ️ | log.ts_delta | `23` |
+| ℹ️ | log.ts_delta | `22` |
 
 ## Coverage
 
@@ -51,13 +51,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 84.25 | 2.28 | 4.26 | 85.55 | 0.12 |
-| branch | 73.04 | 1.97 | 8.60 | 75.78 | 0.23 |
-| cond | 53.98 | 1.46 | 16.82 | 59.29 | 0.45 |
+| stmt | 84.18 | 2.28 | 4.33 | 85.49 | 0.12 |
+| branch | 73.22 | 1.98 | 8.66 | 75.98 | 0.23 |
+| cond | 53.44 | 1.44 | 16.38 | 58.62 | 0.44 |
 | expr | 50.00 | 1.35 | 0.00 | 50.00 | 0.00 |
 | fsm_state | 100.00 | 2.70 | 25.00 | 100.00 | 0.68 |
 | fsm_trans | 33.33 | 0.90 | 11.11 | 33.33 | 0.30 |
-| toggle | 25.76 | 0.70 | 0.79 | 30.53 | 0.02 |
+| toggle | 27.07 | 0.73 | 0.82 | 32.05 | 0.02 |
 
 ---
 _Back to [bucket](../buckets/PROF.md) &middot; [dashboard](../../DV_REPORT.md)_

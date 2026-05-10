@@ -28,7 +28,7 @@
 | ℹ️ | log | [`uvm/logs/NEG_MTS_007_running_without_sync_documented_nonstandard_after_s1.log`](../../uvm/logs/NEG_MTS_007_running_without_sync_documented_nonstandard_after_s1.log) |
 | ℹ️ | ucdb | [`uvm/cov_after/NEG_MTS_007_running_without_sync_documented_nonstandard_s1.ucdb`](../../uvm/cov_after/NEG_MTS_007_running_without_sync_documented_nonstandard_s1.ucdb) |
 | ℹ️ | log.beats | `1` |
-| ℹ️ | log.csr | `0` |
+| ℹ️ | log.csr | `3` |
 | ℹ️ | log.debug_burst | `0` |
 | ℹ️ | log.debug_path_required | `1` |
 | ℹ️ | log.debug_ts | `1` |
@@ -41,7 +41,7 @@
 | ℹ️ | log.payloads | `1` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
-| ℹ️ | log.trace_detail_lines | `0` |
+| ℹ️ | log.trace_detail_lines | `1` |
 | ℹ️ | log.traces | `1` |
 | ℹ️ | log.ts_delta | `0` |
 
@@ -51,13 +51,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 72.77 | 72.77 | 0.37 | 83.51 | 0.37 |
-| branch | 52.34 | 52.34 | 0.39 | 73.04 | 0.39 |
-| cond | 27.43 | 27.43 | 0.89 | 57.52 | 0.89 |
-| expr | 50.00 | 50.00 | 0.00 | 50.00 | 0.00 |
+| stmt | 74.57 | 74.57 | 2.07 | 83.80 | 2.07 |
+| branch | 53.14 | 53.14 | 1.18 | 72.83 | 1.18 |
+| cond | 28.44 | 28.44 | 1.72 | 57.75 | 1.72 |
+| expr | 100.00 | 100.00 | 50.00 | 100.00 | 50.00 |
 | fsm_state | 50.00 | 50.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 11.11 | 11.11 | 11.11 | 55.55 | 11.11 |
-| toggle | 7.49 | 7.49 | 0.67 | 9.58 | 0.67 |
+| toggle | 8.13 | 8.13 | 0.95 | 10.06 | 0.95 |
 
 ---
 _Back to [bucket](../buckets/ERROR.md) &middot; [dashboard](../../DV_REPORT.md)_

@@ -313,9 +313,7 @@ architecture rtl of mts_processor is
     type hit_type0_t is record -- total 45 bits + etc
         asic            : std_logic_vector(3 downto 0);  --ASIC ID
         channel         : std_logic_vector(4 downto 0);  --Channel number
-        t_cc            : std_logic_vector(14 downto 0); --T-Trigger coarse time value (1.6ns)
         t_fine          : std_logic_vector(4 downto 0);  --T-Trigger fine time value
-        e_cc            : std_logic_vector(14 downto 0); --Energy coarse time value (in units of 1.6ns)
         e_flag          : std_logic;                     --E-Flag valid flag
 
         derive_tot              : std_logic;    -- Mode sampled with accepted hit
@@ -335,7 +333,6 @@ architecture rtl of mts_processor is
         tot_t_adjust    : std_logic;                     --Latched overflow-window correction for T path
         tot_e_adjust    : std_logic;                     --Latched overflow-window correction for E path
         t_fine          : std_logic_vector(4 downto 0);  --T-Trigger fine time value
-        e_cc            : std_logic_vector(14 downto 0); --Energy coarse time value (in units of 1.6ns)
         e_flag          : std_logic;                     --E-Flag valid flag
 
         derive_tot              : std_logic;    -- Mode sampled with accepted hit
@@ -352,9 +349,7 @@ architecture rtl of mts_processor is
         channel         : std_logic_vector(4 downto 0);  --Channel number
         --t_cc            : std_logic_vector(14 downto 0); --T-Trigger coarse time value (1.6ns) -- this part is seperated pipelined by lpm_div
         t_fine          : std_logic_vector(4 downto 0);  --T-Trigger fine time value
-        e_cc            : std_logic_vector(14 downto 0); --Energy coarse time value (in units of 1.6ns)
         et_1n6			: std_logic_vector(8 downto 0); -- E-T part (calculated with 50 bits)
-        e_flag          : std_logic;                     --E-Flag valid flag
 
         delay_ts_field_use_t    : std_logic;    -- Delay-source mode sampled with accepted hit
 
@@ -540,6 +535,7 @@ architecture rtl of mts_processor is
     signal tcc_div_remain_d   : std_logic_vector(2 downto 0);
     signal ecc_div_remain_d   : std_logic_vector(2 downto 0);
     signal hit_out_delay_error : std_logic := '0';
+    signal hit_out_debug_timestamp : std_logic_vector(47 downto 0) := (others => '0');
 
     type prediv_stage_t is record
         asic            : std_logic_vector(3 downto 0);
@@ -1300,9 +1296,7 @@ begin
         if (i_rst = '1') then 
             hit_in.asic     <= (others => '0');
             hit_in.channel  <= (others => '0');
-            hit_in.t_cc     <= (others => '0');
             hit_in.t_fine   <= (others => '0');
-            hit_in.e_cc     <= (others => '0');
             hit_in.e_flag   <= '0';
 
             hit_in.derive_tot              <= '0';
@@ -1319,7 +1313,6 @@ begin
             hit_padding.tot_t_adjust <= '0';
             hit_padding.tot_e_adjust <= '0';
             hit_padding.t_fine       <= (others => '0');
-            hit_padding.e_cc         <= (others => '0');
             hit_padding.e_flag       <= '0';
 
             hit_padding.derive_tot              <= '0';
@@ -1365,9 +1358,7 @@ begin
                 hit_div(i).asic    <= (others => '0');
                 hit_div(i).channel <= (others => '0');
                 hit_div(i).t_fine  <= (others => '0');
-                hit_div(i).e_cc    <= (others => '0');
                 hit_div(i).et_1n6  <= (others => '0');
-                hit_div(i).e_flag  <= '0';
 
                 hit_div(i).delay_ts_field_use_t <= '1';
 
@@ -1384,14 +1375,13 @@ begin
             hit_out.valid   <= '0';
             hit_out.hiterr  <= '0';
             hit_out_delay_error <= '0';
+            hit_out_debug_timestamp <= (others => '0');
         
         elsif (rising_edge(i_clk)) then
             -- default 
             hit_in.asic		<= (others => '0');
             hit_in.channel	<= (others => '0');
-            hit_in.t_cc		<= (others => '0');
             hit_in.t_fine	<= (others => '0');
-            hit_in.e_cc		<= (others => '0');
             hit_in.e_flag	<= '0';
 
             hit_in.derive_tot              <= '0';
@@ -1408,7 +1398,6 @@ begin
             hit_padding.tot_t_adjust <= '0';
             hit_padding.tot_e_adjust <= '0';
             hit_padding.t_fine	<= (others => '0');
-            hit_padding.e_cc	<= (others => '0');
             hit_padding.e_flag	<= '0';
 
             hit_padding.derive_tot              <= '0';
@@ -1455,9 +1444,7 @@ begin
                 hit_div(i).asic			<= (others => '0');
                 hit_div(i).channel		<= (others => '0');
                 hit_div(i).t_fine		<= (others => '0');
-                hit_div(i).e_cc			<= (others => '0');
                 hit_div(i).et_1n6       <= (others => '0');
-                hit_div(i).e_flag		<= '0';
 
                 hit_div(i).delay_ts_field_use_t <= '1';
 
@@ -1483,13 +1470,12 @@ begin
                 ecc_div_quotient_d       <= (others => '0');
                 tcc_div_remain_d         <= (others => '0');
                 ecc_div_remain_d         <= (others => '0');
+                hit_out_debug_timestamp  <= (others => '0');
                 for i in 0 to LPM_DIV_PIPELINE loop
                     hit_div(i).asic       <= (others => '0');
                     hit_div(i).channel    <= (others => '0');
                     hit_div(i).t_fine     <= (others => '0');
-                    hit_div(i).e_cc       <= (others => '0');
                     hit_div(i).et_1n6     <= (others => '0');
-                    hit_div(i).e_flag     <= '0';
                     hit_div(i).delay_ts_field_use_t <= '1';
                     hit_div(i).valid      <= '0';
                     hit_div(i).hiterr     <= '0';
@@ -1614,8 +1600,10 @@ begin
                     hit_delay_expected_latency_v := resize(unsigned(csr.expected_latency), hit_delay_expected_latency_v'length);
                     if (hit_div(LPM_DIV_PIPELINE).delay_ts_field_use_t = '1') then
                         hit_delay_selected_ts_v := unsigned(tcc_div_quotient_d);
+                        hit_out_debug_timestamp <= tcc_div_quotient_d(hit_out_debug_timestamp'range);
                     else
                         hit_delay_selected_ts_v := unsigned(ecc_div_quotient_d);
+                        hit_out_debug_timestamp <= ecc_div_quotient_d(hit_out_debug_timestamp'range);
                     end if;
 
                     if (hit_delay_arrival_v > hit_delay_selected_ts_v) then
@@ -1844,13 +1832,12 @@ begin
                 -- --------------
                 -- latch new 
                 -- --------------
-                if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- 48 bit - 48 bit
+                if (
+                    hit_out.valid = '1'
+                    and (csr.drop_delay_error = '0' or hit_out_delay_error = '0')
+                ) then -- 48 bit - 48 bit, qualified at the visible hit boundary
                     -- timestamp
-                    if (hit_div(LPM_DIV_PIPELINE).delay_ts_field_use_t = '1') then
-                        egress_timestamp(0)         <= tcc_div_quotient_d(egress_timestamp(0)'high downto 0);
-                    else 
-                        egress_timestamp(0)         <= ecc_div_quotient_d(egress_timestamp(0)'high downto 0);
-                    end if;
+                    egress_timestamp(0)         <= hit_out_debug_timestamp;
                     egress_timestamp(1)         <= egress_timestamp(0);
                     -- arrival
                     egress_arrival(0)           <= std_logic_vector(counter_gts_8n);

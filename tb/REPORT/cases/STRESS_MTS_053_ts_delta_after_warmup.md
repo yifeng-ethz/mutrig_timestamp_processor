@@ -51,13 +51,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 80.74 | 0.50 | 0.00 | 94.62 | 0.00 |
-| branch | 65.23 | 0.41 | 0.00 | 85.54 | 0.00 |
-| cond | 38.93 | 0.24 | 0.00 | 79.64 | 0.00 |
+| stmt | 80.60 | 0.50 | 0.00 | 94.53 | 0.00 |
+| branch | 65.35 | 0.41 | 0.00 | 85.43 | 0.00 |
+| cond | 38.79 | 0.24 | 0.00 | 78.44 | 0.00 |
 | expr | 50.00 | 0.31 | 0.00 | 50.00 | 0.00 |
 | fsm_state | 75.00 | 0.47 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 0.14 | 0.00 | 55.55 | 0.00 |
-| toggle | 27.08 | 0.17 | 0.00 | 48.98 | 0.00 |
+| toggle | 28.52 | 0.18 | 0.00 | 51.65 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/PROF.md) &middot; [dashboard](../../DV_REPORT.md)_

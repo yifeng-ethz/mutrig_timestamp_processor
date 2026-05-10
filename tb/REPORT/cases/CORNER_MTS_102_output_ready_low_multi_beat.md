@@ -29,7 +29,7 @@
 | ℹ️ | ucdb | [`uvm/cov_after/CORNER_MTS_102_output_ready_low_multi_beat_s1.ucdb`](../../uvm/cov_after/CORNER_MTS_102_output_ready_low_multi_beat_s1.ucdb) |
 | ℹ️ | log.beats | `2` |
 | ℹ️ | log.csr | `2` |
-| ℹ️ | log.debug_burst | `2` |
+| ℹ️ | log.debug_burst | `1` |
 | ℹ️ | log.debug_path_required | `1` |
 | ℹ️ | log.debug_ts | `2` |
 | ℹ️ | log.dual_path_pairs | `2` |
@@ -43,7 +43,7 @@
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
 | ℹ️ | log.trace_detail_lines | `1` |
 | ℹ️ | log.traces | `2` |
-| ℹ️ | log.ts_delta | `2` |
+| ℹ️ | log.ts_delta | `1` |
 
 ## Coverage
 
@@ -51,13 +51,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 77.96 | 38.98 | 0.00 | 95.22 | 0.00 |
-| branch | 62.50 | 31.25 | 0.00 | 90.31 | 0.00 |
-| cond | 38.93 | 19.46 | 0.00 | 81.41 | 0.00 |
+| stmt | 77.77 | 38.88 | 0.00 | 95.14 | 0.00 |
+| branch | 62.59 | 31.30 | 0.00 | 90.23 | 0.00 |
+| cond | 38.79 | 19.39 | 0.00 | 80.17 | 0.00 |
 | expr | 50.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 37.50 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 11.11 | 0.00 | 77.77 | 0.00 |
-| toggle | 16.08 | 8.04 | 0.20 | 50.94 | 0.10 |
+| toggle | 16.62 | 8.31 | 0.23 | 53.45 | 0.12 |
 
 ---
 _Back to [bucket](../buckets/EDGE.md) &middot; [dashboard](../../DV_REPORT.md)_
