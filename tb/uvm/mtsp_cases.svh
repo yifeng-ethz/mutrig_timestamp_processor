@@ -270,6 +270,29 @@
             trace.debug_delta, trace.expected_latency))
     endtask
 
+    task automatic expect_trace_delta_at(int unsigned trace_idx,
+                                         int signed min_delta,
+                                         int signed max_delta,
+                                         bit expected_error,
+                                         string ctx);
+      mtsp_hit_trace_item trace;
+
+      if (trace_idx >= m_env.m_scb.trace_history.size())
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected trace index %0d, size=%0d",
+            ctx, trace_idx, m_env.m_scb.trace_history.size()))
+      trace = m_env.m_scb.trace_history[trace_idx];
+      if (trace.debug_delta < min_delta || trace.debug_delta > max_delta)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected debug_delta in [%0d,%0d], got %0d",
+            ctx, min_delta, max_delta, trace.debug_delta))
+      if (trace.math_error !== expected_error || trace.hit1_error !== expected_error)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected error=%0b, got math_error=%0b hit_error=%0b debug_delta=%0d expected_latency=%0d",
+            ctx, expected_error, trace.math_error, trace.hit1_error,
+            trace.debug_delta, trace.expected_latency))
+    endtask
+
     task automatic expect_trace_math_self_consistent_at(int unsigned trace_idx,
                                                         string ctx);
       mtsp_hit_trace_item trace;
@@ -1019,6 +1042,19 @@
       `uvm_fatal("MTSP_TIMEOUT",
         $sformatf("%s timed out waiting for ts_delta_count=%0d, got %0d",
           ctx, expected_count, m_env.m_scb.ts_delta_count))
+    endtask
+
+    task automatic wait_for_debug_ts_count(int unsigned expected_count,
+                                           int unsigned max_cycles,
+                                           string ctx);
+      repeat (max_cycles) begin
+        if (m_env.m_scb.debug_ts_count >= expected_count)
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+      `uvm_fatal("MTSP_TIMEOUT",
+        $sformatf("%s timed out waiting for debug_ts_count=%0d, got %0d",
+          ctx, expected_count, m_env.m_scb.debug_ts_count))
     endtask
 
     task automatic wait_for_debug_burst_count(int unsigned expected_count,
@@ -6683,6 +6719,631 @@
             base_csr_count))
     endtask
 
+    task automatic expect_debug_stream_counts_since(int unsigned base_debug_ts,
+                                                    int unsigned base_debug_burst,
+                                                    int unsigned base_ts_delta,
+                                                    int unsigned expected_debug_ts,
+                                                    int unsigned expected_debug_burst,
+                                                    int unsigned expected_ts_delta,
+                                                    string ctx);
+      if (m_env.m_scb.debug_ts_count != base_debug_ts + expected_debug_ts)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d new debug_ts samples, got %0d from base %0d",
+            ctx, expected_debug_ts, m_env.m_scb.debug_ts_count - base_debug_ts,
+            base_debug_ts))
+      if (m_env.m_scb.debug_burst_count != base_debug_burst + expected_debug_burst)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d new debug_burst samples, got %0d from base %0d",
+            ctx, expected_debug_burst,
+            m_env.m_scb.debug_burst_count - base_debug_burst,
+            base_debug_burst))
+      if (m_env.m_scb.ts_delta_count != base_ts_delta + expected_ts_delta)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d new ts_delta samples, got %0d from base %0d",
+            ctx, expected_ts_delta, m_env.m_scb.ts_delta_count - base_ts_delta,
+            base_ts_delta))
+    endtask
+
+    task automatic expect_ts_delta_sign_churn_since(int unsigned base_ts_delta,
+                                                    int unsigned new_count,
+                                                    int unsigned min_positive,
+                                                    int unsigned min_negative,
+                                                    int unsigned min_flips,
+                                                    string ctx);
+      int unsigned pos_count;
+      int unsigned neg_count;
+      int unsigned flip_count;
+      int          last_sign;
+
+      pos_count  = 0;
+      neg_count  = 0;
+      flip_count = 0;
+      last_sign  = 0;
+
+      if (m_env.m_scb.ts_delta_history.size() < base_ts_delta + new_count)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d ts_delta samples from base %0d, got size=%0d",
+            ctx, new_count, base_ts_delta, m_env.m_scb.ts_delta_history.size()))
+
+      for (int unsigned idx = 0; idx < new_count; idx++) begin
+        mtsp_dbg_obs_item obs;
+        int signed        delta;
+        int               sign;
+
+        obs   = m_env.m_scb.ts_delta_history[base_ts_delta + idx];
+        delta = m_env.m_scb.signed16(obs.data);
+        sign  = (delta < 0) ? -1 : ((delta > 0) ? 1 : 0);
+        if (sign > 0)
+          pos_count++;
+        else if (sign < 0)
+          neg_count++;
+        if (last_sign != 0 && sign != 0 && sign != last_sign)
+          flip_count++;
+        if (sign != 0)
+          last_sign = sign;
+      end
+
+      if (pos_count < min_positive || neg_count < min_negative ||
+          flip_count < min_flips)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected sign churn pos>=%0d neg>=%0d flips>=%0d, got pos=%0d neg=%0d flips=%0d",
+            ctx, min_positive, min_negative, min_flips, pos_count, neg_count,
+            flip_count))
+    endtask
+
+    task automatic expect_ts_delta_zero_after_warmup_since(int unsigned base_ts_delta,
+                                                           int unsigned new_count,
+                                                           int unsigned warmup_count,
+                                                           string ctx);
+      if (m_env.m_scb.ts_delta_history.size() < base_ts_delta + new_count)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d ts_delta samples from base %0d, got size=%0d",
+            ctx, new_count, base_ts_delta, m_env.m_scb.ts_delta_history.size()))
+
+      for (int unsigned idx = warmup_count; idx < new_count; idx++) begin
+        mtsp_dbg_obs_item obs;
+        int signed        delta;
+
+        obs   = m_env.m_scb.ts_delta_history[base_ts_delta + idx];
+        delta = m_env.m_scb.signed16(obs.data);
+        if (delta != 0)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s expected zero ts_delta after warmup at local idx=%0d, got %0d (0x%04h)",
+              ctx, idx, delta, obs.data))
+      end
+    endtask
+
+    task automatic send_delaypath_hit_and_expect(int unsigned t_quotient,
+                                                 int unsigned t_remainder,
+                                                 int unsigned e_quotient,
+                                                 int unsigned e_remainder,
+                                                 int unsigned asic_value,
+                                                 int unsigned channel_value,
+                                                 int unsigned tfine_value,
+                                                 bit sop_value,
+                                                 bit check_error,
+                                                 bit expected_error,
+                                                 string ctx);
+      int unsigned t_raw_value;
+      int unsigned e_raw_value;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+
+      lookup_raw_for_quotient(t_quotient, t_remainder, t_raw_value,
+        $sformatf("%s T symbol", ctx));
+      lookup_raw_for_quotient(e_quotient, e_remainder, e_raw_value,
+        $sformatf("%s E symbol", ctx));
+
+      base_inputs  = m_env.m_scb.hit0_history.size();
+      base_beats   = m_env.m_scb.beat_count;
+      base_history = m_env.m_scb.history.size();
+      base_traces  = m_env.m_scb.trace_history.size();
+      send_hit_beat(asic_value, channel_value, t_raw_value, e_raw_value,
+        1'b0, sop_value, 1'b0, '0, 1'b1, tfine_value);
+      wait_for_input_count(base_inputs + 1, 128, ctx);
+      wait_for_beat_count(base_beats + 1, 256, ctx);
+      wait_for_trace_count(base_traces + 1, 256, ctx);
+      expect_payload_math_at(base_history, asic_value, channel_value,
+        tfine_value, t_quotient, t_remainder, 0, ctx);
+      expect_trace_pair_at(base_traces, ctx);
+      if (check_error)
+        expect_trace_error_at(base_traces, expected_error, ctx);
+      else
+        expect_trace_math_self_consistent_at(base_traces, ctx);
+    endtask
+
+    task automatic run_debug_stream_count_case(int unsigned hit_count,
+                                               string ctx);
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      run_stress_stream_case(hit_count, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0,
+        1'b1, 1'b0, ctx);
+      wait_for_debug_ts_count(base_debug_ts + hit_count, hit_count + 256, ctx);
+      wait_for_debug_burst_count(base_debug_burst + hit_count,
+        hit_count + 256, ctx);
+      wait_for_ts_delta_count(base_ts_delta + hit_count, hit_count + 256, ctx);
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, hit_count, hit_count, hit_count, ctx);
+    endtask
+
+    task automatic run_debug_sign_churn_case(int unsigned hit_count,
+                                             string ctx);
+      int unsigned raw_low;
+      int unsigned raw_high;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      lookup_raw_for_quotient(8, 0, raw_low,
+        $sformatf("%s low timestamp symbol", ctx));
+      lookup_raw_for_quotient(40, 0, raw_high,
+        $sformatf("%s high timestamp symbol", ctx));
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned quotient;
+        int unsigned raw_value;
+
+        quotient  = idx[0] ? 40 : 8;
+        raw_value = idx[0] ? raw_high : raw_low;
+        send_hit_beat(2, idx % 32, raw_value, raw_value, 1'b0,
+          idx == 0, 1'b0, '0, 1'b1, idx[4:0]);
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 512, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 1024, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 1024, ctx);
+      wait_for_debug_ts_count(base_debug_ts + hit_count, hit_count + 256,
+        ctx);
+      wait_for_debug_burst_count(base_debug_burst + hit_count,
+        hit_count + 256, ctx);
+      wait_for_ts_delta_count(base_ts_delta + hit_count, hit_count + 256,
+        ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned quotient;
+
+        quotient = idx[0] ? 40 : 8;
+        expect_payload_math_at(base_history_size + idx, 2, idx % 32,
+          idx[4:0], quotient, 0, 0,
+          $sformatf("%s payload idx=%0d", ctx, idx));
+        expect_trace_pair_at(base_traces + idx,
+          $sformatf("%s trace idx=%0d", ctx, idx));
+        expect_trace_math_self_consistent_at(base_traces + idx,
+          $sformatf("%s trace math idx=%0d", ctx, idx));
+      end
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, hit_count, hit_count, hit_count, ctx);
+      expect_ts_delta_sign_churn_since(base_ts_delta, hit_count,
+        hit_count / 3, hit_count / 3, hit_count / 2, ctx);
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_debug_equal_timestamp_case(int unsigned hit_count,
+                                                  string ctx);
+      int unsigned raw_value;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      lookup_raw_for_quotient(24, 0, raw_value,
+        $sformatf("%s equal timestamp symbol", ctx));
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+
+      for (int unsigned idx = 0; idx < hit_count; idx++)
+        send_hit_beat(2, idx % 32, raw_value, raw_value, 1'b0,
+          idx == 0, 1'b0, '0, 1'b1, idx[4:0]);
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 512, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 1024, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 1024, ctx);
+      wait_for_debug_ts_count(base_debug_ts + hit_count, hit_count + 256,
+        ctx);
+      wait_for_debug_burst_count(base_debug_burst + hit_count,
+        hit_count + 256, ctx);
+      wait_for_ts_delta_count(base_ts_delta + hit_count, hit_count + 256,
+        ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        expect_payload_math_at(base_history_size + idx, 2, idx % 32,
+          idx[4:0], 24, 0, 0,
+          $sformatf("%s payload idx=%0d", ctx, idx));
+        expect_trace_pair_at(base_traces + idx,
+          $sformatf("%s trace idx=%0d", ctx, idx));
+        expect_trace_math_self_consistent_at(base_traces + idx,
+          $sformatf("%s trace math idx=%0d", ctx, idx));
+      end
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, hit_count, hit_count, hit_count, ctx);
+      expect_ts_delta_zero_after_warmup_since(base_ts_delta, hit_count, 2,
+        ctx);
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic send_target_debug_delta_hit(bit delay_ts_field_use_t,
+                                               int signed target_delta,
+                                               bit expected_error,
+                                               int unsigned seq_idx,
+                                               string ctx);
+      int signed   predicted_arrival;
+      int signed   target_quotient_signed;
+      int unsigned target_quotient;
+      int unsigned t_quotient;
+      int unsigned e_quotient;
+
+      calibrate_next_output_arrival(predicted_arrival,
+        $sformatf("%s calibration seq=%0d", ctx, seq_idx));
+      target_quotient_signed = predicted_arrival - target_delta;
+      if (target_quotient_signed < 0 || target_quotient_signed > 6553)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s target quotient %0d is outside ROM range for delta=%0d predicted_arrival=%0d",
+            ctx, target_quotient_signed, target_delta, predicted_arrival))
+      target_quotient = target_quotient_signed;
+
+      if (delay_ts_field_use_t) begin
+        t_quotient = target_quotient;
+        e_quotient = 2;
+      end else begin
+        t_quotient = 2;
+        e_quotient = target_quotient;
+      end
+
+      send_delaypath_hit_and_expect(t_quotient, 0, e_quotient, 0, 2,
+        seq_idx % 32, seq_idx[4:0], seq_idx == 0, 1'b1, expected_error,
+        $sformatf("%s target_delta=%0d seq=%0d", ctx, target_delta, seq_idx));
+    endtask
+
+    task automatic run_debug_error_pipeline_case(bit delay_ts_field_use_t,
+                                                 int unsigned hit_count,
+                                                 string ctx);
+      int unsigned raw_clean;
+      int unsigned raw_error;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, delay_ts_field_use_t);
+      csr_write(3'd2, 32'd512);
+      wait_cycles(2);
+      run_start();
+      lookup_raw_for_quotient(0, 0, raw_clean,
+        $sformatf("%s clean-delay symbol", ctx));
+      lookup_raw_for_quotient(1024, 0, raw_error,
+        $sformatf("%s error-delay symbol", ctx));
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned selected_q;
+        int unsigned t_raw_value;
+        int unsigned e_raw_value;
+
+        selected_q  = idx[0] ? 1024 : 0;
+        t_raw_value = delay_ts_field_use_t ?
+          (idx[0] ? raw_error : raw_clean) : raw_clean;
+        e_raw_value = delay_ts_field_use_t ?
+          raw_clean : (idx[0] ? raw_error : raw_clean);
+        send_hit_beat(2, idx % 32, t_raw_value, e_raw_value, 1'b0,
+          idx == 0, 1'b0, '0, 1'b1, idx[4:0]);
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 512, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 1024, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 1024, ctx);
+      wait_for_debug_ts_count(base_debug_ts + hit_count, hit_count + 256,
+        ctx);
+      wait_for_debug_burst_count(base_debug_burst + hit_count,
+        hit_count + 256, ctx);
+      wait_for_ts_delta_count(base_ts_delta + hit_count, hit_count + 256,
+        ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned selected_q;
+        int unsigned expected_t_q;
+        bit          expected_error;
+
+        selected_q      = idx[0] ? 1024 : 0;
+        expected_t_q    = delay_ts_field_use_t ? selected_q : 0;
+        expected_error  = idx[0];
+        expect_payload_math_at(base_history_size + idx, 2, idx % 32,
+          idx[4:0], expected_t_q, 0, 0,
+          $sformatf("%s payload idx=%0d", ctx, idx));
+        expect_trace_pair_at(base_traces + idx,
+          $sformatf("%s trace idx=%0d", ctx, idx));
+        expect_trace_error_at(base_traces + idx, expected_error,
+          $sformatf("%s trace error idx=%0d", ctx, idx));
+        expect_trace_expected_latency_at(base_traces + idx, 512,
+          $sformatf("%s trace latency idx=%0d", ctx, idx));
+      end
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, hit_count, hit_count, hit_count, ctx);
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    function automatic int signed dense_edge_target_delta(int unsigned idx);
+      if (idx < 8)
+        return 8;
+      case ((idx - 8) % 6)
+        0: return 15;
+        1: return 16;
+        2: return 1;
+        3: return 0;
+        4: return 17;
+        default: return 8;
+      endcase
+    endfunction
+
+    task automatic run_debug_expected_latency_edge_case(string ctx);
+      int unsigned hit_count;
+      int signed   first_output_arrival;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history_size;
+      int unsigned base_traces;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+
+      hit_count            = 72;
+      first_output_arrival = 12;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd16);
+      wait_cycles(2);
+      run_start();
+      base_inputs       = m_env.m_scb.hit0_history.size();
+      base_beats        = m_env.m_scb.beat_count;
+      base_history_size = m_env.m_scb.history.size();
+      base_traces       = m_env.m_scb.trace_history.size();
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int signed   target_delta;
+        int signed   target_quotient_signed;
+        int unsigned target_quotient;
+        int unsigned raw_value;
+
+        target_delta = dense_edge_target_delta(idx);
+        target_quotient_signed = first_output_arrival + int'(idx) -
+          target_delta;
+        if (target_quotient_signed < 0)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s edge target quotient negative at idx=%0d delta=%0d",
+              ctx, idx, target_delta))
+        target_quotient = target_quotient_signed;
+        lookup_raw_for_quotient(target_quotient, 0, raw_value,
+          $sformatf("%s edge symbol idx=%0d", ctx, idx));
+        send_hit_beat(2, idx % 32, raw_value, raw_value, 1'b0,
+          idx == 0, 1'b0, '0, 1'b1, idx[4:0]);
+      end
+
+      wait_for_input_count(base_inputs + hit_count, hit_count + 512, ctx);
+      wait_for_beat_count(base_beats + hit_count, hit_count + 1024, ctx);
+      wait_for_trace_count(base_traces + hit_count, hit_count + 1024, ctx);
+      wait_for_debug_ts_count(base_debug_ts + hit_count, hit_count + 256,
+        ctx);
+      wait_for_debug_burst_count(base_debug_burst + hit_count,
+        hit_count + 256, ctx);
+      wait_for_ts_delta_count(base_ts_delta + hit_count, hit_count + 256,
+        ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int signed   target_delta;
+        int unsigned target_quotient;
+        bit          expected_error;
+
+        target_delta    = dense_edge_target_delta(idx);
+        target_quotient = first_output_arrival + int'(idx) - target_delta;
+        expected_error  = !((target_delta > 0) && (target_delta < 16));
+        expect_payload_math_at(base_history_size + idx, 2, idx % 32,
+          idx[4:0], target_quotient, 0, 0,
+          $sformatf("%s payload idx=%0d", ctx, idx));
+        expect_trace_pair_at(base_traces + idx,
+          $sformatf("%s trace idx=%0d", ctx, idx));
+        expect_trace_delta_at(base_traces + idx, target_delta, target_delta,
+          expected_error, $sformatf("%s trace delta idx=%0d", ctx, idx));
+        expect_trace_expected_latency_at(base_traces + idx, 16,
+          $sformatf("%s trace latency idx=%0d", ctx, idx));
+      end
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, hit_count, hit_count, hit_count, ctx);
+      expect_total_count(hit_count, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_debug_streams_through_flushing_case(int unsigned running_hits,
+                                                           int unsigned flushing_hits,
+                                                           string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_start();
+      base_inputs  = m_env.m_scb.hit0_history.size();
+      base_beats   = m_env.m_scb.beat_count;
+      base_history = m_env.m_scb.history.size();
+      base_traces  = m_env.m_scb.trace_history.size();
+
+      for (int unsigned idx = 0; idx < running_hits; idx++)
+        send_stress_hit(idx, 1'b0, idx == 0, 1'b0, '0,
+          $sformatf("%s running hit idx=%0d", ctx, idx));
+      wait_for_input_count(base_inputs + running_hits, running_hits + 512,
+        $sformatf("%s running inputs", ctx));
+      wait_for_beat_count(base_beats + running_hits, running_hits + 1024,
+        $sformatf("%s running beats", ctx));
+      wait_for_trace_count(base_traces + running_hits, running_hits + 1024,
+        $sformatf("%s running traces", ctx));
+      expect_stress_stream_since(base_history, base_traces, running_hits,
+        1'b0, 0, 1'b1, $sformatf("%s running payloads", ctx));
+      wait_cycles(4);
+
+      base_inputs      = m_env.m_scb.hit0_history.size();
+      base_beats       = m_env.m_scb.beat_count;
+      base_history     = m_env.m_scb.history.size();
+      base_traces      = m_env.m_scb.trace_history.size();
+      base_empty_eops  = m_env.m_scb.empty_eop_count;
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", ctx));
+      wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", ctx));
+      for (int unsigned idx = 0; idx < flushing_hits; idx++) begin
+        // The running SOP opens input channel 0; close that same packet before
+        // later tail hits so the RTL can legally emit close markers.
+        send_stress_hit(running_hits + idx, 1'b0, 1'b0,
+          idx == 0, '0,
+          $sformatf("%s flushing hit idx=%0d", ctx, idx));
+      end
+      send_endofrun_pulse();
+
+      wait_for_input_count(base_inputs + flushing_hits, flushing_hits + 512,
+        $sformatf("%s flushing inputs", ctx));
+      wait_for_beat_count(base_beats + flushing_hits + 4,
+        flushing_hits + 1024, $sformatf("%s flushing beats", ctx));
+      wait_for_trace_count(base_traces + flushing_hits, flushing_hits + 1024,
+        $sformatf("%s flushing traces", ctx));
+      wait_for_empty_eop_count(base_empty_eops + 4, flushing_hits + 1024,
+        $sformatf("%s flushing close markers", ctx));
+      for (int unsigned idx = 0; idx < flushing_hits; idx++)
+        expect_stress_payload_at(base_history + idx, base_traces + idx,
+          running_hits + idx, 1'b0,
+          $sformatf("%s flushing payload idx=%0d", ctx, idx));
+      expect_close_markers_since(base_history, 4'b1111, flushing_hits,
+        $sformatf("%s flushing close detail", ctx));
+      expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+        base_ts_delta, flushing_hits, 0, 0, ctx);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore",
+        ctx));
+      expect_total_count(running_hits + flushing_hits, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_debug_streams_clear_repeated_case(int unsigned iterations,
+                                                         int unsigned hits_per_run,
+                                                         string ctx);
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned base_inputs;
+        int unsigned base_beats;
+        int unsigned base_history;
+        int unsigned base_traces;
+        int unsigned base_debug_ts;
+        int unsigned base_debug_burst;
+        int unsigned base_ts_delta;
+
+        run_start();
+        base_inputs      = m_env.m_scb.hit0_history.size();
+        base_beats       = m_env.m_scb.beat_count;
+        base_history     = m_env.m_scb.history.size();
+        base_traces      = m_env.m_scb.trace_history.size();
+        base_debug_ts    = m_env.m_scb.debug_ts_count;
+        base_debug_burst = m_env.m_scb.debug_burst_count;
+        base_ts_delta    = m_env.m_scb.ts_delta_count;
+
+        for (int unsigned beat = 0; beat < hits_per_run; beat++) begin
+          int unsigned idx;
+
+          idx = beat;
+          send_stress_hit(idx, 1'b0, beat == 0, 1'b0, '0,
+            $sformatf("%s iter=%0d", ctx, iter));
+        end
+
+        wait_for_input_count(base_inputs + hits_per_run, hits_per_run + 512,
+          $sformatf("%s iter=%0d inputs", ctx, iter));
+        wait_for_beat_count(base_beats + hits_per_run, hits_per_run + 1024,
+          $sformatf("%s iter=%0d beats", ctx, iter));
+        wait_for_trace_count(base_traces + hits_per_run, hits_per_run + 1024,
+          $sformatf("%s iter=%0d traces", ctx, iter));
+        wait_for_debug_ts_count(base_debug_ts + hits_per_run,
+          hits_per_run + 256, $sformatf("%s iter=%0d debug_ts", ctx,
+            iter));
+        wait_for_debug_burst_count(base_debug_burst + hits_per_run,
+          hits_per_run + 256, $sformatf("%s iter=%0d debug_burst", ctx,
+            iter));
+        wait_for_ts_delta_count(base_ts_delta + hits_per_run,
+          hits_per_run + 256, $sformatf("%s iter=%0d ts_delta", ctx,
+            iter));
+        expect_stress_stream_since(base_history, base_traces, hits_per_run,
+          1'b0, 0, 1'b1, $sformatf("%s iter=%0d payloads", ctx, iter));
+        expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+          base_ts_delta, hits_per_run, hits_per_run, hits_per_run,
+          $sformatf("%s iter=%0d debug counts", ctx, iter));
+        expect_total_count(hits_per_run,
+          $sformatf("%s iter=%0d total", ctx, iter));
+
+        send_ctrl(CTRL_IDLE, $sformatf("IDLE_debug_clear_%0d", iter));
+        wait_cycles(4);
+        expect_debug_valids_low($sformatf("%s iter=%0d idle clear", ctx,
+          iter));
+        base_debug_ts    = m_env.m_scb.debug_ts_count;
+        base_debug_burst = m_env.m_scb.debug_burst_count;
+        base_ts_delta    = m_env.m_scb.ts_delta_count;
+        wait_cycles(16);
+        expect_debug_valids_low($sformatf("%s iter=%0d idle hold", ctx,
+          iter));
+        expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+          base_ts_delta, 0, 0, 0,
+          $sformatf("%s iter=%0d no idle debug drift", ctx, iter));
+      end
+      expect_discard_count(32'd0, ctx);
+    endtask
+
     task automatic do_stress_001_line_rate_short_mode();
       run_stress_stream_case(64, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
         1'b0, case_id);
@@ -7106,6 +7767,46 @@
       expect_discard_count(32'd0, case_id);
     endtask
 
+    task automatic do_stress_051_debug_ts_every_hit();
+      run_debug_stream_count_case(128, case_id);
+    endtask
+
+    task automatic do_stress_052_debug_burst_after_warmup();
+      run_debug_stream_count_case(160, case_id);
+    endtask
+
+    task automatic do_stress_053_ts_delta_after_warmup();
+      run_debug_stream_count_case(160, case_id);
+    endtask
+
+    task automatic do_stress_054_alternating_increasing_decreasing_timestamps();
+      run_debug_sign_churn_case(64, case_id);
+    endtask
+
+    task automatic do_stress_055_equal_timestamp_pairs();
+      run_debug_equal_timestamp_case(64, case_id);
+    endtask
+
+    task automatic do_stress_056_error_pipeline_t_path_under_load();
+      run_debug_error_pipeline_case(1'b1, 96, case_id);
+    endtask
+
+    task automatic do_stress_057_error_pipeline_e_path_under_load();
+      run_debug_error_pipeline_case(1'b0, 96, case_id);
+    endtask
+
+    task automatic do_stress_058_expected_latency_at_distribution_edge();
+      run_debug_expected_latency_edge_case(case_id);
+    endtask
+
+    task automatic do_stress_059_debug_streams_through_flushing();
+      run_debug_streams_through_flushing_case(32, 8, case_id);
+    endtask
+
+    task automatic do_stress_060_debug_streams_clear_after_running();
+      run_debug_streams_clear_repeated_case(4, 8, case_id);
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -7429,6 +8130,16 @@
         "STRESS_MTS_048_small_expected_latency_overflow": do_stress_048_small_expected_latency_overflow();
         "STRESS_MTS_049_large_expected_latency_overflow": do_stress_049_large_expected_latency_overflow();
         "STRESS_MTS_050_dense_divider_launch_overflow": do_stress_050_dense_divider_launch_overflow();
+        "STRESS_MTS_051_debug_ts_every_hit": do_stress_051_debug_ts_every_hit();
+        "STRESS_MTS_052_debug_burst_after_warmup": do_stress_052_debug_burst_after_warmup();
+        "STRESS_MTS_053_ts_delta_after_warmup": do_stress_053_ts_delta_after_warmup();
+        "STRESS_MTS_054_alternating_increasing_decreasing_timestamps": do_stress_054_alternating_increasing_decreasing_timestamps();
+        "STRESS_MTS_055_equal_timestamp_pairs": do_stress_055_equal_timestamp_pairs();
+        "STRESS_MTS_056_error_pipeline_t_path_under_load": do_stress_056_error_pipeline_t_path_under_load();
+        "STRESS_MTS_057_error_pipeline_e_path_under_load": do_stress_057_error_pipeline_e_path_under_load();
+        "STRESS_MTS_058_expected_latency_at_distribution_edge": do_stress_058_expected_latency_at_distribution_edge();
+        "STRESS_MTS_059_debug_streams_through_flushing": do_stress_059_debug_streams_through_flushing();
+        "STRESS_MTS_060_debug_streams_clear_after_running": do_stress_060_debug_streams_clear_after_running();
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("No explicit UVM stimulus handler for documented case '%s'", case_id))
