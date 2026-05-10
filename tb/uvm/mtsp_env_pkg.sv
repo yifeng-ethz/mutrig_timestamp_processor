@@ -6,6 +6,7 @@ package mtsp_env_pkg;
 
   `uvm_analysis_imp_decl(_csr)
   `uvm_analysis_imp_decl(_hit0)
+  `uvm_analysis_imp_decl(_hit0_fault)
   `uvm_analysis_imp_decl(_hit1)
   `uvm_analysis_imp_decl(_dbg)
   `uvm_analysis_imp_decl(_ready)
@@ -40,6 +41,7 @@ package mtsp_env_pkg;
     time       complete_time_ps;
     bit        hold_bus_after;
     bit        sample_without_waitrequest;
+    bit        change_during_waitrequest;
 
     function new(string name = "mtsp_csr_item");
       super.new(name);
@@ -49,6 +51,7 @@ package mtsp_env_pkg;
       complete_time_ps = 0;
       hold_bus_after   = 1'b0;
       sample_without_waitrequest = 1'b0;
+      change_during_waitrequest = 1'b0;
     endfunction
   endclass
 
@@ -132,10 +135,20 @@ package mtsp_env_pkg;
     bit        endofrun;
     bit [2:0]  error;
     bit [44:0] data;
+    bit        valid;
+    logic      ready;
+    bit        accepted;
+    bit        protocol_fault;
+    string     fault_kind;
     time       time_ps;
 
     function new(string name = "mtsp_hit0_obs_item");
       super.new(name);
+      valid          = 1'b0;
+      ready          = 1'b0;
+      accepted       = 1'b0;
+      protocol_fault = 1'b0;
+      fault_kind     = "";
     endfunction
   endclass
 
@@ -258,6 +271,28 @@ package mtsp_env_pkg;
           `uvm_warning("MTSP_CSR_PROTOCOL",
             $sformatf("Bad CSR sequence sampled readdata=0x%08h before waitrequest completion at address 0x%0h waitrequest=%0b",
               vif.readdata, item.address, vif.waitrequest))
+        end
+
+        if (item.change_during_waitrequest) begin
+          #1ps;
+          vif.address   <= item.address ^ 3'h1;
+          vif.writedata <= item.writedata ^ 32'h5a5a_a5a5;
+          obs                = mtsp_csr_obs_item::type_id::create("csr_waitrequest_bus_change_fault");
+          obs.is_write       = item.is_write;
+          obs.is_read        = item.is_read;
+          obs.address        = item.address ^ 3'h1;
+          obs.writedata      = item.writedata ^ 32'h5a5a_a5a5;
+          obs.readdata       = vif.readdata;
+          obs.waitrequest    = vif.waitrequest;
+          obs.protocol_fault = 1'b1;
+          obs.fault_kind     = "bus_change_waitrequest";
+          obs.time_ps        = $time;
+          protocol_ap.write(obs);
+          `uvm_info("MTSP_CSR_PROTOCOL",
+            $sformatf("Bad CSR sequence changed bus before waitrequest completion: addr 0x%0h->0x%0h data 0x%08h->0x%08h waitrequest=%0b",
+              item.address, item.address ^ 3'h1, item.writedata,
+              item.writedata ^ 32'h5a5a_a5a5, vif.waitrequest),
+            UVM_LOW)
         end
 
         wait_cycles = 0;
@@ -464,6 +499,7 @@ package mtsp_env_pkg;
 
     virtual mtsp_hit0_if.mon vif;
     uvm_analysis_port #(mtsp_hit0_obs_item) ap;
+    uvm_analysis_port #(mtsp_hit0_obs_item) fault_ap;
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -472,17 +508,89 @@ package mtsp_env_pkg;
     function void build_phase(uvm_phase phase);
       super.build_phase(phase);
       ap = new("ap", this);
+      fault_ap = new("fault_ap", this);
       if (!uvm_config_db#(virtual mtsp_hit0_if.mon)::get(this, "", "vif", vif))
         `uvm_fatal("MTSP_HIT0_MON", "Missing mtsp_hit0_if.mon")
     endfunction
 
     task run_phase(uvm_phase phase);
       mtsp_hit0_obs_item obs;
+      bit                waiting_for_ready;
+      bit [5:0]          hold_channel;
+      bit                hold_sop;
+      bit                hold_eop;
+      bit                hold_endofrun;
+      bit [2:0]          hold_error;
+      bit [44:0]         hold_data;
+
+      waiting_for_ready = 1'b0;
 
       forever begin
         @(posedge vif.clk);
         if (vif.rst === 1'b1)
           continue;
+        if (vif.valid === 1'b1 && vif.ready !== 1'b1) begin
+          obs                = mtsp_hit0_obs_item::type_id::create("hit0_ready_low_obs");
+          obs.channel        = vif.channel;
+          obs.sop            = vif.sop;
+          obs.eop            = vif.eop;
+          obs.endofrun       = vif.endofrun;
+          obs.error          = vif.error;
+          obs.data           = vif.data;
+          obs.valid          = vif.valid;
+          obs.ready          = vif.ready;
+          obs.accepted       = 1'b0;
+          obs.protocol_fault = 1'b0;
+          obs.fault_kind     = "ready_low_reject";
+          obs.time_ps        = $time + MONITOR_SAMPLE_SKEW_PS;
+          fault_ap.write(obs);
+
+          if (!waiting_for_ready) begin
+            waiting_for_ready = 1'b1;
+            hold_channel      = vif.channel;
+            hold_sop          = vif.sop;
+            hold_eop          = vif.eop;
+            hold_endofrun     = vif.endofrun;
+            hold_error        = vif.error;
+            hold_data         = vif.data;
+          end else if (vif.channel !== hold_channel ||
+                       vif.sop !== hold_sop ||
+                       vif.eop !== hold_eop ||
+                       vif.endofrun !== hold_endofrun ||
+                       vif.error !== hold_error ||
+                       vif.data !== hold_data) begin
+            obs                = mtsp_hit0_obs_item::type_id::create("hit0_payload_change_fault");
+            obs.channel        = vif.channel;
+            obs.sop            = vif.sop;
+            obs.eop            = vif.eop;
+            obs.endofrun       = vif.endofrun;
+            obs.error          = vif.error;
+            obs.data           = vif.data;
+            obs.valid          = vif.valid;
+            obs.ready          = vif.ready;
+            obs.accepted       = 1'b0;
+            obs.protocol_fault = 1'b1;
+            obs.fault_kind     = "payload_change_before_ready";
+            obs.time_ps        = $time + MONITOR_SAMPLE_SKEW_PS;
+            fault_ap.write(obs);
+          end
+        end else if (vif.valid !== 1'b1 && waiting_for_ready) begin
+          obs                = mtsp_hit0_obs_item::type_id::create("hit0_valid_drop_fault");
+          obs.channel        = hold_channel;
+          obs.sop            = hold_sop;
+          obs.eop            = hold_eop;
+          obs.endofrun       = hold_endofrun;
+          obs.error          = hold_error;
+          obs.data           = hold_data;
+          obs.valid          = 1'b0;
+          obs.ready          = vif.ready;
+          obs.accepted       = 1'b0;
+          obs.protocol_fault = 1'b1;
+          obs.fault_kind     = "valid_drop_before_ready";
+          obs.time_ps        = $time + MONITOR_SAMPLE_SKEW_PS;
+          fault_ap.write(obs);
+          waiting_for_ready = 1'b0;
+        end
         if (vif.valid === 1'b1 && vif.ready === 1'b1) begin
           obs          = mtsp_hit0_obs_item::type_id::create("hit0_obs");
           obs.channel  = vif.channel;
@@ -491,8 +599,12 @@ package mtsp_env_pkg;
           obs.endofrun = vif.endofrun;
           obs.error    = vif.error;
           obs.data     = vif.data;
+          obs.valid    = vif.valid;
+          obs.ready    = vif.ready;
+          obs.accepted = 1'b1;
           obs.time_ps  = $time + MONITOR_SAMPLE_SKEW_PS;
           ap.write(obs);
+          waiting_for_ready = 1'b0;
         end
       end
     endtask
@@ -636,6 +748,7 @@ package mtsp_env_pkg;
 
     uvm_analysis_imp_csr  #(mtsp_csr_obs_item,  mtsp_scoreboard) csr_imp;
     uvm_analysis_imp_hit0 #(mtsp_hit0_obs_item, mtsp_scoreboard) hit0_imp;
+    uvm_analysis_imp_hit0_fault #(mtsp_hit0_obs_item, mtsp_scoreboard) hit0_fault_imp;
     uvm_analysis_imp_hit1 #(mtsp_hit1_obs_item, mtsp_scoreboard) hit1_imp;
     uvm_analysis_imp_dbg  #(mtsp_dbg_obs_item,  mtsp_scoreboard) dbg_imp;
     uvm_analysis_imp_ready #(mtsp_ready_obs_item, mtsp_scoreboard) ready_imp;
@@ -653,6 +766,11 @@ package mtsp_env_pkg;
     int unsigned csr_protocol_fault_count;
     int unsigned csr_read_write_fault_count;
     int unsigned csr_waitrequest_sample_fault_count;
+    int unsigned csr_bus_change_waitrequest_fault_count;
+    int unsigned hit0_ready_low_reject_count;
+    int unsigned hit0_protocol_fault_count;
+    int unsigned hit0_valid_drop_fault_count;
+    int unsigned hit0_payload_change_fault_count;
     int unsigned dual_path_pair_count;
     int unsigned trace_seq;
     bit [31:0]   expected_latency;
@@ -665,6 +783,7 @@ package mtsp_env_pkg;
     mtsp_hit1_obs_item history[$];
     mtsp_csr_obs_item  csr_history[$];
     mtsp_hit0_obs_item hit0_history[$];
+    mtsp_hit0_obs_item hit0_fault_history[$];
     mtsp_dbg_obs_item  debug_ts_history[$];
     mtsp_dbg_obs_item  debug_burst_history[$];
     mtsp_dbg_obs_item  ts_delta_history[$];
@@ -685,6 +804,7 @@ package mtsp_env_pkg;
       super.build_phase(phase);
       csr_imp          = new("csr_imp", this);
       hit0_imp         = new("hit0_imp", this);
+      hit0_fault_imp   = new("hit0_fault_imp", this);
       hit1_imp         = new("hit1_imp", this);
       dbg_imp          = new("dbg_imp", this);
       ready_imp        = new("ready_imp", this);
@@ -701,6 +821,11 @@ package mtsp_env_pkg;
       csr_protocol_fault_count = 0;
       csr_read_write_fault_count = 0;
       csr_waitrequest_sample_fault_count = 0;
+      csr_bus_change_waitrequest_fault_count = 0;
+      hit0_ready_low_reject_count = 0;
+      hit0_protocol_fault_count = 0;
+      hit0_valid_drop_fault_count = 0;
+      hit0_payload_change_fault_count = 0;
       dual_path_pair_count = 0;
       trace_seq        = 0;
       expected_latency = 32'd2000;
@@ -774,6 +899,8 @@ package mtsp_env_pkg;
           csr_read_write_fault_count++;
         if (item.fault_kind == "waitrequest_sample")
           csr_waitrequest_sample_fault_count++;
+        if (item.fault_kind == "bus_change_waitrequest")
+          csr_bus_change_waitrequest_fault_count++;
         `uvm_info("MTSP_CSR_PROTOCOL",
           $sformatf("scoreboard recorded CSR protocol fault kind=%s addr=0x%0h write=%0b read=%0b waitrequest=%0b",
             item.fault_kind, item.address, item.is_write, item.is_read,
@@ -787,6 +914,23 @@ package mtsp_env_pkg;
     function void write_hit0(mtsp_hit0_obs_item item);
       hit0_history.push_back(item);
       input_accept_count++;
+    endfunction
+
+    function void write_hit0_fault(mtsp_hit0_obs_item item);
+      hit0_fault_history.push_back(item);
+      if (item.fault_kind == "ready_low_reject")
+        hit0_ready_low_reject_count++;
+      if (item.protocol_fault) begin
+        hit0_protocol_fault_count++;
+        if (item.fault_kind == "valid_drop_before_ready")
+          hit0_valid_drop_fault_count++;
+        if (item.fault_kind == "payload_change_before_ready")
+          hit0_payload_change_fault_count++;
+        `uvm_info("MTSP_HIT0_PROTOCOL",
+          $sformatf("scoreboard recorded hit0 protocol fault kind=%s channel=0x%0h ready=%0b data=0x%012h",
+            item.fault_kind, item.channel, item.ready, item.data),
+          UVM_LOW)
+      end
     endfunction
 
     function void write_hit1(mtsp_hit1_obs_item item);
@@ -845,9 +989,12 @@ package mtsp_env_pkg;
             pending_hit1.size(), pending_debug_ts.size()))
 
       `uvm_info("MTSP_SCB",
-        $sformatf("csr=%0d csr_protocol_faults=%0d csr_rw_faults=%0d csr_waitrequest_sample_faults=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d ready_x=%0d dual_path_pairs=%0d traces=%0d debug_path_required=%0b expected_latency=%0d",
+        $sformatf("csr=%0d csr_protocol_faults=%0d csr_rw_faults=%0d csr_waitrequest_sample_faults=%0d csr_bus_change_faults=%0d hit0_ready_low_rejects=%0d hit0_protocol_faults=%0d hit0_valid_drop_faults=%0d hit0_payload_change_faults=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d ready_x=%0d dual_path_pairs=%0d traces=%0d debug_path_required=%0b expected_latency=%0d",
           csr_access_count, csr_protocol_fault_count,
           csr_read_write_fault_count, csr_waitrequest_sample_fault_count,
+          csr_bus_change_waitrequest_fault_count,
+          hit0_ready_low_reject_count, hit0_protocol_fault_count,
+          hit0_valid_drop_fault_count, hit0_payload_change_fault_count,
           input_accept_count, beat_count, payload_beat_count, eop_count,
           empty_eop_count, debug_ts_count, debug_burst_count,
           ts_delta_count, hit1_ready_unknown_count, dual_path_pair_count,
@@ -900,6 +1047,7 @@ package mtsp_env_pkg;
       m_csr_drv.protocol_ap.connect(m_scb.csr_imp);
       m_csr_mon.ap.connect(m_scb.csr_imp);
       m_hit0_mon.ap.connect(m_scb.hit0_imp);
+      m_hit0_mon.fault_ap.connect(m_scb.hit0_fault_imp);
       m_hit1_mon.ap.connect(m_scb.hit1_imp);
       m_ready_mon.ap.connect(m_scb.ready_imp);
       m_dbg_mon.ap.connect(m_scb.dbg_imp);
@@ -912,10 +1060,12 @@ package mtsp_env_pkg;
     bit [2:0]  addr;
     bit [31:0] data;
     bit        hold_bus_after;
+    bit        change_during_waitrequest;
 
     function new(string name = "mtsp_csr_write_seq");
       super.new(name);
       hold_bus_after = 1'b0;
+      change_during_waitrequest = 1'b0;
     endfunction
 
     task body();
@@ -927,6 +1077,7 @@ package mtsp_env_pkg;
       item.address   = addr;
       item.writedata = data;
       item.hold_bus_after = hold_bus_after;
+      item.change_during_waitrequest = change_during_waitrequest;
       finish_item(item);
     endtask
   endclass
@@ -1129,6 +1280,16 @@ package mtsp_env_pkg;
       seq      = mtsp_csr_write_seq::type_id::create($sformatf("csr_wr_%0t", $time));
       seq.addr = addr;
       seq.data = data;
+      seq.start(m_env.m_csr_sqr);
+    endtask
+
+    task automatic csr_write_bad_waitrequest_change(bit [2:0] addr,
+                                                    bit [31:0] data);
+      mtsp_csr_write_seq seq;
+      seq      = mtsp_csr_write_seq::type_id::create($sformatf("csr_bad_wr_%0t", $time));
+      seq.addr = addr;
+      seq.data = data;
+      seq.change_during_waitrequest = 1'b1;
       seq.start(m_env.m_csr_sqr);
     endtask
 

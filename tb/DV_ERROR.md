@@ -52,7 +52,7 @@
 - `X035 | NEG_MTS_035_output_ready_low_boundary_fault`: Hold output `ready=0` on the terminating EOP beat and verify the current DUT still emits it; tag it as the same negative protocol finding. Documents the ignored-ready boundary behavior.
 - `X036 | NEG_MTS_036_output_ready_unknown_fault`: Inject X/Z on output `ready` in simulation and require the bench to flag the misuse explicitly. Covers sink-protocol robustness.
 - `X037 | NEG_MTS_037_csr_driver_waitrequest_fault`: Build a bad CSR driver that changes address/data before `waitrequest` drops; require protocol assertions to fire. Covers bench-side CSR protocol abuse.
-- `X038 | NEG_MTS_038_ctrl_driver_assumes_stateful_ready`: Build a run-control driver that waits for `ready` to deassert during prepare/sync/flush and verify the current DUT never does. Documents the present handshake mismatch.
+- `X038 | NEG_MTS_038_ctrl_driver_assumes_stateful_ready`: Build a run-control driver that waits for `ready` to deassert during prepare/sync/flush and verify the current DUT now does so before restoring `ready`. Documents the stateful-ready handshake required for bring-up.
 - `X039 | NEG_MTS_039_hit_source_changes_payload_midbeat`: Intentionally change hit payload fields after asserting `valid`; require the driver/monitor layer to flag the misuse. Covers source data instability.
 - `X040 | NEG_MTS_040_ctrl_valid_on_reset_edge`: Assert `ctrl_valid` exactly on the reset edge and verify the DUT stays in reset-defined state. Covers reset/handshake overlap misuse.
 

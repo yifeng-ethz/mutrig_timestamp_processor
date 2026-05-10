@@ -11926,6 +11926,285 @@
       do_corner_030_sideband_channel_outside_enabled_window();
     endtask
 
+    function automatic bit [44:0] make_hit_word(int unsigned asic_value,
+                                                int unsigned channel_value,
+                                                int unsigned tcc_raw_value,
+                                                int unsigned ecc_raw_value,
+                                                bit          eflag_value,
+                                                int unsigned tfine_value = 0);
+      bit [44:0] hit_word;
+
+      hit_word        = '0;
+      hit_word[44:41] = asic_value[3:0];
+      hit_word[40:36] = channel_value[4:0];
+      hit_word[35:21] = tcc_raw_value[14:0];
+      hit_word[20:16] = tfine_value[4:0];
+      hit_word[15:1]  = ecc_raw_value[14:0];
+      hit_word[0]     = eflag_value;
+      return hit_word;
+    endfunction
+
+    task automatic expect_ready_low_hit_rejected(bit in_sync_state,
+                                                 string ctx);
+      int unsigned base_rejects;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      if (in_sync_state) begin
+        send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+        send_ctrl(CTRL_SYNC, "SYNC");
+        wait_cycles(2);
+      end
+      expect_hit0_ready(1'b0, $sformatf("%s ready-low state", ctx));
+
+      base_rejects    = m_env.m_scb.hit0_ready_low_reject_count;
+      base_inputs     = m_env.m_scb.input_accept_count;
+      base_beats      = m_env.m_scb.beat_count;
+      base_eops       = m_env.m_scb.eop_count;
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0,
+        '0, 1'b0);
+      wait_cycles(4);
+
+      if (m_env.m_scb.hit0_ready_low_reject_count <= base_rejects)
+        `uvm_fatal("MTSP_HIT0_PROTOCOL",
+          $sformatf("%s expected hit0 ready-low rejection evidence", ctx))
+      if (m_env.m_scb.input_accept_count != base_inputs)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s ready-low hit was incorrectly accepted", ctx))
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 8,
+        $sformatf("%s ready-low reject output quiet", ctx));
+    endtask
+
+    task automatic force_hit0_bus(bit [5:0]  sideband_channel,
+                                  bit        sop_value,
+                                  bit        eop_value,
+                                  bit        endofrun_value,
+                                  bit [2:0]  error_value,
+                                  bit [44:0] data_value,
+                                  bit        valid_value,
+                                  string     ctx);
+      force_tb_hdl("/tb_top/hit0_if/channel", "/tb_top.hit0_if.channel",
+        sideband_channel, $sformatf("%s force hit0 channel", ctx));
+      force_tb_hdl("/tb_top/hit0_if/sop", "/tb_top.hit0_if.sop",
+        sop_value, $sformatf("%s force hit0 sop", ctx));
+      force_tb_hdl("/tb_top/hit0_if/eop", "/tb_top.hit0_if.eop",
+        eop_value, $sformatf("%s force hit0 eop", ctx));
+      force_tb_hdl("/tb_top/hit0_if/endofrun", "/tb_top.hit0_if.endofrun",
+        endofrun_value, $sformatf("%s force hit0 endofrun", ctx));
+      force_tb_hdl("/tb_top/hit0_if/error", "/tb_top.hit0_if.error",
+        error_value, $sformatf("%s force hit0 error", ctx));
+      force_tb_hdl("/tb_top/hit0_if/data", "/tb_top.hit0_if.data",
+        data_value, $sformatf("%s force hit0 data", ctx));
+      force_tb_hdl("/tb_top/hit0_if/valid", "/tb_top.hit0_if.valid",
+        valid_value, $sformatf("%s force hit0 valid", ctx));
+    endtask
+
+    task automatic release_hit0_bus(string ctx);
+      release_tb_hdl("/tb_top/hit0_if/valid", "/tb_top.hit0_if.valid",
+        $sformatf("%s release hit0 valid", ctx));
+      release_tb_hdl("/tb_top/hit0_if/data", "/tb_top.hit0_if.data",
+        $sformatf("%s release hit0 data", ctx));
+      release_tb_hdl("/tb_top/hit0_if/error", "/tb_top.hit0_if.error",
+        $sformatf("%s release hit0 error", ctx));
+      release_tb_hdl("/tb_top/hit0_if/endofrun", "/tb_top.hit0_if.endofrun",
+        $sformatf("%s release hit0 endofrun", ctx));
+      release_tb_hdl("/tb_top/hit0_if/eop", "/tb_top.hit0_if.eop",
+        $sformatf("%s release hit0 eop", ctx));
+      release_tb_hdl("/tb_top/hit0_if/sop", "/tb_top.hit0_if.sop",
+        $sformatf("%s release hit0 sop", ctx));
+      release_tb_hdl("/tb_top/hit0_if/channel", "/tb_top.hit0_if.channel",
+        $sformatf("%s release hit0 channel", ctx));
+    endtask
+
+    task automatic expect_output_with_ready_low_since(int unsigned base_history,
+                                                      string ctx);
+      for (int idx = base_history; idx < m_env.m_scb.history.size(); idx++) begin
+        mtsp_hit1_obs_item obs;
+
+        obs = m_env.m_scb.history[idx];
+        if (obs.ready === 1'b0)
+          return;
+      end
+      `uvm_fatal("MTSP_CASE",
+        $sformatf("%s expected hit_type1 output while ready=0", ctx))
+    endtask
+
+    task automatic do_neg_031_valid_while_input_ready_low_idle();
+      expect_ready_low_hit_rejected(1'b0, case_id);
+    endtask
+
+    task automatic do_neg_032_valid_while_input_ready_low_sync();
+      expect_ready_low_hit_rejected(1'b1, case_id);
+    endtask
+
+    task automatic do_neg_033_source_drops_valid_too_early();
+      int unsigned base_valid_drop_faults;
+
+      wait_for_reset_release();
+      expect_hit0_ready(1'b0, $sformatf("%s ready-low precondition", case_id));
+      base_valid_drop_faults = m_env.m_scb.hit0_valid_drop_fault_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0,
+        '0, 1'b0);
+      wait_cycles(4);
+      if (m_env.m_scb.hit0_valid_drop_fault_count <=
+          base_valid_drop_faults)
+        `uvm_fatal("MTSP_HIT0_PROTOCOL",
+          $sformatf("%s expected valid-drop-before-ready fault evidence",
+            case_id))
+    endtask
+
+    task automatic do_neg_034_output_ready_low_single_fault();
+      int unsigned base_history;
+      int unsigned base_beats;
+      int unsigned base_traces;
+
+      wait_for_reset_release();
+      run_start();
+      set_hit1_ready(1'b0);
+      base_history = m_env.m_scb.history.size();
+      base_beats   = m_env.m_scb.beat_count;
+      base_traces  = m_env.m_scb.trace_history.size();
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s ready-low payload", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s ready-low trace", case_id));
+      expect_output_with_ready_low_since(base_history, case_id);
+      expect_last_trace_pair($sformatf("%s ready-low payload trace",
+        case_id));
+      set_hit1_ready(1'b1);
+    endtask
+
+    task automatic do_neg_035_output_ready_low_boundary_fault();
+      int unsigned base_empty_eops;
+      int unsigned base_history;
+
+      wait_for_reset_release();
+      run_start();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      base_history    = m_env.m_scb.history.size();
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low",
+        case_id));
+      set_hit1_ready(1'b0);
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s ready-low close markers", case_id));
+      expect_output_with_ready_low_since(base_history, case_id);
+      expect_close_markers_since(base_history, 4'b1111, 0,
+        $sformatf("%s ready-low close markers", case_id));
+      set_hit1_ready(1'b1);
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore",
+        case_id));
+    endtask
+
+    task automatic do_neg_036_output_ready_unknown_fault();
+      do_corner_105_output_ready_unknown_monitor_trap();
+    endtask
+
+    task automatic do_neg_037_csr_driver_waitrequest_fault();
+      int unsigned base_faults;
+      int unsigned base_bus_change_faults;
+
+      wait_for_reset_release();
+      base_faults = m_env.m_scb.csr_protocol_fault_count;
+      base_bus_change_faults =
+        m_env.m_scb.csr_bus_change_waitrequest_fault_count;
+      csr_write_bad_waitrequest_change(3'd2, 32'd1234);
+      if (m_env.m_scb.csr_protocol_fault_count <= base_faults)
+        `uvm_fatal("MTSP_CSR_PROTOCOL",
+          $sformatf("%s expected CSR protocol fault evidence", case_id))
+      if (m_env.m_scb.csr_bus_change_waitrequest_fault_count <=
+          base_bus_change_faults)
+        `uvm_fatal("MTSP_CSR_PROTOCOL",
+          $sformatf("%s expected CSR waitrequest bus-change fault evidence",
+            case_id))
+      expect_csr_mask(3'd2, 32'd2000, 32'hffff_ffff,
+        $sformatf("%s bad write did not update expected_latency", case_id));
+    endtask
+
+    task automatic do_neg_038_ctrl_driver_assumes_stateful_ready();
+      int unsigned base_beats;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      pulse_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE");
+      wait_for_ctrl_ready_low(4,
+        $sformatf("%s RUN_PREPARE ready low", case_id));
+      wait_for_ctrl_ready_high(16,
+        $sformatf("%s RUN_PREPARE ready restore", case_id));
+      pulse_ctrl(CTRL_SYNC, "SYNC");
+      wait_for_ctrl_ready_low(4,
+        $sformatf("%s SYNC ready low", case_id));
+      wait_for_ctrl_ready_high(16,
+        $sformatf("%s SYNC ready restore", case_id));
+      pulse_ctrl(CTRL_RUNNING, "RUNNING");
+      wait_for_running_status(64,
+        $sformatf("%s running after stateful-ready sequence", case_id));
+      wait_for_hit0_ready(1'b1, 16,
+        $sformatf("%s running hit ready", case_id));
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b1);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s legal recovery hit", case_id));
+      expect_last_trace_pair($sformatf("%s legal recovery trace",
+        case_id));
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4,
+        $sformatf("%s TERMINATING ready low", case_id));
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s TERMINATING close markers", case_id));
+      wait_for_ctrl_ready_high(128,
+        $sformatf("%s TERMINATING ready restore", case_id));
+    endtask
+
+    task automatic do_neg_039_hit_source_changes_payload_midbeat();
+      int unsigned base_payload_faults;
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+      bit [44:0]   first_word;
+      bit [44:0]   changed_word;
+
+      wait_for_reset_release();
+      expect_hit0_ready(1'b0, $sformatf("%s ready-low precondition",
+        case_id));
+      base_payload_faults = m_env.m_scb.hit0_payload_change_fault_count;
+      base_beats          = m_env.m_scb.beat_count;
+      base_eops           = m_env.m_scb.eop_count;
+      base_empty_eops     = m_env.m_scb.empty_eop_count;
+      first_word          = make_hit_word(2, 0, 15'h0003, 15'h000F, 1'b1);
+      changed_word        = make_hit_word(2, 1, 15'h0013, 15'h001F, 1'b1);
+
+      force_hit0_bus(6'd2, 1'b1, 1'b0, 1'b0, '0, first_word, 1'b1,
+        case_id);
+      wait_cycles(1);
+      force_hit0_bus(6'd2, 1'b1, 1'b0, 1'b0, '0, changed_word, 1'b1,
+        case_id);
+      wait_cycles(1);
+      release_hit0_bus(case_id);
+      wait_cycles(4);
+
+      if (m_env.m_scb.hit0_payload_change_fault_count <=
+          base_payload_faults)
+        `uvm_fatal("MTSP_HIT0_PROTOCOL",
+          $sformatf("%s expected payload-change-before-ready fault evidence",
+            case_id))
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 8,
+        $sformatf("%s bad source output quiet", case_id));
+    endtask
+
+    task automatic do_neg_040_ctrl_valid_on_reset_edge();
+      do_corner_001_reset_release_with_ctrl_valid();
+    endtask
+
     task automatic run_case_by_id();
       case (case_id)
         "STD_MTS_001_powerup_reset_idle": do_std_001_powerup_reset_idle();
@@ -12219,6 +12498,16 @@
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();
         "NEG_MTS_029_sop_without_matching_eop_then_abort": do_neg_029_sop_without_matching_eop_then_abort();
         "NEG_MTS_030_sideband_outside_enabled_window": do_neg_030_sideband_outside_enabled_window();
+        "NEG_MTS_031_valid_while_input_ready_low_idle": do_neg_031_valid_while_input_ready_low_idle();
+        "NEG_MTS_032_valid_while_input_ready_low_sync": do_neg_032_valid_while_input_ready_low_sync();
+        "NEG_MTS_033_source_drops_valid_too_early": do_neg_033_source_drops_valid_too_early();
+        "NEG_MTS_034_output_ready_low_single_fault": do_neg_034_output_ready_low_single_fault();
+        "NEG_MTS_035_output_ready_low_boundary_fault": do_neg_035_output_ready_low_boundary_fault();
+        "NEG_MTS_036_output_ready_unknown_fault": do_neg_036_output_ready_unknown_fault();
+        "NEG_MTS_037_csr_driver_waitrequest_fault": do_neg_037_csr_driver_waitrequest_fault();
+        "NEG_MTS_038_ctrl_driver_assumes_stateful_ready": do_neg_038_ctrl_driver_assumes_stateful_ready();
+        "NEG_MTS_039_hit_source_changes_payload_midbeat": do_neg_039_hit_source_changes_payload_midbeat();
+        "NEG_MTS_040_ctrl_valid_on_reset_edge": do_neg_040_ctrl_valid_on_reset_edge();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
         "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
         "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();
