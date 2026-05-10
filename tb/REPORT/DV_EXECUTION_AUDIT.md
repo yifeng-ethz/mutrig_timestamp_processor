@@ -392,7 +392,7 @@ the current debug-stream DV checkpoint:
 | `packet_scheduler` | `245eb93` `[PATCH] Mirror OPQ handle CSR map in SVD` | `origin/codex/opq-feb-swb-debug-20260508` |
 | `mu3e-ip-cores` | `c9ca241` `[PATCH] Advance packet scheduler SVD package pointer` | `codex/opq-feb-swb-parent-20260508`, `origin/codex/opq-feb-swb-parent-20260508` |
 | `musip` | `d3f4c05` `[PATCH] Advance Mu3e IP cores OPQ SVD pointer` | `yifeng-ip_sim-2604`, `origin/yifeng-ip_sim-2604` |
-| `mutrig_timestamp_processor` | local `master` with the P061-P070 repeated run-control DV/RTL checkpoint after `7fc1ef3` | pending parent pointer publication |
+| `mutrig_timestamp_processor` | local `master` with the P061-P070 repeated run-control DV/RTL checkpoint after `a975fe1` | pending parent pointer publication |
 
 `/home/yifeng/packages/musip_2604/external` contains the parent chain:
 `packet_scheduler 245eb93` plus the local MTSP debug-stream checkpoint before

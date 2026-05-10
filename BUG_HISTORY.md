@@ -46,7 +46,7 @@ Historical formal note:
 | [BUG-009-H](#bug-009-h-hit0-monitor-sampled-after-one-cycle-valid-deassert) | H | non-datapath-refactor | `directed-only (adjacent accepted hit0 visibility)` | fixed | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | `6f4bf95` | The hit0 monitor could miss a one-cycle accepted beat, weakening input-analysis-port evidence for dual normal/debug checks. |
 | [BUG-010-H](#bug-010-h-profile-helper-forced-zero-delay-error-on-valid-route-jump) | H | non-datapath-refactor | `directed-only (profile route-jump delay sanity)` | fixed | `STRESS_MTS_021_round_robin_enabled_channels` | `39fa9c0` | Profile helper forced zero delay-error even when normal output and debug math correctly agreed on a negative-delta route jump. |
 | [BUG-011-R](#bug-011-r-csr-soft-reset-left-timing-datapath-and-debug-history-live) | R | soft error | `occasional (routine CSR soft-reset recovery)` | fixed | `STRESS_MTS_035_soft_reset_every_10k_cycles` | `b1d45ba` | CSR soft reset cleared visible counters without clearing local timing, datapath, output, and debug history. |
-| [BUG-012-R](#bug-012-r-illegal-run-control-error-state-could-wedge-ctrl-ready-low) | R | hard stuck error | `directed-only (illegal control injection)` | fixed | `STRESS_MTS_070_interspersed_illegal_ctrl_words` | `pending` | An illegal run-control word decoded to `ERROR` and left `asi_ctrl_ready` low, blocking later legal recovery commands. |
+| [BUG-012-R](#bug-012-r-illegal-run-control-error-state-could-wedge-ctrl-ready-low) | R | hard stuck error | `directed-only (illegal control injection)` | fixed | `STRESS_MTS_070_interspersed_illegal_ctrl_words` | `a975fe1` | An illegal run-control word decoded to `ERROR` and left `asi_ctrl_ready` low, blocking later legal recovery commands. |
 
 ## 2026-05-10
 
@@ -84,7 +84,7 @@ Historical formal note:
   - the source-homogeneous explicit-only coverage merge reported DUT statement `97.04%`, branch `95.49%`, condition `83.92%`, expression `100.00%`, FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.65%`
   - `rtl_style_check.py mts_processor.vhd` still fails on the legacy style baseline with 968 issues
 - Commit:
-  - `pending` (`[PATCH] Recover MTSP illegal control state`)
+  - `a975fe1` (`[PATCH] Recover MTSP illegal control state`)
 
 ### BUG-011-R: CSR soft reset left timing datapath and debug history live
 
