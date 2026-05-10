@@ -4,7 +4,7 @@
 
 ## Intent
 
-- **Scenario:** Require the control handshake to reflect completed work, not just command sampling. Covers bring-up-visible completion semantics.
+- **Scenario:** Require the control handshake to reflect completed work, not just command sampling, and prove a restart command is accepted only after terminal work is complete. Covers bring-up-visible completion semantics.
 - **Primary checks:** UVM reference model checks normal payload, debug sideband, CSR/readout, and bounded protocol invariants for this documented case.
 - **Contract anchor:** DV_ERROR.md:X129
 

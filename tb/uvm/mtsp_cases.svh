@@ -3947,6 +3947,32 @@
       wait_for_empty_eop_count(base_empty_eops + 4, 128,
         $sformatf("%s close marker drain", case_id));
       wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+
+      send_ctrl(CTRL_RUN_PREPARE, "RUN_PREPARE_after_terminate_done");
+      wait_cycles(2);
+      expect_run_state_cmd_value(1,
+        $sformatf("%s FLUSHING_to_RESET command", case_id));
+      expect_processor_state_value(1,
+        $sformatf("%s FLUSHING_to_RESET state", case_id));
+      expect_hit0_ready(1'b1,
+        $sformatf("%s RESET_SCLR flush-ready after re-arm", case_id));
+
+      send_ctrl(CTRL_SYNC, "SYNC_after_flushing_reset");
+      wait_cycles(2);
+      expect_run_state_cmd_value(2,
+        $sformatf("%s reset sync command", case_id));
+      expect_processor_state_value(1,
+        $sformatf("%s reset sync state", case_id));
+
+      send_ctrl(CTRL_RUNNING, "RUNNING_after_flushing_reset");
+      wait_for_running_status(64,
+        $sformatf("%s running after flushing reset", case_id));
+      wait_for_hit0_ready(1'b1, 16,
+        $sformatf("%s running ready after flushing reset", case_id));
+      send_ctrl(CTRL_IDLE, "IDLE_after_flushing_reset");
+      wait_cycles(2);
+      expect_processor_state_value(2,
+        $sformatf("%s idle after flushing reset re-arm", case_id));
     endtask
 
     task automatic do_std_128_upgrade_case_terminal_boundary_without_extra_hits();
@@ -6277,6 +6303,20 @@
           $sformatf("%s terminate accept time must precede terminal boundary: accept=%0t last_eop=%0t",
             case_id, terminate_accept_time, m_env.m_scb.last_eop_time_ps))
       wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+
+      send_ctrl(CTRL_RUNNING, "RUNNING_after_terminate_done");
+      wait_for_running_status(64,
+        $sformatf("%s FLUSHING_to_RUNNING command", case_id));
+      wait_for_hit0_ready(1'b1, 16,
+        $sformatf("%s running ready after terminate completion", case_id));
+      expect_run_state_cmd_value(3,
+        $sformatf("%s FLUSHING_to_RUNNING command code", case_id));
+      expect_processor_state_value(0,
+        $sformatf("%s FLUSHING_to_RUNNING state", case_id));
+      send_ctrl(CTRL_IDLE, "IDLE_after_terminate_reentry");
+      wait_cycles(2);
+      expect_processor_state_value(2,
+        $sformatf("%s idle after terminate re-entry", case_id));
     endtask
 
     task automatic do_corner_129_one_boundary_per_run_upgrade();
@@ -11375,6 +11415,17 @@
       if (observed_value != expected_value)
         `uvm_fatal("MTSP_CASE",
           $sformatf("%s expected run_state_cmd_code value %0d got %0d",
+            ctx, expected_value, observed_value))
+    endtask
+
+    task automatic expect_processor_state_value(int unsigned expected_value,
+                                                string ctx);
+      int unsigned observed_value;
+
+      read_dut_uint("/tb_top/dut/processor_state_code", observed_value, ctx);
+      if (observed_value != expected_value)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected processor_state_code value %0d got %0d",
             ctx, expected_value, observed_value))
     endtask
 

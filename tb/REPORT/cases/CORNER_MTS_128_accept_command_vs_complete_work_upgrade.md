@@ -4,7 +4,7 @@
 
 ## Intent
 
-- **Scenario:** Mark the future distinction between “terminate command sampled” and “terminate work finished.” Captures the handshake semantics that do not exist yet.
+- **Scenario:** Distinguish “terminate command sampled” from “terminate work finished,” then accept a new `RUNNING` command only after terminal work completes. Captures the completion-gated restart semantics.
 - **Primary checks:** UVM reference model checks normal payload, debug sideband, CSR/readout, and bounded protocol invariants for this documented case.
 - **Contract anchor:** DV_EDGE.md:E128
 
@@ -28,7 +28,7 @@
 | ℹ️ | log | [`uvm/logs/CORNER_MTS_128_accept_command_vs_complete_work_upgrade_after_s1.log`](../../uvm/logs/CORNER_MTS_128_accept_command_vs_complete_work_upgrade_after_s1.log) |
 | ℹ️ | ucdb | [`uvm/cov_after/CORNER_MTS_128_accept_command_vs_complete_work_upgrade_s1.ucdb`](../../uvm/cov_after/CORNER_MTS_128_accept_command_vs_complete_work_upgrade_s1.ucdb) |
 | ℹ️ | log.beats | `4` |
-| ℹ️ | log.csr | `2` |
+| ℹ️ | log.csr | `4` |
 | ℹ️ | log.debug_burst | `0` |
 | ℹ️ | log.debug_path_required | `1` |
 | ℹ️ | log.debug_ts | `0` |
@@ -51,13 +51,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 60.74 | 15.19 | 0.00 | 95.22 | 0.00 |
-| branch | 55.07 | 13.77 | 0.00 | 90.31 | 0.00 |
-| cond | 38.05 | 9.51 | 0.00 | 81.41 | 0.00 |
+| stmt | 61.48 | 15.37 | 0.36 | 95.58 | 0.09 |
+| branch | 56.25 | 14.06 | 0.38 | 90.69 | 0.10 |
+| cond | 38.93 | 9.73 | 0.89 | 82.30 | 0.22 |
 | expr | 0.00 | 0.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 100.00 | 25.00 | 0.00 | 100.00 | 0.00 |
-| fsm_trans | 33.33 | 8.33 | 0.00 | 77.77 | 0.00 |
-| toggle | 2.75 | 0.69 | 0.00 | 51.26 | 0.00 |
+| fsm_trans | 55.55 | 13.89 | 11.11 | 88.88 | 2.78 |
+| toggle | 2.90 | 0.72 | 0.00 | 51.26 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/EDGE.md) &middot; [dashboard](../../DV_REPORT.md)_

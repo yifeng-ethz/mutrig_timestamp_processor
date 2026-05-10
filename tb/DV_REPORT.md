@@ -35,12 +35,12 @@ This page is the chief-architect dashboard. All per-case evidence lives under [`
 | BUCKET_FRAME_RUNS | `4/4` |
 | ALL_BUCKETS_FRAME_RUNS | `1/1` |
 | EVIDENCE_GIT_BRANCH | `master` |
-| EVIDENCE_GIT_COMMIT | `9692869` |
-| probe_only_exclusions |  |
+| EVIDENCE_GIT_COMMIT | `10732a0` |
+| probe_only_exclusions | `none` |
 
 ## Non-Claims
 
-- structural coverage below target remains an open coverage-closure item; this report claims 521/521 stimulus evidence, normal/debug scoreboard agreement, and mandatory continuous-frame baselines.
+- raw DUT toggle coverage remains below the 80% target; statement, branch, FSM-state, FSM-transition, functional, and mandatory continuous-frame evidence are closed.
 
 ## Bucket Summary
 
@@ -48,8 +48,8 @@ This page is the chief-architect dashboard. All per-case evidence lives under [`
 
 | status | bucket | catalog_planned | promoted | evidenced | backlog | merged | promoted functional |
 |:---:|---|---:|---:|---:|---:|---|---|
-| ⚠️ | [`BASIC`](REPORT/buckets/BASIC.md) | 130 | 130 | 130 | 0 | stmt=95.40, branch=91.89, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.64 | 100.0% (130/130) |
-| ⚠️ | [`EDGE`](REPORT/buckets/EDGE.md) | 131 | 131 | 131 | 0 | stmt=95.22, branch=90.31, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=51.26 | 100.0% (131/131) |
+| ⚠️ | [`BASIC`](REPORT/buckets/BASIC.md) | 130 | 130 | 130 | 0 | stmt=95.77, branch=92.27, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=50.64 | 100.0% (130/130) |
+| ⚠️ | [`EDGE`](REPORT/buckets/EDGE.md) | 131 | 131 | 131 | 0 | stmt=95.58, branch=90.69, cond=82.30, expr=100.00, fsm_state=100.00, fsm_trans=88.88, toggle=51.26 | 100.0% (131/131) |
 | ⚠️ | [`PROF`](REPORT/buckets/PROF.md) | 130 | 130 | 130 | 0 | stmt=95.37, branch=87.54, cond=80.53, expr=50.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.69 | 100.0% (130/130) |
 | ⚠️ | [`ERROR`](REPORT/buckets/ERROR.md) | 130 | 130 | 130 | 0 | stmt=95.58, branch=91.89, cond=82.30, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=53.12 | 100.0% (130/130) |
 
@@ -57,12 +57,12 @@ This page is the chief-architect dashboard. All per-case evidence lives under [`
 
 | status | metric | pct | target |
 |:---:|---|---|---|
-| ✅ | stmt | 97.61 | 95.0 |
-| ✅ | branch | 95.36 | 90.0 |
-| ℹ️ | cond | 84.95 | - |
+| ✅ | stmt | 98.34 | 95.0 |
+| ✅ | branch | 96.13 | 90.0 |
+| ℹ️ | cond | 85.84 | - |
 | ℹ️ | expr | 100.00 | - |
 | ✅ | fsm_state | 100.00 | 95.0 |
-| ⚠️ | fsm_trans | 77.77 | 90.0 |
+| ✅ | fsm_trans | 100.00 | 90.0 |
 | ⚠️ | toggle | 55.93 | 80.0 |
 
 - catalog_planned_cases: `521`

@@ -13,12 +13,12 @@
 
 | status | metric | merged_pct | target |
 |:---:|---|---|---|
-| ✅ | stmt | 95.22 | 95.0 |
-| ✅ | branch | 90.31 | 90.0 |
-| ℹ️ | cond | 81.41 | - |
+| ✅ | stmt | 95.58 | 95.0 |
+| ✅ | branch | 90.69 | 90.0 |
+| ℹ️ | cond | 82.30 | - |
 | ℹ️ | expr | 100.00 | - |
 | ✅ | fsm_state | 100.00 | 95.0 |
-| ⚠️ | fsm_trans | 77.77 | 90.0 |
+| ⚠️ | fsm_trans | 88.88 | 90.0 |
 | ⚠️ | toggle | 51.26 | 80.0 |
 
 ## Ordered merge trace
@@ -155,9 +155,9 @@
 | ✅ | 126 | `CORNER_MTS_126_crcerr_ignore_upgrade_gap` | stmt=95.22, branch=90.31, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=50.99 | [case](../cases/CORNER_MTS_126_crcerr_ignore_upgrade_gap.md) |
 | ✅ | 127 | `CORNER_MTS_127_delay_error_sideband_tracks_hit` | stmt=95.22, branch=90.31, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=51.26 | [case](../cases/CORNER_MTS_127_delay_error_sideband_tracks_hit.md) |
 | ✅ | 128 | `CORNER_MTS_127_frame_corrupt_ignore_upgrade_gap` | stmt=95.22, branch=90.31, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=51.26 | [case](../cases/CORNER_MTS_127_frame_corrupt_ignore_upgrade_gap.md) |
-| ✅ | 129 | `CORNER_MTS_128_accept_command_vs_complete_work_upgrade` | stmt=95.22, branch=90.31, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=51.26 | [case](../cases/CORNER_MTS_128_accept_command_vs_complete_work_upgrade.md) |
-| ✅ | 130 | `CORNER_MTS_129_one_boundary_per_run_upgrade` | stmt=95.22, branch=90.31, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=51.26 | [case](../cases/CORNER_MTS_129_one_boundary_per_run_upgrade.md) |
-| ✅ | 131 | `CORNER_MTS_130_idle_after_boundary_upgrade` | stmt=95.22, branch=90.31, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=51.26 | [case](../cases/CORNER_MTS_130_idle_after_boundary_upgrade.md) |
+| ✅ | 129 | `CORNER_MTS_128_accept_command_vs_complete_work_upgrade` | stmt=95.58, branch=90.69, cond=82.30, expr=100.00, fsm_state=100.00, fsm_trans=88.88, toggle=51.26 | [case](../cases/CORNER_MTS_128_accept_command_vs_complete_work_upgrade.md) |
+| ✅ | 130 | `CORNER_MTS_129_one_boundary_per_run_upgrade` | stmt=95.58, branch=90.69, cond=82.30, expr=100.00, fsm_state=100.00, fsm_trans=88.88, toggle=51.26 | [case](../cases/CORNER_MTS_129_one_boundary_per_run_upgrade.md) |
+| ✅ | 131 | `CORNER_MTS_130_idle_after_boundary_upgrade` | stmt=95.58, branch=90.69, cond=82.30, expr=100.00, fsm_state=100.00, fsm_trans=88.88, toggle=51.26 | [case](../cases/CORNER_MTS_130_idle_after_boundary_upgrade.md) |
 
 ---
 _Back to [dashboard](../../DV_REPORT.md)_

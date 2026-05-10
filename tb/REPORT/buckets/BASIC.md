@@ -13,12 +13,12 @@
 
 | status | metric | merged_pct | target |
 |:---:|---|---|---|
-| ✅ | stmt | 95.40 | 95.0 |
-| ✅ | branch | 91.89 | 90.0 |
+| ✅ | stmt | 95.77 | 95.0 |
+| ✅ | branch | 92.27 | 90.0 |
 | ℹ️ | cond | 81.41 | - |
 | ℹ️ | expr | 100.00 | - |
 | ✅ | fsm_state | 100.00 | 95.0 |
-| ⚠️ | fsm_trans | 66.66 | 90.0 |
+| ⚠️ | fsm_trans | 77.77 | 90.0 |
 | ⚠️ | toggle | 50.64 | 80.0 |
 
 ## Ordered merge trace
@@ -153,10 +153,10 @@
 | ✅ | 124 | `STD_MTS_124_flushing_quiet_without_hits` | stmt=95.40, branch=91.89, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.64 | [case](../cases/STD_MTS_124_flushing_quiet_without_hits.md) |
 | ✅ | 125 | `STD_MTS_125_ctrl_ready_high_through_terminate` | stmt=95.40, branch=91.89, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.64 | [case](../cases/STD_MTS_125_ctrl_ready_high_through_terminate.md) |
 | ✅ | 126 | `STD_MTS_126_ctrl_ready_high_through_prepare_and_sync` | stmt=95.40, branch=91.89, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.64 | [case](../cases/STD_MTS_126_ctrl_ready_high_through_prepare_and_sync.md) |
-| ✅ | 127 | `STD_MTS_127_upgrade_case_stateful_ready_on_terminate` | stmt=95.40, branch=91.89, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.64 | [case](../cases/STD_MTS_127_upgrade_case_stateful_ready_on_terminate.md) |
-| ✅ | 128 | `STD_MTS_128_upgrade_case_terminal_boundary_without_extra_hits` | stmt=95.40, branch=91.89, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.64 | [case](../cases/STD_MTS_128_upgrade_case_terminal_boundary_without_extra_hits.md) |
-| ✅ | 129 | `STD_MTS_129_upgrade_case_idle_after_boundary_only` | stmt=95.40, branch=91.89, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.64 | [case](../cases/STD_MTS_129_upgrade_case_idle_after_boundary_only.md) |
-| ✅ | 130 | `STD_MTS_130_full_standard_sequence_baseline` | stmt=95.40, branch=91.89, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.64 | [case](../cases/STD_MTS_130_full_standard_sequence_baseline.md) |
+| ✅ | 127 | `STD_MTS_127_upgrade_case_stateful_ready_on_terminate` | stmt=95.77, branch=92.27, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=50.64 | [case](../cases/STD_MTS_127_upgrade_case_stateful_ready_on_terminate.md) |
+| ✅ | 128 | `STD_MTS_128_upgrade_case_terminal_boundary_without_extra_hits` | stmt=95.77, branch=92.27, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=50.64 | [case](../cases/STD_MTS_128_upgrade_case_terminal_boundary_without_extra_hits.md) |
+| ✅ | 129 | `STD_MTS_129_upgrade_case_idle_after_boundary_only` | stmt=95.77, branch=92.27, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=50.64 | [case](../cases/STD_MTS_129_upgrade_case_idle_after_boundary_only.md) |
+| ✅ | 130 | `STD_MTS_130_full_standard_sequence_baseline` | stmt=95.77, branch=92.27, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=50.64 | [case](../cases/STD_MTS_130_full_standard_sequence_baseline.md) |
 
 ---
 _Back to [dashboard](../../DV_REPORT.md)_

@@ -14,20 +14,20 @@ This page is the coverage summary only. Per-case incremental coverage lives unde
 
 | status | metric | merged_pct | target |
 |:---:|---|---|---|
-| ✅ | stmt | 97.61 | 95.0 |
-| ✅ | branch | 95.36 | 90.0 |
-| ℹ️ | cond | 84.95 | - |
+| ✅ | stmt | 98.34 | 95.0 |
+| ✅ | branch | 96.13 | 90.0 |
+| ℹ️ | cond | 85.84 | - |
 | ℹ️ | expr | 100.00 | - |
 | ✅ | fsm_state | 100.00 | 95.0 |
-| ⚠️ | fsm_trans | 77.77 | 90.0 |
+| ✅ | fsm_trans | 100.00 | 90.0 |
 | ⚠️ | toggle | 55.93 | 80.0 |
 
 ## Per-bucket merged totals
 
 | status | bucket | stmt | branch | cond | expr | fsm_state | fsm_trans | toggle |
 |:---:|---|---|---|---|---|---|---|---|
-| ⚠️ | [`BASIC`](REPORT/buckets/BASIC.md) | 95.40 | 91.89 | 81.41 | 100.00 | 100.00 | 66.66 | 50.64 |
-| ⚠️ | [`EDGE`](REPORT/buckets/EDGE.md) | 95.22 | 90.31 | 81.41 | 100.00 | 100.00 | 77.77 | 51.26 |
+| ⚠️ | [`BASIC`](REPORT/buckets/BASIC.md) | 95.77 | 92.27 | 81.41 | 100.00 | 100.00 | 77.77 | 50.64 |
+| ⚠️ | [`EDGE`](REPORT/buckets/EDGE.md) | 95.58 | 90.69 | 82.30 | 100.00 | 100.00 | 88.88 | 51.26 |
 | ⚠️ | [`PROF`](REPORT/buckets/PROF.md) | 95.37 | 87.54 | 80.53 | 50.00 | 100.00 | 66.66 | 50.69 |
 | ⚠️ | [`ERROR`](REPORT/buckets/ERROR.md) | 95.58 | 91.89 | 82.30 | 100.00 | 100.00 | 66.66 | 53.12 |
 
@@ -37,7 +37,7 @@ This page is the coverage summary only. Per-case incremental coverage lives unde
 
 | status | run_id | kind | build | bucket | case_count | stmt | branch | toggle | functional_cross_pct | txns |
 |:---:|---|---|---|---|---:|---|---|---|---:|---:|
-| ✅ | [`mtsp_explicit_521_ordered_isolated_merge`](REPORT/cross/mtsp_explicit_521_ordered_isolated_merge.md) | ordered_isolated_merge | after | - | 521 | 97.61 | 95.36 | 55.93 | 100.0 | 29214 |
+| ✅ | [`mtsp_explicit_521_ordered_isolated_merge`](REPORT/cross/mtsp_explicit_521_ordered_isolated_merge.md) | ordered_isolated_merge | after | - | 521 | 98.34 | 96.13 | 55.93 | 100.0 | 29214 |
 | ✅ | [`mtsp_bucket_frame_BASIC`](REPORT/cross/mtsp_bucket_frame_BASIC.md) | bucket_frame | after | BASIC | 130 | 84.62 | 73.82 | 27.25 | 100.0 | 130 |
 | ✅ | [`mtsp_bucket_frame_EDGE`](REPORT/cross/mtsp_bucket_frame_EDGE.md) | bucket_frame | after | EDGE | 131 | 84.62 | 73.82 | 27.25 | 100.0 | 131 |
 | ✅ | [`mtsp_bucket_frame_PROF`](REPORT/cross/mtsp_bucket_frame_PROF.md) | bucket_frame | after | PROF | 130 | 84.62 | 73.82 | 27.25 | 100.0 | 130 |

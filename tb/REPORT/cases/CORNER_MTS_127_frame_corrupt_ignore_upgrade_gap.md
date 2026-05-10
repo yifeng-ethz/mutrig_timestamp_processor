@@ -6,7 +6,7 @@
 
 - **Scenario:** Mark the upgrade discussion around frame-corrupt handling during termination; today it is inert and must remain documented. Keeps the plan honest about current scope.
 - **Primary checks:** UVM reference model checks normal payload, debug sideband, CSR/readout, and bounded protocol invariants for this documented case.
-- **Contract anchor:** DV_EDGE.md:E127
+- **Contract anchor:** DV_EDGE.md:E131
 
 ## Execution Evidence
 

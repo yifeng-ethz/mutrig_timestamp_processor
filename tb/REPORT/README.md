@@ -13,8 +13,8 @@
 
 | status | bucket | planned | evidenced | merged (stmt/branch/cond/expr/fsm_state/fsm_trans/toggle) |
 |:---:|---|---:|---:|---|
-| ⚠️ | [`BASIC`](buckets/BASIC.md) | 130 | 130 | stmt=95.40, branch=91.89, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.64 |
-| ⚠️ | [`EDGE`](buckets/EDGE.md) | 131 | 131 | stmt=95.22, branch=90.31, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=51.26 |
+| ⚠️ | [`BASIC`](buckets/BASIC.md) | 130 | 130 | stmt=95.77, branch=92.27, cond=81.41, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=50.64 |
+| ⚠️ | [`EDGE`](buckets/EDGE.md) | 131 | 131 | stmt=95.58, branch=90.69, cond=82.30, expr=100.00, fsm_state=100.00, fsm_trans=88.88, toggle=51.26 |
 | ⚠️ | [`PROF`](buckets/PROF.md) | 130 | 130 | stmt=95.37, branch=87.54, cond=80.53, expr=50.00, fsm_state=100.00, fsm_trans=66.66, toggle=50.69 |
 | ⚠️ | [`ERROR`](buckets/ERROR.md) | 130 | 130 | stmt=95.58, branch=91.89, cond=82.30, expr=100.00, fsm_state=100.00, fsm_trans=66.66, toggle=53.12 |
 
@@ -43,7 +43,7 @@
 - planned_cases = `521`
 - evidenced_cases = `521`
 - excluded_cases = `0`
-- merged total code coverage: `stmt=97.61, branch=95.36, cond=84.95, expr=100.00, fsm_state=100.00, fsm_trans=77.77, toggle=55.93`
+- merged total code coverage: `stmt=98.34, branch=96.13, cond=85.84, expr=100.00, fsm_state=100.00, fsm_trans=100.00, toggle=55.93`
 - functional coverage: `100.0% (521/521)`
 
 ---

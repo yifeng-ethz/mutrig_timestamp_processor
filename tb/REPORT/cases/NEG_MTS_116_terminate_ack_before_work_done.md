@@ -4,7 +4,7 @@
 
 ## Intent
 
-- **Scenario:** Observe `asi_ctrl_ready` during termination and require acknowledgement to reflect drain and close-marker completion. Covers the stateful completion handshake.
+- **Scenario:** Observe `asi_ctrl_ready` during termination, require acknowledgement to reflect drain and close-marker completion, then accept `RUNNING` only after that completion point. Covers the stateful completion handshake.
 - **Primary checks:** UVM reference model checks normal payload, debug sideband, CSR/readout, and bounded protocol invariants for this documented case.
 - **Contract anchor:** DV_ERROR.md:X116
 

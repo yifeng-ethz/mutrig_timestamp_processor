@@ -46,6 +46,7 @@ PLAN_CASE_RE = re.compile(
     r"^\s*-\s+`(?P<short>[A-Z]\d{3})\s+\|\s+"
     r"(?P<case>[A-Z_]+_MTS_[^`:\s]+)`:?\s*(?P<desc>.*)$"
 )
+PLAN_TABLE_ROW_RE = re.compile(r"^\|\s*(?P<short>[A-Z]\d{3})\s*\|")
 SCB_RE = re.compile(r"\[MTSP_SCB\]\s+(?P<body>.*)$", re.MULTILINE)
 KV_RE = re.compile(r"([A-Za-z0-9_]+)=(-?\d+)")
 TRACE_RE = re.compile(r"\[MTSP_TRACE\]\s+(?P<body>.*)$", re.MULTILINE)
@@ -207,12 +208,35 @@ def parse_plan_docs(tb: Path) -> dict[str, dict[str, str]]:
             continue
         for line in path.read_text(encoding="utf-8").splitlines():
             match = PLAN_CASE_RE.match(line)
-            if not match:
+            if match:
+                case_id = match.group("case")
+                desc = match.group("desc").strip()
+                out[case_id] = {
+                    "short_id": match.group("short"),
+                    "bucket": bucket,
+                    "description": desc,
+                    "doc": doc_name,
+                }
                 continue
-            case_id = match.group("case")
-            desc = match.group("desc").strip()
+
+            if not PLAN_TABLE_ROW_RE.match(line):
+                continue
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if len(cells) != 7:
+                continue
+            short_id, _method, scenario, _iter, stimulus, pass_criteria, _ref = cells
+            words = scenario.split()
+            if len(words) < 4 or words[1] != "MTS" or not words[2].isdigit():
+                continue
+            prefix = words[0].upper()
+            number = words[2]
+            suffix = "_".join(word.lower() for word in words[3:])
+            case_id = f"{prefix}_MTS_{number}_{suffix}"
+            desc = stimulus.strip()
+            if pass_criteria and pass_criteria != stimulus:
+                desc = f"{stimulus.strip()} Pass criteria: {pass_criteria.strip()}"
             out[case_id] = {
-                "short_id": match.group("short"),
+                "short_id": short_id,
                 "bucket": bucket,
                 "description": desc,
                 "doc": doc_name,
@@ -344,23 +368,23 @@ def annotate_case_evidence(
             "standalone_coverage": standalone,
             "isolated_cov_per_txn": coverage_per_txn(standalone, observed_txn),
             "log_summary": {
-                "csr": scb.get("csr", 0),
-                "inputs": scb.get("inputs", 0),
                 "beats": scb.get("beats", 0),
-                "payloads": scb.get("payloads", 0),
-                "eops": scb.get("eops", 0),
-                "empty_eops": scb.get("empty_eops", 0),
-                "debug_ts": scb.get("debug_ts", 0),
+                "csr": scb.get("csr", 0),
                 "debug_burst": scb.get("debug_burst", 0),
-                "ts_delta": scb.get("ts_delta", 0),
-                "ready_x": scb.get("ready_x", 0),
-                "dual_path_pairs": scb.get("dual_path_pairs", 0),
-                "traces": scb.get("traces", 0),
                 "debug_path_required": scb.get("debug_path_required", 0),
-                "trace_detail_lines": traces["trace_detail_lines"],
-                "math_error_traces": traces["math_error_traces"],
+                "debug_ts": scb.get("debug_ts", 0),
+                "dual_path_pairs": scb.get("dual_path_pairs", 0),
+                "empty_eops": scb.get("empty_eops", 0),
+                "eops": scb.get("eops", 0),
                 "hit_error_traces": traces["hit_error_traces"],
+                "inputs": scb.get("inputs", 0),
+                "math_error_traces": traces["math_error_traces"],
+                "payloads": scb.get("payloads", 0),
+                "ready_x": scb.get("ready_x", 0),
                 "scoreboard_ports": "csr, hit0, hit1, debug_ts, debug_burst, ts_delta",
+                "trace_detail_lines": traces["trace_detail_lines"],
+                "traces": scb.get("traces", 0),
+                "ts_delta": scb.get("ts_delta", 0),
             },
             "debug_meta": {
                 "normal_path": {
@@ -752,6 +776,17 @@ def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
         int(case_item.get("log_summary", {}).get("trace_detail_lines", 0)) for case_item in all_cases
     )
     structural_closure, hole_disposition = structural_holes(merged_total)
+    open_structural = structural_closure.get("open_dispositions", [])
+    if open_structural == ["toggle"]:
+        non_claims = [
+            "raw DUT toggle coverage remains below the 80% target; statement, branch, FSM-state, FSM-transition, functional, and mandatory continuous-frame evidence are closed.",
+        ]
+    elif open_structural:
+        non_claims = [
+            "structural coverage below target remains an open coverage-closure item; this report claims 521/521 stimulus evidence, normal/debug scoreboard agreement, and mandatory continuous-frame baselines.",
+        ]
+    else:
+        non_claims = []
     frame_runs = annotate_frame_runs(tb, vcover)
     branch_name = run_tool(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=tb.parent).strip()
     commit = run_tool(["git", "rev-parse", "--short", "HEAD"], cwd=tb.parent).strip()
@@ -780,11 +815,9 @@ def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
             "ALL_BUCKETS_FRAME_RUNS": "1/1",
             "EVIDENCE_GIT_BRANCH": branch_name,
             "EVIDENCE_GIT_COMMIT": commit,
-            "probe_only_exclusions": "",
+            "probe_only_exclusions": "none",
         },
-        "non_claims": [
-            "structural coverage below target remains an open coverage-closure item; this report claims 521/521 stimulus evidence, normal/debug scoreboard agreement, and mandatory continuous-frame baselines.",
-        ],
+        "non_claims": non_claims,
         "coverage_category_status": {
             "supported_with_targets": {
                 "stmt": "DUT statement coverage from Questa code coverage.",
