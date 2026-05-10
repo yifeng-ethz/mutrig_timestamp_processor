@@ -1,5 +1,6 @@
 # DV Performance And Soak Cases — mutrig_timestamp_processor
 
+**Companion docs:** [`DV_PLAN.md`](DV_PLAN.md), [`DV_HARNESS.md`](DV_HARNESS.md), [`DV_COV.md`](DV_COV.md), [`DV_REPORT.md`](DV_REPORT.md)
 **Purpose:** stress, throughput, and soak cases for `mts_processor`  
 **Naming convention:** `STRESS_MTS_###_description`  
 **Count target:** 130 substantive cases

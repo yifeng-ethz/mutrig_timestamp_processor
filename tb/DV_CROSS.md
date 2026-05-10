@@ -1,5 +1,6 @@
 # DV Cross Coverage — mutrig_timestamp_processor
 
+**Companion docs:** [`DV_PLAN.md`](DV_PLAN.md), [`DV_HARNESS.md`](DV_HARNESS.md), [`DV_COV.md`](DV_COV.md), [`DV_REPORT.md`](DV_REPORT.md)
 **Purpose:** functional cross-coverage contract for `mts_processor`  
 **Date:** 2026-04-15
 

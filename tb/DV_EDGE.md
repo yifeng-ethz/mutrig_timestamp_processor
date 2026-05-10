@@ -1,5 +1,6 @@
 # DV Edge Cases — mutrig_timestamp_processor
 
+**Companion docs:** [`DV_PLAN.md`](DV_PLAN.md), [`DV_HARNESS.md`](DV_HARNESS.md), [`DV_COV.md`](DV_COV.md), [`DV_REPORT.md`](DV_REPORT.md)
 **Purpose:** boundary and corner cases for `mts_processor`  
 **Naming convention:** `CORNER_MTS_###_description`  
 **Count target:** 130 substantive cases

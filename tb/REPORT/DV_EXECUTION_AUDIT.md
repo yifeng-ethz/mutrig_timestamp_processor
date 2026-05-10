@@ -112,10 +112,12 @@ Notes:
   audit finding.
 - `DV_PROF.md` has explicit UVM handlers for P001 through P130.
 - `DV_ERROR.md` has explicit UVM handlers for X001 through X130.
-- The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
-  generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
-  not accepted as closure evidence until regenerated from the current explicit
-  handler/artifact set.
+- The top-level `tb/DV_COV.md`, `tb/DV_REPORT.md`, `tb/DV_REPORT.json`, and
+  `tb/REPORT/` tree were regenerated from the current 521 explicit
+  handler/artifact set. The generated dashboard now records 521/521 evidenced
+  cases, zero failed cases, zero stale artifacts, and aggregate normal/debug
+  scoreboard agreement (`DUAL_PATH_PAIRS=19323`,
+  `SCOREBOARD_TRACES=19323`).
 
 ## BASIC Reconciliation Notes
 
@@ -1745,12 +1747,12 @@ Results:
   `26.0.13.0510`.
 - `make -C tb/uvm -s hw_tcl_validate_check`: pass with
   `HW_TCL_VALIDATE_CHECK_PASS cases=3`.
-- `rtl_doc_style_check.py .`: fail on the legacy `tb/` documentation layout,
-  including missing `tb/README.md`, `tb/DV_REPORT.json`, and canonical
-  companion/header/footer sections. This batch updated the execution audit but
-  did not migrate the whole documentation tree.
+- `rtl_doc_style_check.py tb`: pass after adding the `tb/README.md` entry
+  point, linking `tb/BUG_HISTORY.md` to the root ledger, regenerating
+  `tb/DV_REPORT.json` / `tb/DV_REPORT.md` / `tb/DV_COV.md`, and adding
+  companion-link blocks to the authored bucket/cross files.
 - `bug_history_format_check.py BUG_HISTORY.md`: pass.
-- `dv_bucket_format_check.py tb`: fail on 76 legacy bucket-format errors across
+- `dv_bucket_format_check.py tb`: fail on 72 legacy bucket-format errors across
   `tb/DV_BASIC.md`, `tb/DV_EDGE.md`, `tb/DV_PROF.md`, and `tb/DV_ERROR.md`
   because those files still use the older bullet-list layout instead of the
   canonical table/header format. Recent batches corrected specific stale EDGE
@@ -1787,7 +1789,8 @@ Current evidenced explicit cases are the 521 handlers in
 ## Open Work
 
 All documented BASIC, EDGE, PROF, and ERROR cases now have explicit UVM
-handlers and current log/UCDB artifacts. DV closure is still not complete until
-the generator-owned `tb/DV_REPORT.md`, `tb/DV_COV.md`, and any dashboard JSON
-are regenerated from the 521-case artifact set and the remaining legacy bucket
-format issues are migrated or explicitly waived.
+handlers, current log/UCDB artifacts, and regenerated dashboard evidence under
+`tb/DV_REPORT.md`, `tb/DV_COV.md`, `tb/DV_REPORT.json`, and `tb/REPORT/`.
+Remaining open items are structural coverage closure for DUT `fsm_trans` and
+`toggle` targets, plus migration or explicit waiver of the legacy bucket-file
+table format flagged by `dv_bucket_format_check.py`.

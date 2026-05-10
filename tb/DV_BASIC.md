@@ -1,5 +1,6 @@
 # DV Basic Cases — mutrig_timestamp_processor
 
+**Companion docs:** [`DV_PLAN.md`](DV_PLAN.md), [`DV_HARNESS.md`](DV_HARNESS.md), [`DV_COV.md`](DV_COV.md), [`DV_REPORT.md`](DV_REPORT.md)
 **Purpose:** baseline functional cases for `mts_processor`  
 **Naming convention:** `STD_MTS_###_description`  
 **Count target:** 130 substantive cases grounded in `mts_processor.vhd`, `mts_processor_hw.tcl`, `mts_processor_tb.vhd`, and `RUN_SEQ_UPGRADE_PLAN.md`
