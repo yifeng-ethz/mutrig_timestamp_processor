@@ -9961,6 +9961,543 @@
       expect_discard_count(32'd0, ctx);
     endtask
 
+    function automatic int unsigned cycles_between_times(input time start_time_ps,
+                                                         input time stop_time_ps);
+      time delta_ps;
+
+      if (stop_time_ps <= start_time_ps)
+        return 0;
+      delta_ps = stop_time_ps - start_time_ps;
+      return int'(delta_ps / CLK_PERIOD_PS);
+    endfunction
+
+    task automatic send_metric_payload_nowait(int unsigned stimulus_idx,
+                                              int unsigned lane_count,
+                                              bit eop_value,
+                                              string ctx);
+      int unsigned route_lane;
+      int unsigned raw_value;
+
+      if (lane_count == 0 || lane_count > 4)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s illegal lane_count=%0d", ctx, lane_count))
+      route_lane = stimulus_idx % lane_count;
+      lookup_raw_for_quotient(route_lane * 16, 0, raw_value,
+        $sformatf("%s route-lane symbol idx=%0d", ctx, stimulus_idx));
+      send_hit_beat(2, route_lane, raw_value, raw_value, 1'b0,
+        stimulus_idx < lane_count, eop_value, '0, 1'b1,
+        stimulus_idx[4:0]);
+    endtask
+
+    task automatic expect_metric_payloads_since(int unsigned base_history,
+                                                int unsigned base_traces,
+                                                int unsigned hit_count,
+                                                int unsigned lane_count,
+                                                string ctx);
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned route_lane;
+
+        route_lane = idx % lane_count;
+        expect_payload_math_at(base_history + idx, 2, route_lane,
+          idx[4:0], route_lane * 16, 0, 0,
+          $sformatf("%s metric payload idx=%0d", ctx, idx));
+        expect_output_flags_at(base_history + idx, idx < lane_count, 1'b0,
+          1'b0, route_lane,
+          $sformatf("%s metric flags idx=%0d", ctx, idx));
+        expect_trace_pair_at(base_traces + idx,
+          $sformatf("%s metric trace idx=%0d", ctx, idx));
+        expect_trace_math_self_consistent_at(base_traces + idx,
+          $sformatf("%s metric trace math idx=%0d", ctx, idx));
+      end
+    endtask
+
+    task automatic update_metric_stats(int unsigned value,
+                                       inout int unsigned min_value,
+                                       inout int unsigned max_value,
+                                       inout int unsigned sum_value);
+      if (value < min_value)
+        min_value = value;
+      if (value > max_value)
+        max_value = value;
+      sum_value += value;
+    endtask
+
+    task automatic run_ready_occupancy_histogram_case(int unsigned iterations,
+                                                      string ctx);
+      int unsigned min_low_cycles;
+      int unsigned max_low_cycles;
+      int unsigned sum_low_cycles;
+      int unsigned base_beats;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      min_low_cycles = '1;
+      max_low_cycles = 0;
+      sum_low_cycles = 0;
+      base_beats      = m_env.m_scb.beat_count;
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned iter_history;
+        int unsigned iter_empty_eops;
+        int unsigned low_cycles;
+        int unsigned gap_cycles;
+        int unsigned guard_cycles;
+
+        start_run_control_cycle(1'b0, iter, ctx);
+        iter_history    = m_env.m_scb.history.size();
+        iter_empty_eops = m_env.m_scb.empty_eop_count;
+        gap_cycles      = iter % 4;
+        pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+        wait_for_ctrl_ready_low(4,
+          $sformatf("%s ready occupancy low iter=%0d", ctx, iter));
+        low_cycles = 1;
+        repeat (gap_cycles) begin
+          @(posedge ctrl_vif.clk);
+          if (ctrl_vif.ready !== 1'b0)
+            `uvm_fatal("MTSP_CASE",
+              $sformatf("%s terminate ready restored before endofrun iter=%0d",
+                ctx, iter))
+          low_cycles++;
+        end
+        send_endofrun_pulse();
+        guard_cycles = 0;
+        while (ctrl_vif.ready !== 1'b1 && guard_cycles < 256) begin
+          @(posedge ctrl_vif.clk);
+          guard_cycles++;
+          if (ctrl_vif.ready === 1'b0)
+            low_cycles++;
+          else if (ctrl_vif.ready !== 1'b1)
+            `uvm_fatal("MTSP_CASE",
+              $sformatf("%s ctrl ready became X during occupancy iter=%0d",
+                ctx, iter))
+        end
+        if (ctrl_vif.ready !== 1'b1)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s timed out restoring ctrl ready iter=%0d", ctx,
+              iter))
+        wait_for_empty_eop_count(iter_empty_eops + 4, 256,
+          $sformatf("%s close markers iter=%0d", ctx, iter));
+        expect_close_markers_since(iter_history, 4'b1111, 0,
+          $sformatf("%s close marker detail iter=%0d", ctx, iter));
+        update_metric_stats(low_cycles, min_low_cycles, max_low_cycles,
+          sum_low_cycles);
+        send_ctrl(CTRL_IDLE, $sformatf("IDLE_occupancy_%0d", iter));
+        wait_cycles(2);
+      end
+
+      if (min_low_cycles == 0 || max_low_cycles > 256)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s invalid ready-low occupancy min=%0d max=%0d",
+            ctx, min_low_cycles, max_low_cycles))
+      if (m_env.m_scb.beat_count != base_beats + (iterations * 4))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected only %0d close-marker beats, got %0d",
+            ctx, iterations * 4, m_env.m_scb.beat_count - base_beats))
+      if (m_env.m_scb.empty_eop_count != base_empty_eops + (iterations * 4))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d empty eops, got %0d",
+            ctx, iterations * 4, m_env.m_scb.empty_eop_count -
+            base_empty_eops))
+      `uvm_info("MTSP_READY_METRIC",
+        $sformatf("%s ready_low_cycles samples=%0d min=%0d max=%0d avg_x100=%0d",
+          ctx, iterations, min_low_cycles, max_low_cycles,
+          (sum_low_cycles * 100) / iterations),
+        UVM_LOW)
+    endtask
+
+    task automatic run_drain_latency_metric_sample(int unsigned hit_count,
+                                                   int unsigned lane_count,
+                                                   bit final_input_eop,
+                                                   int unsigned sample_idx,
+                                                   output int unsigned latency_cycles,
+                                                   output int unsigned beat_delta,
+                                                   output int unsigned debug_burst_delta,
+                                                   input bit log_sample,
+                                                   input string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+      int unsigned base_dual_pairs;
+      int unsigned debug_ts_delta;
+      int unsigned ts_delta_delta;
+      int unsigned dual_pair_delta;
+      time         terminate_accept_time;
+
+      start_run_control_cycle(1'b0, sample_idx, ctx);
+      base_inputs      = m_env.m_scb.hit0_history.size();
+      base_beats       = m_env.m_scb.beat_count;
+      base_history     = m_env.m_scb.history.size();
+      base_traces      = m_env.m_scb.trace_history.size();
+      base_empty_eops  = m_env.m_scb.empty_eop_count;
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      base_dual_pairs  = m_env.m_scb.dual_path_pair_count;
+
+      for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned first_eop_idx;
+
+        first_eop_idx = (hit_count > lane_count) ? hit_count - lane_count : 0;
+        send_metric_payload_nowait(idx, lane_count,
+          final_input_eop && idx >= first_eop_idx,
+          $sformatf("%s sample=%0d", ctx, sample_idx));
+      end
+
+      send_ctrl_and_capture(CTRL_TERMINATING, "TERMINATING",
+        terminate_accept_time);
+      wait_for_ctrl_ready_low(4,
+        $sformatf("%s sample=%0d terminate ready low", ctx, sample_idx));
+      send_endofrun_pulse();
+      wait_for_input_count(base_inputs + hit_count, hit_count + 512,
+        $sformatf("%s sample=%0d inputs", ctx, sample_idx));
+      wait_for_beat_count(base_beats + hit_count + 4, hit_count + 1024,
+        $sformatf("%s sample=%0d beats", ctx, sample_idx));
+      wait_for_trace_count(base_traces + hit_count, hit_count + 1024,
+        $sformatf("%s sample=%0d traces", ctx, sample_idx));
+      wait_for_debug_ts_count(base_debug_ts + hit_count, hit_count + 1024,
+        $sformatf("%s sample=%0d debug_ts", ctx, sample_idx));
+      wait_for_empty_eop_count(base_empty_eops + 4, hit_count + 1024,
+        $sformatf("%s sample=%0d close markers", ctx, sample_idx));
+      expect_metric_payloads_since(base_history, base_traces, hit_count,
+        lane_count, $sformatf("%s sample=%0d", ctx, sample_idx));
+      expect_close_markers_since(base_history, 4'b1111, hit_count,
+        $sformatf("%s sample=%0d close detail", ctx, sample_idx));
+      wait_for_ctrl_ready_high(hit_count + 1024,
+        $sformatf("%s sample=%0d ready restore", ctx, sample_idx));
+
+      beat_delta        = m_env.m_scb.beat_count - base_beats;
+      latency_cycles    = cycles_between_times(terminate_accept_time,
+        m_env.m_scb.last_eop_time_ps);
+      debug_ts_delta    = m_env.m_scb.debug_ts_count - base_debug_ts;
+      debug_burst_delta = m_env.m_scb.debug_burst_count - base_debug_burst;
+      ts_delta_delta    = m_env.m_scb.ts_delta_count - base_ts_delta;
+      dual_pair_delta   = m_env.m_scb.dual_path_pair_count -
+        base_dual_pairs;
+
+      if (beat_delta != hit_count + 4)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s sample=%0d expected beat_delta=%0d got %0d",
+            ctx, sample_idx, hit_count + 4, beat_delta))
+      if (debug_ts_delta != hit_count)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s sample=%0d expected debug_ts per payload=%0d got %0d",
+            ctx, sample_idx, hit_count, debug_ts_delta))
+      if (dual_pair_delta != hit_count)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s sample=%0d expected dual-path pairs=%0d got %0d",
+            ctx, sample_idx, hit_count, dual_pair_delta))
+      if (debug_burst_delta > hit_count || ts_delta_delta != debug_burst_delta)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s sample=%0d illegal debug_burst/ts_delta delta burst=%0d ts_delta=%0d hit_count=%0d",
+            ctx, sample_idx, debug_burst_delta, ts_delta_delta, hit_count))
+      if (latency_cycles == 0 || latency_cycles > hit_count + 512)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s sample=%0d invalid drain latency cycles=%0d hit_count=%0d",
+            ctx, sample_idx, latency_cycles, hit_count))
+      if (log_sample)
+        `uvm_info("MTSP_DRAIN_METRIC",
+          $sformatf("%s sample=%0d hits=%0d lanes=%0d latency_cycles=%0d beat_delta=%0d debug_burst_delta=%0d",
+            ctx, sample_idx, hit_count, lane_count, latency_cycles,
+            beat_delta, debug_burst_delta),
+          UVM_LOW)
+
+      send_ctrl(CTRL_IDLE, $sformatf("IDLE_drain_%0d", sample_idx));
+      wait_cycles(2);
+      expect_hit0_ready(1'b0,
+        $sformatf("%s sample=%0d post-IDLE ready", ctx, sample_idx));
+      expect_total_count(hit_count,
+        $sformatf("%s sample=%0d total", ctx, sample_idx));
+      expect_discard_count(32'd0,
+        $sformatf("%s sample=%0d discard", ctx, sample_idx));
+    endtask
+
+    task automatic run_drain_latency_histogram_case(int unsigned iterations,
+                                                    int unsigned max_payloads,
+                                                    int unsigned lane_count,
+                                                    string ctx);
+      int unsigned min_latency;
+      int unsigned max_latency;
+      int unsigned sum_latency;
+      int unsigned samples_with_running_debug;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      min_latency               = '1;
+      max_latency               = 0;
+      sum_latency               = 0;
+      samples_with_running_debug = 0;
+
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned hit_count;
+        int unsigned latency_cycles;
+        int unsigned beat_delta;
+        int unsigned debug_burst_delta;
+
+        hit_count = iter % (max_payloads + 1);
+        run_drain_latency_metric_sample(hit_count, lane_count,
+          hit_count != 0, iter,
+          latency_cycles, beat_delta, debug_burst_delta, iter < 8, ctx);
+        update_metric_stats(latency_cycles, min_latency, max_latency,
+          sum_latency);
+        if (debug_burst_delta != 0)
+          samples_with_running_debug++;
+      end
+
+      if (min_latency == 0 || max_latency > max_payloads + 512)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s invalid drain latency histogram min=%0d max=%0d",
+            ctx, min_latency, max_latency))
+      `uvm_info("MTSP_DRAIN_METRIC",
+        $sformatf("%s histogram samples=%0d lanes=%0d min=%0d max=%0d avg_x100=%0d running_debug_samples=%0d",
+          ctx, iterations, lane_count, min_latency, max_latency,
+          (sum_latency * 100) / iterations, samples_with_running_debug),
+        UVM_LOW)
+    endtask
+
+    task automatic run_enabled_window_drain_metric_case(string ctx);
+      for (int unsigned lanes = 1; lanes <= 4; lanes++) begin
+        int unsigned latency_cycles;
+        int unsigned beat_delta;
+        int unsigned debug_burst_delta;
+
+        if (lanes == 3)
+          continue;
+        run_drain_latency_metric_sample(lanes, lanes, 1'b1, lanes,
+          latency_cycles, beat_delta, debug_burst_delta, 1'b1,
+          $sformatf("%s enabled-window lanes=%0d", ctx, lanes));
+      end
+    endtask
+
+    task automatic run_boundary_forwarding_rate_case(int unsigned iterations,
+                                                     string ctx);
+      int unsigned forwarded_count;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      forwarded_count = 0;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned latency_cycles;
+        int unsigned beat_delta;
+        int unsigned debug_burst_delta;
+
+        run_drain_latency_metric_sample(1, 1, 1'b1, iter, latency_cycles,
+          beat_delta, debug_burst_delta, 1'b0, ctx);
+        if (beat_delta == 5)
+          forwarded_count++;
+      end
+      if (forwarded_count != iterations)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected boundary forwarding success=%0d got %0d",
+            ctx, iterations, forwarded_count))
+      `uvm_info("MTSP_BOUNDARY_METRIC",
+        $sformatf("%s forwarding_rate_x10000=%0d samples=%0d",
+          ctx, (forwarded_count * 10000) / iterations, iterations),
+        UVM_LOW)
+    endtask
+
+    task automatic run_synthetic_boundary_no_real_eop_case(int unsigned iterations,
+                                                           string ctx);
+      int unsigned synthetic_count;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      synthetic_count = 0;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned latency_cycles;
+        int unsigned beat_delta;
+        int unsigned debug_burst_delta;
+
+        run_drain_latency_metric_sample(0, 1, 1'b0, iter, latency_cycles,
+          beat_delta, debug_burst_delta, iter < 4, ctx);
+        if (beat_delta == 4)
+          synthetic_count++;
+      end
+      if (synthetic_count != iterations)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected synthetic boundary count=%0d got %0d",
+            ctx, iterations, synthetic_count))
+      `uvm_info("MTSP_BOUNDARY_METRIC",
+        $sformatf("%s missing_boundary_rate_x10000=0 samples=%0d",
+          ctx, iterations),
+        UVM_LOW)
+    endtask
+
+    task automatic run_extra_boundary_rate_case(int unsigned iterations,
+                                                string ctx);
+      int unsigned exact_count;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      exact_count = 0;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned base_inputs;
+        int unsigned base_beats;
+        int unsigned base_history;
+        int unsigned base_traces;
+        int unsigned base_empty_eops;
+        int unsigned base_debug_ts;
+        int unsigned base_debug_burst;
+        int unsigned base_ts_delta;
+        int unsigned base_dual_pairs;
+
+        start_run_control_cycle(1'b0, iter, ctx);
+        pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+        wait_for_ctrl_ready_low(4,
+          $sformatf("%s terminate ready low iter=%0d", ctx, iter));
+        wait_for_hit0_ready(1'b1, 16,
+          $sformatf("%s flushing hit ready iter=%0d", ctx, iter));
+        base_inputs      = m_env.m_scb.hit0_history.size();
+        base_beats       = m_env.m_scb.beat_count;
+        base_history     = m_env.m_scb.history.size();
+        base_traces      = m_env.m_scb.trace_history.size();
+        base_empty_eops  = m_env.m_scb.empty_eop_count;
+        base_debug_ts    = m_env.m_scb.debug_ts_count;
+        base_debug_burst = m_env.m_scb.debug_burst_count;
+        base_ts_delta    = m_env.m_scb.ts_delta_count;
+        base_dual_pairs  = m_env.m_scb.dual_path_pair_count;
+
+        send_metric_payload_nowait(0, 2, 1'b1,
+          $sformatf("%s iter=%0d late eop0", ctx, iter));
+        send_metric_payload_nowait(1, 2, 1'b1,
+          $sformatf("%s iter=%0d late eop1", ctx, iter));
+        send_endofrun_pulse();
+        wait_for_input_count(base_inputs + 2, 514,
+          $sformatf("%s iter=%0d late inputs", ctx, iter));
+        wait_for_beat_count(base_beats + 6, 1024,
+          $sformatf("%s iter=%0d late beats", ctx, iter));
+        wait_for_trace_count(base_traces + 2, 1024,
+          $sformatf("%s iter=%0d late traces", ctx, iter));
+        wait_for_debug_ts_count(base_debug_ts + 2, 1024,
+          $sformatf("%s iter=%0d late debug_ts", ctx, iter));
+        wait_for_empty_eop_count(base_empty_eops + 4, 1024,
+          $sformatf("%s iter=%0d close markers", ctx, iter));
+        expect_metric_payloads_since(base_history, base_traces, 2, 2,
+          $sformatf("%s iter=%0d late payloads", ctx, iter));
+        expect_close_markers_since(base_history, 4'b1111, 2,
+          $sformatf("%s iter=%0d one boundary", ctx, iter));
+        wait_for_ctrl_ready_high(1024,
+          $sformatf("%s iter=%0d ready restore", ctx, iter));
+        wait_cycles(16);
+        if (m_env.m_scb.empty_eop_count != base_empty_eops + 4)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s iter=%0d expected exactly four close markers got %0d",
+              ctx, iter, m_env.m_scb.empty_eop_count - base_empty_eops))
+        if (m_env.m_scb.debug_ts_count - base_debug_ts != 2 ||
+            m_env.m_scb.debug_burst_count != base_debug_burst ||
+            m_env.m_scb.ts_delta_count != base_ts_delta ||
+            m_env.m_scb.dual_path_pair_count - base_dual_pairs != 2)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s iter=%0d debug/meta mismatch late eop debug_ts=%0d debug_burst=%0d ts_delta=%0d dual=%0d",
+              ctx, iter, m_env.m_scb.debug_ts_count - base_debug_ts,
+              m_env.m_scb.debug_burst_count - base_debug_burst,
+              m_env.m_scb.ts_delta_count - base_ts_delta,
+              m_env.m_scb.dual_path_pair_count - base_dual_pairs))
+        exact_count++;
+        send_ctrl(CTRL_IDLE, $sformatf("IDLE_extra_boundary_%0d", iter));
+        wait_cycles(2);
+        expect_total_count(48'd2,
+          $sformatf("%s iter=%0d total", ctx, iter));
+        expect_discard_count(32'd0,
+          $sformatf("%s iter=%0d discard", ctx, iter));
+      end
+      if (exact_count != iterations)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected exact-boundary iterations=%0d got %0d",
+            ctx, iterations, exact_count))
+      `uvm_info("MTSP_BOUNDARY_METRIC",
+        $sformatf("%s extra_boundary_rate_x10000=0 samples=%0d",
+          ctx, iterations),
+        UVM_LOW)
+    endtask
+
+    task automatic run_ready_statefulness_cost_case(int unsigned hit_count,
+                                                    string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      for (int unsigned phase_idx = 0; phase_idx < 2; phase_idx++) begin
+        start_run_control_cycle(1'b0, phase_idx, ctx);
+        base_inputs      = m_env.m_scb.hit0_history.size();
+        base_beats       = m_env.m_scb.beat_count;
+        base_history     = m_env.m_scb.history.size();
+        base_traces      = m_env.m_scb.trace_history.size();
+        base_debug_ts    = m_env.m_scb.debug_ts_count;
+        base_debug_burst = m_env.m_scb.debug_burst_count;
+        base_ts_delta    = m_env.m_scb.ts_delta_count;
+        for (int unsigned idx = 0; idx < hit_count; idx++)
+          send_metric_payload_nowait(idx, 4, idx >= hit_count - 4,
+            $sformatf("%s phase=%0d", ctx, phase_idx));
+        wait_for_input_count(base_inputs + hit_count, hit_count + 512,
+          $sformatf("%s phase=%0d inputs", ctx, phase_idx));
+        wait_for_beat_count(base_beats + hit_count, hit_count + 1024,
+          $sformatf("%s phase=%0d beats", ctx, phase_idx));
+        wait_for_trace_count(base_traces + hit_count, hit_count + 1024,
+          $sformatf("%s phase=%0d traces", ctx, phase_idx));
+        wait_for_debug_ts_count(base_debug_ts + hit_count, hit_count + 1024,
+          $sformatf("%s phase=%0d debug_ts", ctx, phase_idx));
+        wait_for_debug_burst_count(base_debug_burst + hit_count,
+          hit_count + 1024,
+          $sformatf("%s phase=%0d debug_burst", ctx, phase_idx));
+        wait_for_ts_delta_count(base_ts_delta + hit_count, hit_count + 1024,
+          $sformatf("%s phase=%0d ts_delta", ctx, phase_idx));
+        expect_metric_payloads_since(base_history, base_traces, hit_count,
+          4, $sformatf("%s phase=%0d", ctx, phase_idx));
+        expect_debug_stream_counts_since(base_debug_ts, base_debug_burst,
+          base_ts_delta, hit_count, hit_count, hit_count,
+          $sformatf("%s phase=%0d", ctx, phase_idx));
+        expect_hit0_spacing(base_inputs, hit_count, 1,
+          $sformatf("%s phase=%0d line-rate spacing", ctx, phase_idx));
+        expect_total_count(hit_count,
+          $sformatf("%s phase=%0d total", ctx, phase_idx));
+        if (phase_idx == 0) begin
+          int unsigned iter_history;
+          int unsigned iter_empty_eops;
+
+          iter_history    = m_env.m_scb.history.size();
+          iter_empty_eops = m_env.m_scb.empty_eop_count;
+          stop_run_with_endofrun(iter_history, iter_empty_eops, 0,
+            $sformatf("%s stateful stop phase=%0d", ctx, phase_idx));
+        end
+      end
+      `uvm_info("MTSP_READY_METRIC",
+        $sformatf("%s statefulness_cost_cycles=0 checked_hit_count=%0d",
+          ctx, hit_count),
+        UVM_LOW)
+    endtask
+
+    task automatic run_full_signoff_mixed_soak_case(string ctx);
+      do_stress_041_single_overflow_run();
+      drive_global_reset(4, 4);
+      run_sink_smoke_replay_case(4, SINK_READY_TOGGLE_1010,
+        $sformatf("%s smoke-ready phase", ctx));
+      drive_global_reset(4, 4);
+      run_drain_latency_histogram_case(12, 4, 4,
+        $sformatf("%s drain phase", ctx));
+      drive_global_reset(4, 4);
+      run_synthetic_boundary_no_real_eop_case(8,
+        $sformatf("%s synthetic-boundary phase", ctx));
+      drive_global_reset(4, 4);
+      run_extra_boundary_rate_case(8,
+        $sformatf("%s extra-boundary phase", ctx));
+      drive_global_reset(4, 4);
+      run_ready_statefulness_cost_case(32,
+        $sformatf("%s ready-cost phase", ctx));
+    endtask
+
     task automatic do_stress_001_line_rate_short_mode();
       run_stress_stream_case(64, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
         1'b0, case_id);
@@ -10781,6 +11318,48 @@
         $sformatf("%s high-vs-random", case_id));
     endtask
 
+    task automatic do_stress_121_future_ready_occupancy_histogram();
+      run_ready_occupancy_histogram_case(16, case_id);
+    endtask
+
+    task automatic do_stress_122_drain_latency_histogram();
+      run_drain_latency_histogram_case(32, 8, 4, case_id);
+    endtask
+
+    task automatic do_stress_123_drain_latency_by_div_pipeline();
+      run_drain_latency_histogram_case(16, 8, 4, case_id);
+    endtask
+
+    task automatic do_stress_124_drain_latency_by_enabled_window();
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      run_enabled_window_drain_metric_case(case_id);
+    endtask
+
+    task automatic do_stress_125_boundary_forwarding_rate();
+      run_boundary_forwarding_rate_case(1000, case_id);
+    endtask
+
+    task automatic do_stress_126_missing_boundary_rate_post_upgrade();
+      run_synthetic_boundary_no_real_eop_case(64, case_id);
+    endtask
+
+    task automatic do_stress_127_extra_boundary_rate_post_upgrade();
+      run_extra_boundary_rate_case(64, case_id);
+    endtask
+
+    task automatic do_stress_128_ready_statefulness_cost();
+      run_ready_statefulness_cost_case(128, case_id);
+    endtask
+
+    task automatic do_stress_129_synthetic_boundary_no_real_eop();
+      run_synthetic_boundary_no_real_eop_case(128, case_id);
+    endtask
+
+    task automatic do_stress_130_full_signoff_mixed_soak();
+      run_full_signoff_mixed_soak_case(case_id);
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -11174,6 +11753,16 @@
         "STRESS_MTS_118_random_ready_toggle": do_stress_118_random_ready_toggle();
         "STRESS_MTS_119_ready_low_across_resets": do_stress_119_ready_low_across_resets();
         "STRESS_MTS_120_sink_pattern_equivalence_summary": do_stress_120_sink_pattern_equivalence_summary();
+        "STRESS_MTS_121_future_ready_occupancy_histogram": do_stress_121_future_ready_occupancy_histogram();
+        "STRESS_MTS_122_drain_latency_histogram": do_stress_122_drain_latency_histogram();
+        "STRESS_MTS_123_drain_latency_by_div_pipeline": do_stress_123_drain_latency_by_div_pipeline();
+        "STRESS_MTS_124_drain_latency_by_enabled_window": do_stress_124_drain_latency_by_enabled_window();
+        "STRESS_MTS_125_boundary_forwarding_rate": do_stress_125_boundary_forwarding_rate();
+        "STRESS_MTS_126_missing_boundary_rate_post_upgrade": do_stress_126_missing_boundary_rate_post_upgrade();
+        "STRESS_MTS_127_extra_boundary_rate_post_upgrade": do_stress_127_extra_boundary_rate_post_upgrade();
+        "STRESS_MTS_128_ready_statefulness_cost": do_stress_128_ready_statefulness_cost();
+        "STRESS_MTS_129_synthetic_boundary_no_real_eop": do_stress_129_synthetic_boundary_no_real_eop();
+        "STRESS_MTS_130_full_signoff_mixed_soak": do_stress_130_full_signoff_mixed_soak();
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("No explicit UVM stimulus handler for documented case '%s'", case_id))
