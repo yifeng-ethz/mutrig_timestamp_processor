@@ -12285,6 +12285,82 @@
       do_std_103_replay_smoke_clamp_vector();
     endtask
 
+    task automatic do_neg_061_missing_first_sop();
+      do_corner_061_first_sop_channel0_after_reset();
+    endtask
+
+    task automatic do_neg_062_repeated_sop_same_channel();
+      do_std_075_no_repeated_sop_same_channel();
+    endtask
+
+    task automatic do_neg_063_sop_on_disabled_channel();
+      int unsigned raw_value;
+      int unsigned base_beats;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+      int unsigned base_history_size;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0);
+      run_start();
+      lookup_raw_for_quotient(0, 0, raw_value, case_id);
+
+      base_beats        = m_env.m_scb.beat_count;
+      base_traces       = m_env.m_scb.trace_history.size();
+      base_empty_eops   = m_env.m_scb.empty_eop_count;
+      base_history_size = m_env.m_scb.history.size();
+      send_hit_beat_with_sideband(6'd5, 2, 0, raw_value, raw_value, 1'b0,
+        1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s disabled-sideband payload", case_id));
+      wait_for_trace_count(base_traces + 1, 128,
+        $sformatf("%s disabled-sideband trace", case_id));
+      expect_payload_math_at(base_history_size, 2, 0, 0, 0, 0, 0,
+        $sformatf("%s disabled-sideband payload math", case_id));
+      expect_output_flags_at(base_history_size, 1'b1, 1'b0, 1'b0, 0,
+        $sformatf("%s route-lane SOP is independent of input window", case_id));
+      expect_trace_pair_at(base_traces,
+        $sformatf("%s disabled-sideband normal/debug pair", case_id));
+
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 128,
+        $sformatf("%s disabled-sideband close markers", case_id));
+      expect_close_markers_detail_since(base_history_size, 4'b1111, 4'b1110,
+        4, 1, $sformatf("%s disabled-sideband did not hold input packet open",
+        case_id));
+      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+    endtask
+
+    task automatic do_neg_064_eop_outside_terminating_illegal();
+      do_corner_067_nonterminating_eop_is_local_only();
+    endtask
+
+    task automatic do_neg_065_missing_forwarded_terminating_eop();
+      do_corner_065_single_terminating_eop_pulse();
+    endtask
+
+    task automatic do_neg_066_eop_pipe_alignment_hole();
+      do_corner_066_eop_pipe_without_valid_alignment();
+    endtask
+
+    task automatic do_neg_067_empty_nonzero_illegal();
+      do_std_079_empty_stays_zero();
+    endtask
+
+    task automatic do_neg_068_duplicate_output_eop();
+      do_corner_065_single_terminating_eop_pulse();
+    endtask
+
+    task automatic do_neg_069_output_valid_outside_active_states();
+      do_std_080_output_valid_only_in_run_or_flush();
+    endtask
+
+    task automatic do_neg_070_packet_tracker_not_cleared_by_reset();
+      do_corner_086_global_reset_with_pending_term_eop();
+    endtask
+
     task automatic run_case_by_id();
       case (case_id)
         "STD_MTS_001_powerup_reset_idle": do_std_001_powerup_reset_idle();
@@ -12608,6 +12684,16 @@
         "NEG_MTS_058_eflag_pipeline_corruption": do_neg_058_eflag_pipeline_corruption();
         "NEG_MTS_059_legacy_positive_vector_regression": do_neg_059_legacy_positive_vector_regression();
         "NEG_MTS_060_legacy_clamp_vector_regression": do_neg_060_legacy_clamp_vector_regression();
+        "NEG_MTS_061_missing_first_sop": do_neg_061_missing_first_sop();
+        "NEG_MTS_062_repeated_sop_same_channel": do_neg_062_repeated_sop_same_channel();
+        "NEG_MTS_063_sop_on_disabled_channel": do_neg_063_sop_on_disabled_channel();
+        "NEG_MTS_064_eop_outside_terminating_illegal": do_neg_064_eop_outside_terminating_illegal();
+        "NEG_MTS_065_missing_forwarded_terminating_eop": do_neg_065_missing_forwarded_terminating_eop();
+        "NEG_MTS_066_eop_pipe_alignment_hole": do_neg_066_eop_pipe_alignment_hole();
+        "NEG_MTS_067_empty_nonzero_illegal": do_neg_067_empty_nonzero_illegal();
+        "NEG_MTS_068_duplicate_output_eop": do_neg_068_duplicate_output_eop();
+        "NEG_MTS_069_output_valid_outside_active_states": do_neg_069_output_valid_outside_active_states();
+        "NEG_MTS_070_packet_tracker_not_cleared_by_reset": do_neg_070_packet_tracker_not_cleared_by_reset();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
         "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
         "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();

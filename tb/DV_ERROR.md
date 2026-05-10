@@ -86,12 +86,12 @@
 
 - `X061 | NEG_MTS_061_missing_first_sop`: Require SOP on the first enabled-channel hit of a run; absence is a failure. Covers marker omission.
 - `X062 | NEG_MTS_062_repeated_sop_same_channel`: Require no repeated SOP for the same enabled channel in one run; repetition is a failure. Covers marker duplication.
-- `X063 | NEG_MTS_063_sop_on_disabled_channel`: Require no SOP for channels outside the enabled window; any assertion is a failure. Covers mis-scoped marker generation.
+- `X063 | NEG_MTS_063_sop_on_disabled_channel`: Drive an input sideband outside the enabled window and verify route-lane SOP still follows the output route while disabled input-side packet bookkeeping does not hold termination open. Covers the split between route markers and input window tracking.
 - `X064 | NEG_MTS_064_eop_outside_terminating_illegal`: Require no output EOP outside termination scenarios; any assertion is a failure. Covers boundary leakage.
-- `X065 | NEG_MTS_065_missing_forwarded_terminating_eop`: Accept a terminating input EOP and require one delayed output EOP; absence is a failure. Covers the core current stop contract.
+- `X065 | NEG_MTS_065_missing_forwarded_terminating_eop`: Accept a terminating input EOP and require the terminal empty close-marker train; absence is a failure. Covers the current stop contract.
 - `X066 | NEG_MTS_066_eop_pipe_alignment_hole`: Create the case where a delayed EOP pulse can miss `hit_out.valid`; if the boundary is lost, record it as a current design problem. Covers a known alignment weakness.
-- `X067 | NEG_MTS_067_empty_nonzero_illegal`: Require `aso_hit_type1_empty` to stay zero in current RTL; any nonzero value is a failure. Covers accidental empty-beat behavior.
-- `X068 | NEG_MTS_068_duplicate_output_eop`: Accept one terminating input EOP and require at most one output EOP; duplication is a failure. Covers boundary duplication.
+- `X067 | NEG_MTS_067_empty_nonzero_illegal`: Require payload beats to keep `aso_hit_type1_empty=0`; terminal close markers are checked separately. Covers accidental empty assertion on payload traffic.
+- `X068 | NEG_MTS_068_duplicate_output_eop`: Accept one terminating input EOP and require exactly one terminal close-marker train across the route lanes; duplicate markers are a failure. Covers boundary duplication.
 - `X069 | NEG_MTS_069_output_valid_outside_active_states`: Require no output-valid beats outside `RUNNING` or `FLUSHING`; any beat is a failure. Covers state-gating regressions.
 - `X070 | NEG_MTS_070_packet_tracker_not_cleared_by_reset`: Require reset to clear packet bookkeeping; any stale in-transaction state is a failure. Covers packet-state cleanup.
 
