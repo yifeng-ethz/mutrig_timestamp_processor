@@ -35,7 +35,7 @@ This page is the chief-architect dashboard. All per-case evidence lives under [`
 | BUCKET_FRAME_RUNS | `4/4` |
 | ALL_BUCKETS_FRAME_RUNS | `1/1` |
 | EVIDENCE_GIT_BRANCH | `master` |
-| EVIDENCE_GIT_COMMIT | `fe4e14d` |
+| EVIDENCE_GIT_COMMIT | `b8c02b8` |
 | probe_only_exclusions | `none` |
 
 ## Non-Claims

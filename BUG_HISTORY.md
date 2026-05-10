@@ -51,7 +51,7 @@ Historical formal note:
 | [BUG-014-H](#bug-014-h-soft-reset-smoke-loop-checked-debug-burst-before-monitor-settled) | H | non-datapath-refactor | `directed-only (soft-reset smoke-loop debug timing)` | fixed | `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs` | `dedab24` | P110 enforced exact debug-stream counts before bounded waits let the passive debug monitors report the final sample. |
 | [BUG-015-R](#bug-015-r-open-packet-could-block-terminal-close-markers-after-endofrun) | R | hard stuck error | `rare (routine stop while an input packet remains open or upstream EOP is missing)` | fixed | `NEG_MTS_118_missing_boundary_with_packet_open` | `a1d9155` | Stale open-packet bookkeeping could hold the terminal boundary generator busy forever after upstream end-of-run. |
 | [BUG-016-H](#bug-016-h-continuous-frame-checkpoint-token-metadata-was-cleared-by-implicit-port-direction) | H | non-datapath-refactor | `directed-only (continuous-frame reporting metadata)` | fixed | `mtsp_bucket_frame_BASIC` | `5e60c20` | The new no-restart frame run passed datapath checks but emitted blank or malformed checkpoint tokens, weakening machine-readable cross-run traceability. |
-| [BUG-017-R](#bug-017-r-debug-burst-and-ts-delta-leaked-dropped-delay-error-hits) | R | non-datapath-refactor | `directed-only (drop-delay-error debug observability)` | fixed | `NEG_MTS_045_zero_window_fault_everything` | `pending` | Debug burst and timestamp-delta sidebands could report a hit intentionally dropped by `drop_delay_error`. |
+| [BUG-017-R](#bug-017-r-debug-burst-and-ts-delta-leaked-dropped-delay-error-hits) | R | non-datapath-refactor | `directed-only (drop-delay-error debug observability)` | fixed | `NEG_MTS_045_zero_window_fault_everything` | `b8c02b8` | Debug burst and timestamp-delta sidebands could report a hit intentionally dropped by `drop_delay_error`. |
 
 ## 2026-05-10
 
@@ -95,7 +95,7 @@ Historical formal note:
   - the raw toggle result remains a non-claim in `DV_REPORT.md`; no structural waiver or signoff tag is claimed for that metric
   - the hard static screen passed with lint `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`
 - Commit:
-  - `pending` (`[PATCH] Gate MTSP debug burst on visible hits`)
+  - `b8c02b8` (`[PATCH] HW: Gate MTSP debug burst on visible hits`)
 
 ### BUG-016-H: Continuous-frame checkpoint token metadata was cleared by implicit port direction
 
