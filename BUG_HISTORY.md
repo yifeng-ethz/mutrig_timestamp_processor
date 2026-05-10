@@ -40,6 +40,40 @@ Historical formal note:
 | [BUG-003-R](#bug-003-r-debug-ts-could-emit-reset-or-sclr-flush-samples-with-no-normal-payload) | R | non-datapath-refactor | `directed-only (reset/debug observability)` | fixed | `STD_MTS_005_sync_enters_reset_sync` | `67ef6ac` | Debug timestamp valid could fire for reset/SCLR flush traffic with no normal `hit_type1` payload. |
 | [BUG-004-R](#bug-004-r-hit-ready-datapath-sampling-and-counters-could-diverge-during-bring-up) | R | soft error | `common (routine bring-up)` | fixed | `STD_MTS_006_running_from_sync`, `STD_MTS_030_total_counter_counts_all_valid`, `STD_MTS_038_force_stop_blocks_acceptance`, `NEG_MTS_028_valid_beat_under_force_stop` | `67ef6ac` | Hit ready, datapath sampling, and CSR counters could disagree around stale ready/accept windows. |
 | [BUG-005-R](#bug-005-r-control-commands-could-be-decoded-while-asi-ctrl-ready-0) | R | hard stuck error | `common (routine terminate-to-idle control)` | fixed | `STD_MTS_129_upgrade_case_idle_after_boundary_only` | `e61fc9f` | Control words could be decoded while `asi_ctrl_ready=0`, allowing premature IDLE acceptance before close markers. |
+| [BUG-006-H](#bug-006-h-counter-debug-report-saturated-near-rollover) | H | non-datapath-refactor | `directed-only (rollover debug observability)` | fixed | `STD_MTS_106_total_counter_hi_rollover` | `94d6320` | Counter debug report text truncated `total_pre` through an integer conversion near rollover. |
+
+## 2026-05-10
+
+### BUG-006-H: Counter debug report saturated near rollover
+
+- First seen:
+  - UVM case `STD_MTS_106_total_counter_hi_rollover` during the rollover seed/readout bring-up batch
+- Symptom:
+  - the rollover case passed CSR and scoreboard math, but the VHDL note reported `total_pre=2147483647` after seeding the total counter to `0x0000_ffff_ffff`
+  - the human debug trace was therefore misleading at the exact checkpoint that future hardware bring-up will use to correlate counter rollover
+- Root cause:
+  - the debug report converted `debug_msg.total_hit_cnt(30 downto 0)` through `to_integer`, dropping the upper counter bits before printing
+  - the issue affected report text only; the CSR high/low readout, counter carry, normal output payload, and debug sideband pairing remained correct
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - RTL debug report text now prints `debug_msg.total_hit_cnt` as a full 48-bit hexadecimal value with `to_hstring`
+  - before_fix_outcome:
+    - focused B106 rollover run printed `total_pre=2147483647` at the accepted rollover hit
+  - after_fix_outcome:
+    - focused B106/E018 rollover recheck passed and printed `total_pre=0x0000FFFFFFFF`
+    - `STD_MTS_106_total_counter_hi_rollover` passed with one payload, one debug trace pair, and final total count `0x0001_0000_0000`
+    - `CORNER_MTS_018_counter_read_on_low_word_rollover` passed with high-low-high recovery to `0x0001_0000_0000`
+  - potential_hazard:
+    - fixed for current DEBUG report text; it does not change packet or CSR behavior
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - the same rollover batch advanced documented evidence to 219 explicit cases and filtered merged coverage to `66.51%`
+  - `STD_MTS_025_unsupported_write_addr3_inert` and `STD_MTS_026_unsupported_write_addr4_inert` passed with the default generic, proving counter seed writes remain disabled in normal packaged builds
+- Commit:
+  - `94d6320` (`[PATCH] Add MTSP counter rollover coverage`)
 
 ## 2026-05-09
 
