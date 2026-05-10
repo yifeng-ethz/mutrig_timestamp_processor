@@ -97,16 +97,16 @@
 
 ## 8. Termination / Drain Stress
 
-- `P071 | STRESS_MTS_071_terminate_after_single_packet`: Terminate after a single accepted packet and verify boundary and drain timing. Establishes the shortest productive stop.
-- `P072 | STRESS_MTS_072_terminate_after_dense_burst`: Terminate after a dense accepted burst and verify the drain finishes deterministically. Covers the heaviest short stop.
-- `P073 | STRESS_MTS_073_terminate_with_eop_on_last_beat`: Place the final accepted EOP exactly on the last accepted beat before stop; verify one terminal boundary. Covers the clean stop ideal.
-- `P074 | STRESS_MTS_074_terminate_with_late_eop`: Issue `TERMINATING`, keep accepting hits, and deliver EOP several beats later; verify the current DUT forwards that delayed boundary. Covers a longer drain.
-- `P075 | STRESS_MTS_075_terminate_without_eop_then_idle`: Issue `TERMINATING` with no final EOP and later force `IDLE`; verify the current DUT stays deterministic even though no boundary is generated. Covers the current architectural gap under stress.
-- `P076 | STRESS_MTS_076_multiple_late_eops`: Continue accepting multiple EOP-tagged beats in `FLUSHING`; verify the exact current boundary count. Covers duplicate-boundary stress.
-- `P077 | STRESS_MTS_077_terminate_with_ready_low`: Hold sink `ready=0` during termination and verify current boundary behavior is unchanged. Covers stop-time ignored-ready stress.
-- `P078 | STRESS_MTS_078_terminate_per_enabled_channel`: Build scenarios where the last packets belong to each enabled channel in turn; verify packet bookkeeping remains coherent. Covers channel-local stop bookkeeping.
-- `P079 | STRESS_MTS_079_terminate_near_overflow_window`: Terminate immediately after an overflow-window correction event; verify drain bookkeeping remains aligned. Covers overlap of the two hardest features.
-- `P080 | STRESS_MTS_080_terminate_during_heavy_csr_polling`: Poll CSRs aggressively while terminating a loaded run; verify marker timing remains deterministic. Covers realistic software stop monitoring.
+- `P071 | STRESS_MTS_071_terminate_after_single_packet`: Terminate after a single accepted packet, send upstream `endofrun`, and verify four empty close markers. Establishes the shortest productive stop.
+- `P072 | STRESS_MTS_072_terminate_after_dense_burst`: Terminate after a dense accepted burst, send upstream `endofrun`, and verify per-route SOP plus deterministic close markers. Covers the heaviest short stop.
+- `P073 | STRESS_MTS_073_terminate_with_eop_on_last_beat`: Place the final input EOP on the last accepted beat before stop, then verify exactly one empty close-marker train. Covers the clean stop ideal.
+- `P074 | STRESS_MTS_074_terminate_with_late_eop`: Issue `TERMINATING`, accept late flushing payloads, then use upstream `endofrun` for the terminal close-marker train. Covers a longer drain.
+- `P075 | STRESS_MTS_075_terminate_without_eop_then_idle`: Issue `TERMINATING` with no payload EOP, prove no premature boundary, then send upstream `endofrun` before `IDLE`. Covers deterministic no-payload stop sequencing.
+- `P076 | STRESS_MTS_076_multiple_late_eops`: Continue accepting multiple EOP-tagged beats in `FLUSHING`, then require the single upstream close-marker train. Covers duplicate-input-EOP stress.
+- `P077 | STRESS_MTS_077_terminate_with_ready_low`: Hold sink `ready=0` during termination and verify payload traces and close markers are unchanged. Covers stop-time ignored-ready stress.
+- `P078 | STRESS_MTS_078_terminate_per_enabled_channel`: Build scenarios where the last packets belong to each enabled route lane in turn; verify packet bookkeeping and close-marker masks remain coherent. Covers lane-local stop bookkeeping.
+- `P079 | STRESS_MTS_079_terminate_near_overflow_window`: Terminate after an overflow-corrected EOP hit and verify drain bookkeeping remains aligned. Covers overlap of overflow math and stop sequencing.
+- `P080 | STRESS_MTS_080_terminate_during_heavy_csr_polling`: Poll CSRs aggressively while terminating a loaded run; verify payload traces, counters, and marker timing remain deterministic. Covers realistic software stop monitoring.
 
 ## 9. Parameter Sweeps Under Load
 
