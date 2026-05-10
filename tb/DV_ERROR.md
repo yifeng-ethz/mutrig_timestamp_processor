@@ -19,14 +19,14 @@
 
 ## 2. CSR Misuse Cases
 
-- `X011 | NEG_MTS_011_simultaneous_read_write_same_cycle`: Attempt simultaneous CSR read and write in one cycle; require the driver or SVA to flag the misuse. Covers AVMM protocol abuse.
+- `X011 | NEG_MTS_011_simultaneous_read_write_same_cycle`: Attempt simultaneous CSR read and write in one cycle; require the CSR monitor and scoreboard protocol counters to flag the misuse. Covers AVMM protocol abuse.
 - `X012 | NEG_MTS_012_write_unsupported_addr5`: Write an unsupported CSR address and verify no hidden DUT state changes. Covers out-of-range write misuse.
 - `X013 | NEG_MTS_013_read_unsupported_addr6`: Read an unsupported CSR address and verify the DUT returns zero rather than stale data. Covers out-of-range read misuse.
 - `X014 | NEG_MTS_014_reserved_opmode_bit28_write`: Write only reserved bit 28 and verify no functional state changes. Covers reserved-field misuse.
 - `X015 | NEG_MTS_015_write_expected_latency_during_reset`: Attempt to write `expected_latency` while global reset is asserted; verify reset dominates. Covers control-plane activity during reset.
 - `X016 | NEG_MTS_016_back_to_back_soft_reset_pulses`: Pulse `soft_reset` in consecutive cycles and verify the self-clearing logic does not wedge. Covers software abuse of the self-clear bit.
 - `X017 | NEG_MTS_017_rapid_force_stop_toggle`: Toggle `force_stop` on consecutive cycles during traffic and verify the DUT remains deterministic. Covers software thrash on a critical control bit.
-- `X018 | NEG_MTS_018_driver_ignores_waitrequest`: Intentionally build a bad CSR driver that samples read data without respecting `waitrequest`; require the bench to flag the misuse. Covers testbench robustness.
+- `X018 | NEG_MTS_018_driver_ignores_waitrequest`: Intentionally build a bad CSR driver that samples read data without respecting `waitrequest`; require the driver analysis port and scoreboard protocol counters to flag the misuse. Covers testbench robustness.
 - `X019 | NEG_MTS_019_counter_reads_mid_reset`: Read counters during reset transitions and verify the scoreboard treats the transient explicitly rather than silently assuming old values. Covers observability during reset churn.
 - `X020 | NEG_MTS_020_expected_latency_overflow_model`: Write a huge `expected_latency` that causes `padding_upper` model underflow/wrap effects; require exact reference-model matching. Covers numerically hostile software configuration.
 

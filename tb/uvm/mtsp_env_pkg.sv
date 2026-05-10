@@ -32,18 +32,23 @@ package mtsp_env_pkg;
     `uvm_object_utils(mtsp_csr_item)
 
     bit        is_write;
+    bit        is_read;
     bit [2:0]  address;
     bit [31:0] writedata;
     bit [31:0] readdata;
     int unsigned timeout_cycles;
     time       complete_time_ps;
     bit        hold_bus_after;
+    bit        sample_without_waitrequest;
 
     function new(string name = "mtsp_csr_item");
       super.new(name);
+      is_write         = 1'b0;
+      is_read          = 1'b0;
       timeout_cycles   = 1000;
       complete_time_ps = 0;
       hold_bus_after   = 1'b0;
+      sample_without_waitrequest = 1'b0;
     endfunction
   endclass
 
@@ -78,10 +83,18 @@ package mtsp_env_pkg;
     bit [2:0]  address;
     bit [31:0] writedata;
     bit [31:0] readdata;
+    logic      waitrequest;
+    bit        is_read;
+    bit        protocol_fault;
+    string     fault_kind;
     time       time_ps;
 
     function new(string name = "mtsp_csr_obs_item");
       super.new(name);
+      waitrequest   = 1'b0;
+      is_read       = 1'b0;
+      protocol_fault = 1'b0;
+      fault_kind    = "";
     endfunction
   endclass
 
@@ -192,6 +205,7 @@ package mtsp_env_pkg;
     `uvm_component_utils(mtsp_csr_driver)
 
     virtual mtsp_csr_if.drv vif;
+    uvm_analysis_port #(mtsp_csr_obs_item) protocol_ap;
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -199,12 +213,14 @@ package mtsp_env_pkg;
 
     function void build_phase(uvm_phase phase);
       super.build_phase(phase);
+      protocol_ap = new("protocol_ap", this);
       if (!uvm_config_db#(virtual mtsp_csr_if.drv)::get(this, "", "vif", vif))
         `uvm_fatal("MTSP_CSR_DRV", "Missing mtsp_csr_if.drv")
     endfunction
 
     task run_phase(uvm_phase phase);
       mtsp_csr_item item;
+      mtsp_csr_obs_item obs;
       int unsigned  wait_cycles;
       bit           bus_held_for_next;
 
@@ -224,7 +240,25 @@ package mtsp_env_pkg;
         vif.address   <= item.address;
         vif.writedata <= item.writedata;
         vif.write     <= item.is_write;
-        vif.read      <= !item.is_write;
+        vif.read      <= item.is_read;
+
+        if (item.sample_without_waitrequest) begin
+          #1ps;
+          obs                = mtsp_csr_obs_item::type_id::create("csr_waitrequest_sample_fault");
+          obs.is_write       = item.is_write;
+          obs.is_read        = item.is_read;
+          obs.address        = item.address;
+          obs.writedata      = item.writedata;
+          obs.readdata       = vif.readdata;
+          obs.waitrequest    = vif.waitrequest;
+          obs.protocol_fault = 1'b1;
+          obs.fault_kind     = "waitrequest_sample";
+          obs.time_ps        = $time;
+          protocol_ap.write(obs);
+          `uvm_warning("MTSP_CSR_PROTOCOL",
+            $sformatf("Bad CSR sequence sampled readdata=0x%08h before waitrequest completion at address 0x%0h waitrequest=%0b",
+              vif.readdata, item.address, vif.waitrequest))
+        end
 
         wait_cycles = 0;
         do begin
@@ -237,7 +271,7 @@ package mtsp_env_pkg;
                 item.address))
         end while (vif.waitrequest === 1'b1);
 
-        if (!item.is_write) begin
+        if (item.is_read) begin
           item.readdata = vif.readdata;
         end
         item.complete_time_ps = $time;
@@ -283,13 +317,21 @@ package mtsp_env_pkg;
           continue;
         if ((vif.write === 1'b1 || vif.read === 1'b1) &&
             vif.waitrequest !== 1'b1) begin
-          obs           = mtsp_csr_obs_item::type_id::create("csr_obs");
-          obs.is_write  = vif.write;
-          obs.address   = vif.address;
-          obs.writedata = vif.writedata;
-          obs.readdata  = vif.readdata;
-          obs.time_ps   = $time;
+          obs                = mtsp_csr_obs_item::type_id::create("csr_obs");
+          obs.is_write       = (vif.write === 1'b1);
+          obs.is_read        = (vif.read === 1'b1);
+          obs.address        = vif.address;
+          obs.writedata      = vif.writedata;
+          obs.readdata       = vif.readdata;
+          obs.waitrequest    = vif.waitrequest;
+          obs.protocol_fault = (vif.write === 1'b1 && vif.read === 1'b1);
+          obs.fault_kind     = obs.protocol_fault ? "read_write_same_cycle" : "";
+          obs.time_ps        = $time;
           ap.write(obs);
+          if (obs.protocol_fault)
+            `uvm_warning("MTSP_CSR_PROTOCOL",
+              $sformatf("Simultaneous CSR read/write observed at address 0x%0h writedata=0x%08h readdata=0x%08h",
+                obs.address, obs.writedata, obs.readdata))
         end
       end
     endtask
@@ -608,6 +650,9 @@ package mtsp_env_pkg;
     int unsigned debug_burst_count;
     int unsigned ts_delta_count;
     int unsigned hit1_ready_unknown_count;
+    int unsigned csr_protocol_fault_count;
+    int unsigned csr_read_write_fault_count;
+    int unsigned csr_waitrequest_sample_fault_count;
     int unsigned dual_path_pair_count;
     int unsigned trace_seq;
     bit [31:0]   expected_latency;
@@ -653,6 +698,9 @@ package mtsp_env_pkg;
       debug_burst_count = 0;
       ts_delta_count   = 0;
       hit1_ready_unknown_count = 0;
+      csr_protocol_fault_count = 0;
+      csr_read_write_fault_count = 0;
+      csr_waitrequest_sample_fault_count = 0;
       dual_path_pair_count = 0;
       trace_seq        = 0;
       expected_latency = 32'd2000;
@@ -720,6 +768,18 @@ package mtsp_env_pkg;
     function void write_csr(mtsp_csr_obs_item item);
       csr_history.push_back(item);
       csr_access_count++;
+      if (item.protocol_fault) begin
+        csr_protocol_fault_count++;
+        if (item.fault_kind == "read_write_same_cycle")
+          csr_read_write_fault_count++;
+        if (item.fault_kind == "waitrequest_sample")
+          csr_waitrequest_sample_fault_count++;
+        `uvm_info("MTSP_CSR_PROTOCOL",
+          $sformatf("scoreboard recorded CSR protocol fault kind=%s addr=0x%0h write=%0b read=%0b waitrequest=%0b",
+            item.fault_kind, item.address, item.is_write, item.is_read,
+            item.waitrequest),
+          UVM_LOW)
+      end
       if (item.is_write && item.address == 3'd2)
         expected_latency = item.writedata;
     endfunction
@@ -785,11 +845,13 @@ package mtsp_env_pkg;
             pending_hit1.size(), pending_debug_ts.size()))
 
       `uvm_info("MTSP_SCB",
-        $sformatf("csr=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d ready_x=%0d dual_path_pairs=%0d traces=%0d debug_path_required=%0b expected_latency=%0d",
-          csr_access_count, input_accept_count, beat_count, payload_beat_count, eop_count,
-          empty_eop_count, debug_ts_count, debug_burst_count, ts_delta_count,
-          hit1_ready_unknown_count, dual_path_pair_count, trace_history.size(),
-          debug_path_required, expected_latency),
+        $sformatf("csr=%0d csr_protocol_faults=%0d csr_rw_faults=%0d csr_waitrequest_sample_faults=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d ready_x=%0d dual_path_pairs=%0d traces=%0d debug_path_required=%0b expected_latency=%0d",
+          csr_access_count, csr_protocol_fault_count,
+          csr_read_write_fault_count, csr_waitrequest_sample_fault_count,
+          input_accept_count, beat_count, payload_beat_count, eop_count,
+          empty_eop_count, debug_ts_count, debug_burst_count,
+          ts_delta_count, hit1_ready_unknown_count, dual_path_pair_count,
+          trace_history.size(), debug_path_required, expected_latency),
         UVM_LOW)
     endfunction
   endclass
@@ -835,6 +897,7 @@ package mtsp_env_pkg;
       m_csr_drv.seq_item_port.connect(m_csr_sqr.seq_item_export);
       m_ctrl_drv.seq_item_port.connect(m_ctrl_sqr.seq_item_export);
       m_hit0_drv.seq_item_port.connect(m_hit0_sqr.seq_item_export);
+      m_csr_drv.protocol_ap.connect(m_scb.csr_imp);
       m_csr_mon.ap.connect(m_scb.csr_imp);
       m_hit0_mon.ap.connect(m_scb.hit0_imp);
       m_hit1_mon.ap.connect(m_scb.hit1_imp);
@@ -860,6 +923,7 @@ package mtsp_env_pkg;
       item = mtsp_csr_item::type_id::create("csr_wr");
       start_item(item);
       item.is_write  = 1'b1;
+      item.is_read   = 1'b0;
       item.address   = addr;
       item.writedata = data;
       item.hold_bus_after = hold_bus_after;
@@ -872,10 +936,12 @@ package mtsp_env_pkg;
 
     bit [2:0]  addr;
     bit [31:0] data;
+    bit        sample_without_waitrequest;
 
     function new(string name = "mtsp_csr_read_seq");
       super.new(name);
       data = '0;
+      sample_without_waitrequest = 1'b0;
     endfunction
 
     task body();
@@ -883,10 +949,37 @@ package mtsp_env_pkg;
       item = mtsp_csr_item::type_id::create("csr_rd");
       start_item(item);
       item.is_write  = 1'b0;
+      item.is_read   = 1'b1;
       item.address   = addr;
       item.writedata = '0;
+      item.sample_without_waitrequest = sample_without_waitrequest;
       finish_item(item);
       data = item.readdata;
+    endtask
+  endclass
+
+  class mtsp_csr_read_write_seq extends uvm_sequence #(mtsp_csr_item);
+    `uvm_object_utils(mtsp_csr_read_write_seq)
+
+    bit [2:0]  addr;
+    bit [31:0] data;
+    bit [31:0] read_data;
+
+    function new(string name = "mtsp_csr_read_write_seq");
+      super.new(name);
+      read_data = '0;
+    endfunction
+
+    task body();
+      mtsp_csr_item item;
+      item = mtsp_csr_item::type_id::create("csr_rw_same_cycle");
+      start_item(item);
+      item.is_write  = 1'b1;
+      item.is_read   = 1'b1;
+      item.address   = addr;
+      item.writedata = data;
+      finish_item(item);
+      read_data = item.readdata;
     endtask
   endclass
 
@@ -1045,6 +1138,27 @@ package mtsp_env_pkg;
       seq.addr = addr;
       seq.start(m_env.m_csr_sqr);
       data = seq.data;
+    endtask
+
+    task automatic csr_read_bad_waitrequest_sample(bit [2:0] addr,
+                                                   output bit [31:0] data);
+      mtsp_csr_read_seq seq;
+      seq      = mtsp_csr_read_seq::type_id::create($sformatf("csr_bad_rd_%0t", $time));
+      seq.addr = addr;
+      seq.sample_without_waitrequest = 1'b1;
+      seq.start(m_env.m_csr_sqr);
+      data = seq.data;
+    endtask
+
+    task automatic csr_read_write_same_cycle(bit [2:0] addr,
+                                             bit [31:0] write_data,
+                                             output bit [31:0] read_data);
+      mtsp_csr_read_write_seq seq;
+      seq      = mtsp_csr_read_write_seq::type_id::create($sformatf("csr_rw_%0t", $time));
+      seq.addr = addr;
+      seq.data = write_data;
+      seq.start(m_env.m_csr_sqr);
+      read_data = seq.read_data;
     endtask
 
     task automatic csr_write_then_read_no_idle(bit [2:0] wr_addr,

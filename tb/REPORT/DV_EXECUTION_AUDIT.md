@@ -1,6 +1,6 @@
 # DV Execution Audit - mutrig_timestamp_processor
 
-Date: 2026-05-10, refreshed through 2026-05-10 10:47 CEST
+Date: 2026-05-10, refreshed through 2026-05-10 11:17 CEST
 
 ## Scope
 
@@ -20,8 +20,9 @@ stress batch, the PROF/STRESS repeated run-control/CSR-chatter batch, and the
 PROF/STRESS termination/drain stress batch, and the PROF/STRESS
 parameter-sweep-under-load batch, and the PROF/STRESS randomized
 entropy/control-noise batch, the PROF/STRESS legacy smoke-vector endurance
-batch, the PROF/STRESS post-upgrade drain/ready/boundary signoff batch, and the
-initial ERROR/NEG illegal-control/protocol batch.
+batch, the PROF/STRESS post-upgrade drain/ready/boundary signoff batch, the
+initial ERROR/NEG illegal-control/protocol batch, and the ERROR/NEG CSR-misuse
+batch.
 This refresh also records the `bypass_lapse` per-hit RTL fix, the hit0 monitor
 timing fix required for input analysis-port evidence, and the `csr.soft_reset`
 RTL fix that clears local timing, datapath, output, and debug history. It also
@@ -43,8 +44,8 @@ bug. The failure was reviewed against the four normal outputs and paired
 | BASIC | 130 | 130 | 130 |
 | EDGE | 131 | 131 | 131 |
 | PROF | 130 | 130 | 130 |
-| ERROR | 130 | 12 | 12 |
-| Total | 521 | 403 | 403 |
+| ERROR | 130 | 22 | 22 |
+| Total | 521 | 413 | 413 |
 
 Notes:
 - Unimplemented `mtsp_doc_case_test` case IDs fail with
@@ -53,8 +54,7 @@ Notes:
 - `DV_EDGE.md` currently contains a duplicate short ID `E127`; this remains an
   audit finding.
 - `DV_PROF.md` has explicit UVM handlers for P001 through P130.
-- `DV_ERROR.md` has explicit UVM handlers for X001 through X010, X021, and
-  X028.
+- `DV_ERROR.md` has explicit UVM handlers for X001 through X021, and X028.
 - The top-level `tb/DV_COV.md` and `tb/DV_REPORT.md` still contain older
   generated 130/130 bucket rows from the pre-explicit-dispatch flow. They are
   not accepted as closure evidence until regenerated from the current explicit
@@ -1140,6 +1140,41 @@ Mismatch reviews in this batch:
   decode used by the smoke vectors; this was a reference-model tuple mismatch,
   not an RTL datapath fault.
 
+Focused ERROR/NEG CSR-misuse batch:
+
+```bash
+make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<X011-X020 case_id> SEED=1
+```
+
+Result: `FOCUSED_NEG011_NEG020_PASS count=10`, followed by a full
+current-harness `FULL_EXPLICIT_413_PASS cases=413 elapsed=726s`. Key evidence:
+- X011 drives simultaneous CSR read/write through the normal CSR driver path.
+  The CSR monitor publishes `fault_kind=read_write_same_cycle`; the scoreboard
+  requires `csr_protocol_faults=1 csr_rw_faults=1`, and RTL write priority
+  updates `expected_latency` to `321`.
+- X012/X013 prove unsupported CSR address 5 writes are inert and unsupported
+  address 6 reads return zero; both are backed by CSR analysis-port counts.
+- X014 reuses the reserved-opmode hit path and reports one paired normal/debug
+  trace with `debug_delta=12`, `math_error=0`, and no payload error.
+- X015 asserts global reset while forcing an `expected_latency` write, then
+  idles the forced SV interface variables under reset before release. The
+  reviewed RTL reset branch dominates, and the post-reset readback is `2000`.
+- X016 and X017 abuse back-to-back `soft_reset` and rapid `force_stop` toggles
+  during traffic; both recover and emit paired normal/debug trace evidence.
+- X018 intentionally samples CSR read data before `waitrequest` completion. The
+  bad driver reports through an analysis port and the scoreboard requires
+  `csr_protocol_faults=1 csr_waitrequest_sample_faults=1`.
+- X019 reads counters immediately across a reset transition and requires zeroed
+  total/discard state. X020 writes `expected_latency=0xffffffff` and proves the
+  huge-latency model with paired trace math and `math_error=0`.
+
+Mismatch review in this batch:
+- X015 initially failed with post-reset `expected_latency=9999`. Reviewing
+  `proc_avmm_csr` showed the RTL reset branch was correct; the failure came
+  from forced SV interface variables retaining the forced write value until the
+  idle driver next updated them. The stimulus now drives an idle CSR cycle under
+  reset before releasing the force, and no RTL bug was accepted.
+
 RTL before/after bug proof:
 
 ```bash
@@ -1156,10 +1191,10 @@ Latest full explicit-case sweep and current artifact set:
 make -C tb/uvm -s run TEST=mtsp_doc_case_test CASE_ID=<case_id> SEED=1
 ```
 
-Result: `FULL_EXPLICIT_403_PASS cases=403 elapsed=704s` on the final current
-RTL source after the run-control debug-mirror addition and X001-X010 dispatcher
-bring-up. The per-case artifact audit now reports
-`ARTIFACT_AUDIT cases=403 missing_logs=0
+Result: `FULL_EXPLICIT_413_PASS cases=413 elapsed=726s` on the final current
+UVM harness after the CSR-misuse dispatcher bring-up. The per-case artifact
+audit now reports
+`ARTIFACT_AUDIT cases=413 missing_logs=0
 bad_or_incomplete_logs=0 missing_ucdb=0`.
 
 Combo terminate contract:
@@ -1183,14 +1218,14 @@ in `cov_after`; this directory currently also contains one stale non-dispatch
 coverage was recomputed from the explicit dispatcher list only:
 
 ```bash
-/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_403.ucdb <403 dispatcher UCDBs>
-/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_403.ucdb
+/data1/questaone_sim/questasim/bin/vcover merge /tmp/mtsp_explicit_413.ucdb <413 dispatcher UCDBs>
+/data1/questaone_sim/questasim/bin/vcover report -details -code bcesft /tmp/mtsp_explicit_413.ucdb
 ```
 
 The merge used QuestaSim-64 `vcover` 2026.1_1 to match the UCDB generation
 version; the older Quartus-bundled 2022.4 `vcover` rejected the files as newer
-UCDBs. Filtered instance coverage summary: `71.36%`. The DUT instance summary is
-statement `97.42%`, branch `94.98%`, condition `84.82%`, expression `100.00%`,
+UCDBs. Filtered instance coverage summary: `71.32%`. The DUT instance summary is
+statement `97.61%`, branch `95.36%`, condition `84.82%`, expression `100.00%`,
 FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.93%`.
 The merge log was checked for source mismatch and reported none; the only
 reported warning was the local missing `vcovkill` helper.
@@ -1198,17 +1233,16 @@ reported warning was the local missing `vcovkill` helper.
 Artifact check:
 
 ```text
-ARTIFACT_AUDIT cases=403 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
+ARTIFACT_AUDIT cases=413 missing_logs=0 bad_or_incomplete_logs=0 missing_ucdb=0
 ```
 
-Additional checks through this ERROR/NEG illegal-control/protocol batch:
+Additional checks through this ERROR/NEG CSR-misuse batch:
 
 ```bash
 git diff --check
 python3 /home/yifeng/.codex/skills/rtl-doc-style/scripts/rtl_doc_style_check.py .
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/bug_history_format_check.py BUG_HISTORY.md
 python3 /home/yifeng/.codex/skills/dv-workflow/scripts/dv_bucket_format_check.py tb
-python3 /home/yifeng/.codex/skills/rtl-linter-and-checker/scripts/questa_static_screen.py --top mts_processor_syn_top --filelist syn/quartus/mts_processor_static.f --pre-do syn/quartus/questa_lpm_pre.do --extra-do syn/quartus/questa_static_extra.do --work-dir /tmp/mtsp_static_neg001_neg010 mts_processor.vhd
 ```
 
 Results:
@@ -1222,27 +1256,30 @@ Results:
   `tb/DV_BASIC.md`, `tb/DV_EDGE.md`, `tb/DV_PROF.md`, and `tb/DV_ERROR.md`
   because those files still use the older bullet-list layout instead of the
   canonical table/header format. Recent batches corrected specific stale EDGE
-  timing, PROF termination/drain, and initial ERROR/NEG control text inside the
-  legacy bucket files, and this audit now records the sink-ready,
-  drain/ready/boundary, and illegal-control evidence separately.
-- RTL changed in this ERROR/NEG batch only to expose numeric run-control and
+  timing, PROF termination/drain, initial ERROR/NEG control text, and CSR
+  misuse text inside the legacy bucket files, and this audit now records the
+  sink-ready, drain/ready/boundary, illegal-control, and CSR-misuse evidence
+  separately.
+- RTL changed in the first ERROR/NEG batch only to expose numeric run-control and
   processor-state debug mirrors for deterministic DV checkpointing; no
   functional RTL fault was accepted, and no new `BUG_HISTORY.md` entry was
   warranted. The P117 debug-burst/ts-delta check, the P121-P130 packet-close
-  timing assumptions, and the X001-X010 control expectations were aligned to
-  the existing RTL contract after reviewing normal/debug analysis-port evidence.
-- Questa static screen for the touched RTL passed at
+  timing assumptions, the X001-X010 control expectations, and the X011-X020 CSR
+  misuse expectations were aligned to the existing RTL contract after reviewing
+  normal/debug and CSR analysis-port evidence.
+- No RTL changed in the CSR-misuse batch, so Questa static screen was not
+  rerun. The previous static screen for the current RTL remains at
   `/tmp/mtsp_static_neg001_neg010/questa_static_screen.log` with lint
   `Error (0)`, CDC `Violations (0)`, and RDC `Violation (0)`.
 
-Current evidenced explicit cases are the 403 handlers in
+Current evidenced explicit cases are the 413 handlers in
 `tb/uvm/mtsp_cases.svh`. Each has a matching
 `tb/uvm/logs/*_after_s1.log` and `tb/uvm/cov_after/*_s1.ucdb` artifact.
 
 ## Open Work
 
 DV closure is not complete. The remaining work is to implement real stimuli for
-the remaining 118 uncovered ERROR/NEG cases, then
+the remaining 108 uncovered ERROR/NEG cases, then
 regenerate the ordered coverage/report dashboard from current artifacts instead
 of relying on stale proxy rows. EDGE is now fully dispatched and evidenced;
 PROF has 130 evidenced stress handlers.

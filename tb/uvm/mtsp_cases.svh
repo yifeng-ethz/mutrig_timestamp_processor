@@ -11591,6 +11591,239 @@
       do_corner_128_accept_command_vs_complete_work_upgrade();
     endtask
 
+    task automatic do_neg_011_simultaneous_read_write_same_cycle();
+      int unsigned base_csr_count;
+      int unsigned base_fault_count;
+      int unsigned base_rw_fault_count;
+      bit [31:0]   rw_read_data;
+      bit [31:0]   csr_word;
+
+      wait_for_reset_release();
+      base_csr_count  = m_env.m_scb.csr_access_count;
+      base_fault_count = m_env.m_scb.csr_protocol_fault_count;
+      base_rw_fault_count = m_env.m_scb.csr_read_write_fault_count;
+      csr_read_write_same_cycle(3'd2, 32'd321, rw_read_data);
+      wait_cycles(2);
+      if (m_env.m_scb.csr_protocol_fault_count != base_fault_count + 1)
+        `uvm_fatal("MTSP_CSR_PROTOCOL",
+          $sformatf("%s expected one CSR protocol fault, got base=%0d now=%0d",
+            case_id, base_fault_count, m_env.m_scb.csr_protocol_fault_count))
+      if (m_env.m_scb.csr_read_write_fault_count != base_rw_fault_count + 1)
+        `uvm_fatal("MTSP_CSR_PROTOCOL",
+          $sformatf("%s expected one CSR read/write fault, got base=%0d now=%0d",
+            case_id, base_rw_fault_count, m_env.m_scb.csr_read_write_fault_count))
+      if (m_env.m_scb.csr_access_count < base_csr_count + 1)
+        `uvm_fatal("MTSP_CSR_PROTOCOL",
+          $sformatf("%s monitor did not publish simultaneous CSR access evidence",
+            case_id))
+      csr_read(3'd2, csr_word);
+      if (csr_word !== 32'd321)
+        `uvm_fatal("MTSP_CSR",
+          $sformatf("%s write-priority CSR update expected 321 got 0x%08h",
+            case_id, csr_word))
+      expect_no_new_beats(0, 0, 0, 8, case_id);
+    endtask
+
+    task automatic do_neg_012_write_unsupported_addr5();
+      bit [31:0] base_ctrl;
+      bit [31:0] ctrl_word;
+      bit [31:0] base_discard;
+      bit [31:0] discard_word;
+      bit [31:0] base_latency;
+      bit [31:0] latency_word;
+      bit [47:0] base_total;
+      bit [47:0] total_count;
+
+      wait_for_reset_release();
+      csr_read(3'd0, base_ctrl);
+      csr_read(3'd1, base_discard);
+      csr_read(3'd2, base_latency);
+      read_total_count(base_total);
+      csr_write(3'd5, 32'hdead_beef);
+      wait_cycles(2);
+      csr_read(3'd0, ctrl_word);
+      csr_read(3'd1, discard_word);
+      csr_read(3'd2, latency_word);
+      read_total_count(total_count);
+      if (ctrl_word !== base_ctrl || discard_word !== base_discard ||
+          latency_word !== base_latency || total_count !== base_total)
+        `uvm_fatal("MTSP_CSR",
+          $sformatf("%s unsupported addr5 write changed state ctrl 0x%08h/0x%08h discard %0d/%0d latency %0d/%0d total %0d/%0d",
+            case_id, base_ctrl, ctrl_word, base_discard, discard_word,
+            base_latency, latency_word, base_total, total_count))
+      expect_no_new_beats(0, 0, 0, 8, case_id);
+    endtask
+
+    task automatic do_neg_013_read_unsupported_addr6();
+      int unsigned base_csr_count;
+      bit [31:0]   csr_word;
+
+      wait_for_reset_release();
+      base_csr_count = m_env.m_scb.csr_access_count;
+      csr_read(3'd6, csr_word);
+      if (csr_word !== 32'd0)
+        `uvm_fatal("MTSP_CSR",
+          $sformatf("%s unsupported addr6 read expected zero got 0x%08h",
+            case_id, csr_word))
+      if (m_env.m_scb.csr_access_count <= base_csr_count)
+        `uvm_fatal("MTSP_CSR",
+          $sformatf("%s CSR monitor did not publish unsupported read evidence",
+            case_id))
+    endtask
+
+    task automatic do_neg_014_reserved_opmode_bit28_write();
+      do_corner_015_reserved_opmode_bit28_only();
+    endtask
+
+    task automatic do_neg_015_write_expected_latency_during_reset();
+      bit [31:0] csr_word;
+
+      wait_for_reset_release();
+      csr_write(3'd2, 32'd4321);
+      expect_csr_mask(3'd2, 32'd4321, 32'hffff_ffff,
+        $sformatf("%s pre-reset latency write", case_id));
+
+      rst_vif.rst <= 1'b1;
+      wait_cycles(1);
+      force_tb_hdl("/tb_top/csr_if/address", "/tb_top.csr_if.address",
+        3'd2, $sformatf("%s force CSR address", case_id));
+      force_tb_hdl("/tb_top/csr_if/writedata", "/tb_top.csr_if.writedata",
+        32'd9999, $sformatf("%s force CSR writedata", case_id));
+      force_tb_hdl("/tb_top/csr_if/write", "/tb_top.csr_if.write",
+        1, $sformatf("%s force CSR write", case_id));
+      force_tb_hdl("/tb_top/csr_if/read", "/tb_top.csr_if.read",
+        0, $sformatf("%s force CSR read low", case_id));
+      wait_cycles(2);
+      force_tb_hdl("/tb_top/csr_if/write", "/tb_top.csr_if.write",
+        0, $sformatf("%s force CSR idle write", case_id));
+      force_tb_hdl("/tb_top/csr_if/read", "/tb_top.csr_if.read",
+        0, $sformatf("%s force CSR idle read", case_id));
+      force_tb_hdl("/tb_top/csr_if/address", "/tb_top.csr_if.address",
+        3'd0, $sformatf("%s force CSR idle address", case_id));
+      force_tb_hdl("/tb_top/csr_if/writedata", "/tb_top.csr_if.writedata",
+        32'd0, $sformatf("%s force CSR idle writedata", case_id));
+      wait_cycles(1);
+      release_tb_hdl("/tb_top/csr_if/write", "/tb_top.csr_if.write",
+        $sformatf("%s release CSR write", case_id));
+      release_tb_hdl("/tb_top/csr_if/read", "/tb_top.csr_if.read",
+        $sformatf("%s release CSR read", case_id));
+      release_tb_hdl("/tb_top/csr_if/address", "/tb_top.csr_if.address",
+        $sformatf("%s release CSR address", case_id));
+      release_tb_hdl("/tb_top/csr_if/writedata", "/tb_top.csr_if.writedata",
+        $sformatf("%s release CSR writedata", case_id));
+      rst_vif.rst <= 1'b0;
+      wait_cycles(4);
+      csr_read(3'd2, csr_word);
+      if (csr_word !== 32'd2000)
+        `uvm_fatal("MTSP_CSR",
+          $sformatf("%s reset must dominate latency write, got %0d",
+            case_id, csr_word))
+      csr_write(3'd2, 32'd2000);
+    endtask
+
+    task automatic do_neg_016_back_to_back_soft_reset_pulses();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 1, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(1, 128,
+        $sformatf("%s pre-soft-reset payload", case_id));
+      expect_total_count(48'd1,
+        $sformatf("%s pre-soft-reset total", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0004);
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0004);
+      wait_cycles(6);
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0004,
+        $sformatf("%s soft_reset self-clear", case_id));
+      expect_total_count(48'd0,
+        $sformatf("%s post-soft-reset total", case_id));
+      wait_for_hit0_ready(1'b1, 64,
+        $sformatf("%s post-soft-reset ready", case_id));
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 1, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s post-soft-reset payload", case_id));
+      expect_last_trace_pair($sformatf("%s post-soft-reset trace", case_id));
+    endtask
+
+    task automatic do_neg_017_rapid_force_stop_toggle();
+      int unsigned base_beats;
+
+      wait_for_reset_release();
+      run_start();
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0002);
+      wait_cycles(1);
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 0, 15'h0001, 15'h0001, 1'b0, 1'b1, 1'b0);
+      expect_no_new_beats(base_beats, m_env.m_scb.eop_count,
+        m_env.m_scb.empty_eop_count, 64,
+        $sformatf("%s force_stop asserted block", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT);
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0002);
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT);
+      wait_cycles(2);
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0002,
+        $sformatf("%s force_stop clear after thrash", case_id));
+      send_hit_beat(2, 1, 15'h0003, 15'h0003, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s force_stop recovered payload", case_id));
+      expect_last_trace_pair($sformatf("%s force_stop recovered trace",
+        case_id));
+    endtask
+
+    task automatic do_neg_018_driver_ignores_waitrequest();
+      int unsigned base_fault_count;
+      int unsigned base_wait_fault_count;
+      bit [31:0]   csr_word;
+
+      wait_for_reset_release();
+      base_fault_count = m_env.m_scb.csr_protocol_fault_count;
+      base_wait_fault_count = m_env.m_scb.csr_waitrequest_sample_fault_count;
+      csr_read_bad_waitrequest_sample(3'd2, csr_word);
+      if (csr_word !== 32'd2000)
+        `uvm_fatal("MTSP_CSR",
+          $sformatf("%s legal completion after bad sample expected 2000 got 0x%08h",
+            case_id, csr_word))
+      if (m_env.m_scb.csr_protocol_fault_count != base_fault_count + 1)
+        `uvm_fatal("MTSP_CSR_PROTOCOL",
+          $sformatf("%s expected one protocol fault for bad sample",
+            case_id))
+      if (m_env.m_scb.csr_waitrequest_sample_fault_count !=
+          base_wait_fault_count + 1)
+        `uvm_fatal("MTSP_CSR_PROTOCOL",
+          $sformatf("%s expected one waitrequest sample fault",
+            case_id))
+    endtask
+
+    task automatic do_neg_019_counter_reads_mid_reset();
+      bit [31:0] hi_word;
+      bit [31:0] lo_word;
+
+      wait_for_reset_release();
+      run_start();
+      send_hit_beat(2, 1, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      wait_for_beat_count(1, 128,
+        $sformatf("%s pre-reset payload", case_id));
+      expect_total_count(48'd1,
+        $sformatf("%s pre-reset total", case_id));
+      rst_vif.rst <= 1'b1;
+      wait_cycles(3);
+      rst_vif.rst <= 1'b0;
+      csr_read(3'd3, hi_word);
+      csr_read(3'd4, lo_word);
+      if (hi_word[15:0] !== 16'd0 || lo_word !== 32'd0)
+        `uvm_fatal("MTSP_CSR",
+          $sformatf("%s reset-transition counter read expected zero got hi=0x%08h lo=0x%08h",
+            case_id, hi_word, lo_word))
+      expect_discard_count(32'd0,
+        $sformatf("%s post-reset discard", case_id));
+    endtask
+
+    task automatic do_neg_020_expected_latency_overflow_model();
+      do_corner_014_expected_latency_all_ones();
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -11872,6 +12105,16 @@
         "NEG_MTS_008_terminate_from_idle": do_neg_008_terminate_from_idle();
         "NEG_MTS_009_link_test_during_running": do_neg_009_link_test_during_running();
         "NEG_MTS_010_always_ready_masks_incomplete_work": do_neg_010_always_ready_masks_incomplete_work();
+        "NEG_MTS_011_simultaneous_read_write_same_cycle": do_neg_011_simultaneous_read_write_same_cycle();
+        "NEG_MTS_012_write_unsupported_addr5": do_neg_012_write_unsupported_addr5();
+        "NEG_MTS_013_read_unsupported_addr6": do_neg_013_read_unsupported_addr6();
+        "NEG_MTS_014_reserved_opmode_bit28_write": do_neg_014_reserved_opmode_bit28_write();
+        "NEG_MTS_015_write_expected_latency_during_reset": do_neg_015_write_expected_latency_during_reset();
+        "NEG_MTS_016_back_to_back_soft_reset_pulses": do_neg_016_back_to_back_soft_reset_pulses();
+        "NEG_MTS_017_rapid_force_stop_toggle": do_neg_017_rapid_force_stop_toggle();
+        "NEG_MTS_018_driver_ignores_waitrequest": do_neg_018_driver_ignores_waitrequest();
+        "NEG_MTS_019_counter_reads_mid_reset": do_neg_019_counter_reads_mid_reset();
+        "NEG_MTS_020_expected_latency_overflow_model": do_neg_020_expected_latency_overflow_model();
         "NEG_MTS_021_hiterr_rejected_running": do_neg_021_hiterr_rejected_running();
         "NEG_MTS_028_valid_beat_under_force_stop": do_neg_028_valid_beat_under_force_stop();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
