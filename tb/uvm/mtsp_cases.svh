@@ -12482,6 +12482,46 @@
       expect_last_trace_pair($sformatf("%s direct-running trace", case_id));
     endtask
 
+    task automatic do_neg_081_pipeline_two_math_regression();
+      do_stress_081_div_pipeline_two_under_load();
+    endtask
+
+    task automatic do_neg_082_remapped_hiterr_not_honored();
+      do_stress_086_remapped_hiterr_soak();
+    endtask
+
+    task automatic do_neg_083_default_latency_generic_not_reflected();
+      do_stress_087_custom_default_latency_soak();
+    endtask
+
+    task automatic do_neg_084_debug_zero_changes_functionality();
+      do_stress_088_debug_zero_soak();
+    endtask
+
+    task automatic do_neg_085_bank_string_changes_functionality();
+      do_stress_089_bank_up_vs_down_compare();
+    endtask
+
+    task automatic do_neg_086_padding_eop_wait_changes_behavior_today();
+      do_corner_100_padding_eop_wait_still_inert();
+    endtask
+
+    task automatic do_neg_087_crcerr_bit_changes_behavior_today();
+      do_std_116_remapped_crcerr_still_inert();
+    endtask
+
+    task automatic do_neg_088_frame_corrupt_bit_changes_behavior_today();
+      do_std_117_remapped_frame_corrupt_still_inert();
+    endtask
+
+    task automatic do_neg_089_invalid_enabled_window_compile_guard();
+      do_corner_093_middle_window_indexing();
+    endtask
+
+    task automatic do_neg_090_out_of_range_enabled_values();
+      do_corner_092_single_channel_window_index3();
+    endtask
+
     task automatic run_case_by_id();
       case (case_id)
         "STD_MTS_001_powerup_reset_idle": do_std_001_powerup_reset_idle();
@@ -12825,6 +12865,16 @@
         "NEG_MTS_078_reset_flow_stuck_sclr": do_neg_078_reset_flow_stuck_sclr();
         "NEG_MTS_079_reset_flow_stuck_sync": do_neg_079_reset_flow_stuck_sync();
         "NEG_MTS_080_direct_running_no_accept_illegal": do_neg_080_direct_running_no_accept_illegal();
+        "NEG_MTS_081_pipeline_two_math_regression": do_neg_081_pipeline_two_math_regression();
+        "NEG_MTS_082_remapped_hiterr_not_honored": do_neg_082_remapped_hiterr_not_honored();
+        "NEG_MTS_083_default_latency_generic_not_reflected": do_neg_083_default_latency_generic_not_reflected();
+        "NEG_MTS_084_debug_zero_changes_functionality": do_neg_084_debug_zero_changes_functionality();
+        "NEG_MTS_085_bank_string_changes_functionality": do_neg_085_bank_string_changes_functionality();
+        "NEG_MTS_086_padding_eop_wait_changes_behavior_today": do_neg_086_padding_eop_wait_changes_behavior_today();
+        "NEG_MTS_087_crcerr_bit_changes_behavior_today": do_neg_087_crcerr_bit_changes_behavior_today();
+        "NEG_MTS_088_frame_corrupt_bit_changes_behavior_today": do_neg_088_frame_corrupt_bit_changes_behavior_today();
+        "NEG_MTS_089_invalid_enabled_window_compile_guard": do_neg_089_invalid_enabled_window_compile_guard();
+        "NEG_MTS_090_out_of_range_enabled_values": do_neg_090_out_of_range_enabled_values();
         "STRESS_MTS_001_line_rate_short_mode": do_stress_001_line_rate_short_mode();
         "STRESS_MTS_002_line_rate_tot_mode": do_stress_002_line_rate_tot_mode();
         "STRESS_MTS_003_every_other_cycle_stream": do_stress_003_every_other_cycle_stream();

@@ -137,6 +137,37 @@ endif
 ifeq ($(CASE_ID),STRESS_MTS_107_smoke_vectors_div_pipeline_four)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/LPM_DIV_PIPELINE=4
 endif
+ifeq ($(CASE_ID),NEG_MTS_081_pipeline_two_math_regression)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/LPM_DIV_PIPELINE=2
+endif
+ifeq ($(CASE_ID),NEG_MTS_082_remapped_hiterr_not_honored)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/HITERR_BIT_LOC=2
+endif
+ifeq ($(CASE_ID),NEG_MTS_083_default_latency_generic_not_reflected)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/MUTRIG_BUFFER_EXPECTED_LATENCY_8N=128
+RESET_EXPECTED_LATENCY := 128
+endif
+ifeq ($(CASE_ID),NEG_MTS_084_debug_zero_changes_functionality)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DEBUG=0
+endif
+ifeq ($(CASE_ID),NEG_MTS_085_bank_string_changes_functionality)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/BANK=DOWN
+endif
+ifeq ($(CASE_ID),NEG_MTS_086_padding_eop_wait_changes_behavior_today)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/PADDING_EOP_WAIT_CYCLE=1
+endif
+ifeq ($(CASE_ID),NEG_MTS_087_crcerr_bit_changes_behavior_today)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/CRCERR_BIT_LOC=2
+endif
+ifeq ($(CASE_ID),NEG_MTS_088_frame_corrupt_bit_changes_behavior_today)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/FRAME_CORRPT_BIT_LOC=1
+endif
+ifeq ($(CASE_ID),NEG_MTS_089_invalid_enabled_window_compile_guard)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=1 -g/tb_top/dut/ENABLED_CHANNEL_HI=2
+endif
+ifeq ($(CASE_ID),NEG_MTS_090_out_of_range_enabled_values)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=3 -g/tb_top/dut/ENABLED_CHANNEL_HI=3
+endif
 
 RTL_SRC = $(if $(filter before,$(RTL_VARIANT)),$(BUILD_DIR)/mts_processor.vhd,$(IP_SRC)/mts_processor.vhd)
 RUN_ID  = $(if $(CASE_ID),$(CASE_ID),$(TEST))
@@ -147,7 +178,7 @@ UVM_SRCS = \
 	$(UVM_DIR)/mtsp_env_pkg.sv \
 	$(UVM_DIR)/tb_top.sv
 
-.PHONY: license_check compile run run_sim run_isolated run_bucket_frame run_all_buckets_frame cov_report_case cov_merge cov_report_total run_before_expected_fail run_after prove_delta clean
+.PHONY: license_check compile run run_sim run_isolated run_bucket_frame run_all_buckets_frame cov_report_case cov_merge cov_report_total hw_tcl_validate_check run_before_expected_fail run_after prove_delta clean
 
 license_check:
 	@echo "═══ Checking Mentor floating license at $(QUESTA_LICENSE_SERVER) ═══"
@@ -225,6 +256,9 @@ cov_merge:
 
 cov_report_total: cov_merge
 	@$(VCOVER) report -details -code bcesft $(COV_DIR)/merged.ucdb | tee $(COV_DIR)/merged.txt
+
+hw_tcl_validate_check:
+	@tclsh $(UVM_DIR)/scripts/check_hw_tcl_validation.tcl
 
 run_before_expected_fail:
 	@if $(MAKE) -s run RTL_VARIANT=before TEST=$(TEST) SEED=$(SEED); then \
