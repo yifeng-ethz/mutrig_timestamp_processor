@@ -47,6 +47,8 @@
 --      Date: May 9, 2026
 -- Revision: 5.17 (Make CSR soft_reset clear local datapath, timing, and debug history)
 --      Date: May 10, 2026
+-- Revision: 5.18 (Allow legal run-control recovery after an illegal ERROR command)
+--      Date: May 10, 2026
 -- Version : 26.0.12
 -- Date    : 20260510
 -- Change  : Register the corrected divider numerators in hit_prediv, then split divider launch and
@@ -80,6 +82,8 @@
 --           CSR soft_reset now also clears the local timestamp counters, datapath pipeline,
 --           packet-start bookkeeping, and debug delta history so software reset recovery does not inherit
 --           stale timing context from the previous traffic phase.
+--           Illegal run-control words still decode to ERROR, but ERROR no longer leaves
+--           asi_ctrl_ready stuck low; the next legal control word can recover the local agent.
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -669,6 +673,7 @@ begin
                       '1' when (run_state_cmd = SYNC and processor_state = RESET and reset_flow = SYNC) else
                       '1' when (run_state_cmd = RUNNING and processor_state = RUNNING) else
                       '1' when (run_state_cmd = TERMINATING and processor_state = FLUSHING and terminating_done = '1') else
+                      '1' when (run_state_cmd = ERROR) else
                       '0';
 
     proc_terminating_marker_comb : process (all)

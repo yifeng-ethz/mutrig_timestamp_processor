@@ -7344,6 +7344,591 @@
       expect_discard_count(32'd0, ctx);
     endtask
 
+    task automatic start_run_control_cycle(bit direct_running,
+                                           int unsigned iter,
+                                           string ctx);
+      if (direct_running) begin
+        send_ctrl(CTRL_RUNNING, $sformatf("DIRECT_RUNNING_%0d", iter));
+        wait_for_running_status(64,
+          $sformatf("%s direct-running iter=%0d", ctx, iter));
+        wait_for_hit0_ready(1'b1, 16,
+          $sformatf("%s direct-running ready iter=%0d", ctx, iter));
+        wait_cycles(1);
+      end else begin
+        run_start();
+      end
+    endtask
+
+    task automatic stop_run_with_endofrun(int unsigned base_history,
+                                          int unsigned base_empty_eops,
+                                          int unsigned expected_payloads,
+                                          string ctx);
+      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", ctx));
+      send_endofrun_pulse();
+      wait_for_empty_eop_count(base_empty_eops + 4, 256,
+        $sformatf("%s close markers", ctx));
+      wait_for_ctrl_ready_high(256, $sformatf("%s terminate ready restore",
+        ctx));
+      expect_close_markers_since(base_history, 4'b1111, expected_payloads,
+        $sformatf("%s close marker detail", ctx));
+      send_ctrl(CTRL_IDLE, "IDLE");
+      wait_cycles(2);
+      expect_hit0_ready(1'b0, $sformatf("%s post-IDLE hit ready", ctx));
+    endtask
+
+    task automatic run_empty_standard_runs_case(int unsigned iterations,
+                                                string ctx);
+      int unsigned base_beats;
+      int unsigned base_empty_eops;
+      int unsigned base_csr_count;
+
+      wait_for_reset_release();
+      base_beats      = m_env.m_scb.beat_count;
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      base_csr_count  = m_env.m_scb.csr_access_count;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned iter_history;
+        int unsigned iter_empty_eops;
+
+        start_run_control_cycle(1'b0, iter, ctx);
+        iter_history    = m_env.m_scb.history.size();
+        iter_empty_eops = m_env.m_scb.empty_eop_count;
+        stop_run_with_endofrun(iter_history, iter_empty_eops, 0,
+          $sformatf("%s iter=%0d", ctx, iter));
+        expect_total_count(48'd0, $sformatf("%s iter=%0d total", ctx, iter));
+        expect_discard_count(32'd0, $sformatf("%s iter=%0d discard", ctx,
+          iter));
+      end
+      if (m_env.m_scb.beat_count != base_beats + (4 * iterations))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected exactly %0d empty close markers and no payload beats, got beats=%0d from base=%0d",
+            ctx, 4 * iterations, m_env.m_scb.beat_count - base_beats,
+            base_beats))
+      if (m_env.m_scb.empty_eop_count != base_empty_eops + (4 * iterations))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected empty_eops=%0d got %0d from base %0d",
+            ctx, 4 * iterations, m_env.m_scb.empty_eop_count,
+            base_empty_eops))
+      if (m_env.m_scb.csr_access_count <= base_csr_count)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected CSR monitor activity during repeated control cycles",
+            ctx))
+    endtask
+
+    task automatic send_run_control_payload(int unsigned stimulus_idx,
+                                            int unsigned route_lane,
+                                            bit sop_value,
+                                            bit eop_value,
+                                            int unsigned base_history,
+                                            int unsigned base_traces,
+                                            int unsigned local_idx,
+                                            string ctx);
+      int unsigned raw_value;
+
+      lookup_raw_for_quotient(route_lane * 16, 0, raw_value,
+        $sformatf("%s route-lane symbol", ctx));
+      send_hit_beat(2, route_lane, raw_value, raw_value, 1'b0, sop_value,
+        eop_value, '0, 1'b1, stimulus_idx[4:0]);
+      wait_for_beat_count(base_history + local_idx + 1, 256,
+        $sformatf("%s output beat local_idx=%0d", ctx, local_idx));
+      wait_for_trace_count(base_traces + local_idx + 1, 256,
+        $sformatf("%s trace local_idx=%0d", ctx, local_idx));
+      expect_payload_math_at(base_history + local_idx, 2, route_lane,
+        stimulus_idx[4:0], route_lane * 16, 0, 0,
+        $sformatf("%s payload local_idx=%0d", ctx, local_idx));
+      expect_output_flags_at(base_history + local_idx, sop_value, 1'b0,
+        1'b0, route_lane,
+        $sformatf("%s flags local_idx=%0d", ctx, local_idx));
+      expect_trace_pair_at(base_traces + local_idx,
+        $sformatf("%s normal/debug pair local_idx=%0d", ctx, local_idx));
+      expect_trace_math_self_consistent_at(base_traces + local_idx,
+        $sformatf("%s trace math local_idx=%0d", ctx, local_idx));
+    endtask
+
+    task automatic run_single_packet_runs_case(int unsigned iterations,
+                                               string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_history;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      base_inputs     = m_env.m_scb.hit0_history.size();
+      base_beats      = m_env.m_scb.beat_count;
+      base_history    = m_env.m_scb.history.size();
+      base_traces     = m_env.m_scb.trace_history.size();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned iter_history;
+        int unsigned iter_traces;
+        int unsigned iter_empty_eops;
+
+        start_run_control_cycle(1'b0, iter, ctx);
+        iter_history    = m_env.m_scb.history.size();
+        iter_traces     = m_env.m_scb.trace_history.size();
+        iter_empty_eops = m_env.m_scb.empty_eop_count;
+        send_run_control_payload(iter, iter % 4, 1'b1, 1'b1, iter_history,
+          iter_traces, 0, $sformatf("%s iter=%0d single packet", ctx, iter));
+        stop_run_with_endofrun(iter_history, iter_empty_eops, 1,
+          $sformatf("%s iter=%0d", ctx, iter));
+        expect_total_count(48'd1, $sformatf("%s iter=%0d total", ctx, iter));
+        expect_discard_count(32'd0, $sformatf("%s iter=%0d discard", ctx,
+          iter));
+      end
+      wait_for_input_count(base_inputs + iterations, iterations + 512, ctx);
+      if (m_env.m_scb.beat_count != base_beats + (iterations * 5))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d new beats, got %0d from base %0d",
+            ctx, iterations * 5, m_env.m_scb.beat_count - base_beats,
+            base_beats))
+      if (m_env.m_scb.trace_history.size() != base_traces + iterations)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d normal/debug traces, got %0d from base %0d",
+            ctx, iterations, m_env.m_scb.trace_history.size() - base_traces,
+            base_traces))
+      if (m_env.m_scb.empty_eop_count != base_empty_eops + (iterations * 4))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d empty close markers, got %0d from base %0d",
+            ctx, iterations * 4, m_env.m_scb.empty_eop_count,
+            base_empty_eops))
+      expect_total_count(48'd1, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_multi_channel_runs_case(int unsigned iterations,
+                                               string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      base_inputs     = m_env.m_scb.hit0_history.size();
+      base_beats      = m_env.m_scb.beat_count;
+      base_traces     = m_env.m_scb.trace_history.size();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned iter_history;
+        int unsigned iter_traces;
+        int unsigned iter_empty_eops;
+
+        start_run_control_cycle(1'b0, iter, ctx);
+        iter_history    = m_env.m_scb.history.size();
+        iter_traces     = m_env.m_scb.trace_history.size();
+        iter_empty_eops = m_env.m_scb.empty_eop_count;
+        for (int unsigned lane = 0; lane < 4; lane++)
+          send_run_control_payload((iter * 4) + lane, lane, 1'b1, 1'b1,
+            iter_history, iter_traces, lane,
+            $sformatf("%s iter=%0d lane=%0d", ctx, iter, lane));
+        stop_run_with_endofrun(iter_history, iter_empty_eops, 4,
+          $sformatf("%s iter=%0d", ctx, iter));
+        expect_total_count(48'd4, $sformatf("%s iter=%0d total", ctx, iter));
+        expect_discard_count(32'd0, $sformatf("%s iter=%0d discard", ctx,
+          iter));
+      end
+      wait_for_input_count(base_inputs + (iterations * 4), iterations * 4 + 512,
+        ctx);
+      if (m_env.m_scb.beat_count != base_beats + (iterations * 8))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d new beats, got %0d from base %0d",
+            ctx, iterations * 8, m_env.m_scb.beat_count - base_beats,
+            base_beats))
+      if (m_env.m_scb.trace_history.size() != base_traces + (iterations * 4))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d normal/debug traces, got %0d from base %0d",
+            ctx, iterations * 4, m_env.m_scb.trace_history.size() - base_traces,
+            base_traces))
+      if (m_env.m_scb.empty_eop_count != base_empty_eops + (iterations * 4))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d close markers, got %0d from base %0d",
+            ctx, iterations * 4, m_env.m_scb.empty_eop_count,
+            base_empty_eops))
+      expect_total_count(48'd4, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_ready_low_stop_cycles_case(int unsigned iterations,
+                                                  string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      set_hit1_ready(1'b0);
+      base_inputs     = m_env.m_scb.hit0_history.size();
+      base_beats      = m_env.m_scb.beat_count;
+      base_traces     = m_env.m_scb.trace_history.size();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned iter_history;
+        int unsigned iter_traces;
+        int unsigned iter_empty_eops;
+
+        start_run_control_cycle(1'b0, iter, ctx);
+        iter_history    = m_env.m_scb.history.size();
+        iter_traces     = m_env.m_scb.trace_history.size();
+        iter_empty_eops = m_env.m_scb.empty_eop_count;
+        send_run_control_payload(iter, iter % 4, 1'b1, 1'b1, iter_history,
+          iter_traces, 0, $sformatf("%s ready-low iter=%0d", ctx, iter));
+        stop_run_with_endofrun(iter_history, iter_empty_eops, 1,
+          $sformatf("%s ready-low iter=%0d", ctx, iter));
+        expect_total_count(48'd1, $sformatf("%s iter=%0d total", ctx, iter));
+        expect_discard_count(32'd0, $sformatf("%s iter=%0d discard", ctx,
+          iter));
+      end
+      set_hit1_ready(1'b1);
+      wait_for_input_count(base_inputs + iterations, iterations + 512, ctx);
+      if (m_env.m_scb.beat_count != base_beats + (iterations * 5))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s ready-low expected %0d new beats, got %0d",
+            ctx, iterations * 5, m_env.m_scb.beat_count - base_beats))
+      if (m_env.m_scb.trace_history.size() != base_traces + iterations)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s ready-low expected %0d traces, got %0d",
+            ctx, iterations, m_env.m_scb.trace_history.size() - base_traces))
+      if (m_env.m_scb.empty_eop_count != base_empty_eops + (iterations * 4))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s ready-low expected %0d close markers, got %0d from base %0d",
+            ctx, iterations * 4, m_env.m_scb.empty_eop_count,
+            base_empty_eops))
+      expect_total_count(48'd1, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_running_abort_cycles_case(int unsigned iterations,
+                                                 string ctx);
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      base_beats      = m_env.m_scb.beat_count;
+      base_eops       = m_env.m_scb.eop_count;
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        start_run_control_cycle(1'b1, iter, ctx);
+        send_ctrl(CTRL_IDLE, $sformatf("IDLE_ABORT_%0d", iter));
+        wait_cycles(2);
+        expect_hit0_ready(1'b0, $sformatf("%s abort iter=%0d ready", ctx,
+          iter));
+        expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0001,
+          $sformatf("%s abort iter=%0d csr", ctx, iter));
+        if (m_env.m_scb.empty_eop_count != base_empty_eops)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s abort iter=%0d unexpectedly entered close-marker FLUSHING",
+              ctx, iter))
+      end
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 16, ctx);
+      expect_total_count(48'd0, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_alternate_start_styles_case(int unsigned iterations,
+                                                   string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+      bit [47:0]   final_total;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      base_inputs     = m_env.m_scb.hit0_history.size();
+      base_beats      = m_env.m_scb.beat_count;
+      base_traces     = m_env.m_scb.trace_history.size();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      final_total      = 48'd0;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned iter_history;
+        int unsigned iter_traces;
+        int unsigned iter_empty_eops;
+        bit [47:0]   expected_total;
+
+        start_run_control_cycle(iter[0], iter, ctx);
+        iter_history    = m_env.m_scb.history.size();
+        iter_traces     = m_env.m_scb.trace_history.size();
+        iter_empty_eops = m_env.m_scb.empty_eop_count;
+        send_run_control_payload(iter, iter % 4, 1'b1, 1'b1, iter_history,
+          iter_traces, 0, $sformatf("%s mixed-start iter=%0d", ctx, iter));
+        stop_run_with_endofrun(iter_history, iter_empty_eops, 1,
+          $sformatf("%s mixed-start iter=%0d", ctx, iter));
+        expected_total = iter[0] ? 48'd2 : 48'd1;
+        expect_total_count(expected_total, $sformatf("%s iter=%0d total",
+          ctx, iter));
+        final_total = expected_total;
+        expect_discard_count(32'd0, $sformatf("%s iter=%0d discard", ctx,
+          iter));
+      end
+      wait_for_input_count(base_inputs + iterations, iterations + 512, ctx);
+      if (m_env.m_scb.beat_count != base_beats + (iterations * 5))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d beats across mixed starts, got %0d",
+            ctx, iterations * 5, m_env.m_scb.beat_count - base_beats))
+      if (m_env.m_scb.trace_history.size() != base_traces + iterations)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d traces across mixed starts, got %0d",
+            ctx, iterations, m_env.m_scb.trace_history.size() - base_traces))
+      if (m_env.m_scb.empty_eop_count != base_empty_eops + (iterations * 4))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d close markers across mixed starts, got %0d from base %0d",
+            ctx, iterations * 4, m_env.m_scb.empty_eop_count,
+            base_empty_eops))
+      expect_total_count(final_total, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic rewrite_csr_pattern(int unsigned iter,
+                                       bit bypass_lapse,
+                                       bit derive_tot,
+                                       bit delay_ts_field_use_t,
+                                       int unsigned expected_latency,
+                                       string ctx);
+      bit [31:0] mode_word;
+
+      mode_word = datapath_mode_word(bypass_lapse, derive_tot,
+        delay_ts_field_use_t);
+      csr_write(3'd2, expected_latency);
+      csr_write(3'd0, mode_word);
+      wait_cycles(2);
+      expect_csr_mask(3'd2, expected_latency, 32'hffff_ffff,
+        $sformatf("%s latency iter=%0d", ctx, iter));
+      expect_csr_mask(3'd0, mode_word & 32'h6000_0018, 32'h6000_0018,
+        $sformatf("%s mode iter=%0d", ctx, iter));
+    endtask
+
+    task automatic run_idle_csr_rewrite_case(int unsigned iterations,
+                                             string ctx);
+      int unsigned base_beats;
+      int unsigned base_eops;
+      int unsigned base_empty_eops;
+      int unsigned base_csr_count;
+
+      wait_for_reset_release();
+      base_beats      = m_env.m_scb.beat_count;
+      base_eops       = m_env.m_scb.eop_count;
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      base_csr_count  = m_env.m_scb.csr_access_count;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        rewrite_csr_pattern(iter, iter[0], iter[1], !iter[0],
+          32 + iter, $sformatf("%s idle rewrite", ctx));
+        start_run_control_cycle(1'b0, iter, ctx);
+        expect_csr_mask(3'd2, 32 + iter, 32'hffff_ffff,
+          $sformatf("%s running latency iter=%0d", ctx, iter));
+        send_ctrl(CTRL_IDLE, $sformatf("IDLE_after_idle_rewrite_%0d", iter));
+        wait_cycles(2);
+        expect_hit0_ready(1'b0, $sformatf("%s post-run idle iter=%0d", ctx,
+          iter));
+      end
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 16, ctx);
+      expect_total_count(48'd0, ctx);
+      expect_discard_count(32'd0, ctx);
+      if (m_env.m_scb.csr_access_count < base_csr_count + (iterations * 5))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected CSR analysis-port activity for %0d rewrites",
+            ctx, iterations))
+    endtask
+
+    task automatic run_prepare_csr_rewrite_case(int unsigned iterations,
+                                                string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+      bit [31:0]   mode_word;
+
+      wait_for_reset_release();
+      base_inputs     = m_env.m_scb.hit0_history.size();
+      base_beats      = m_env.m_scb.beat_count;
+      base_traces     = m_env.m_scb.trace_history.size();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned iter_history;
+        int unsigned iter_traces;
+        int unsigned iter_empty_eops;
+
+        send_ctrl(CTRL_RUN_PREPARE, $sformatf("RUN_PREPARE_REWRITE_%0d",
+          iter));
+        mode_word = datapath_mode_word(iter[0], iter[1], !iter[0]);
+        csr_write(3'd2, 64 + iter);
+        csr_write(3'd0, mode_word);
+        send_ctrl(CTRL_SYNC, $sformatf("SYNC_REWRITE_%0d", iter));
+        send_ctrl(CTRL_RUNNING, $sformatf("RUNNING_REWRITE_%0d", iter));
+        wait_for_running_status(64,
+          $sformatf("%s prepare rewrite running iter=%0d", ctx, iter));
+        wait_for_hit0_ready(1'b1, 16,
+          $sformatf("%s prepare rewrite ready iter=%0d", ctx, iter));
+        wait_cycles(1);
+        expect_csr_mask(3'd2, 64 + iter, 32'hffff_ffff,
+          $sformatf("%s prepare rewrite latency iter=%0d", ctx, iter));
+        iter_history    = m_env.m_scb.history.size();
+        iter_traces     = m_env.m_scb.trace_history.size();
+        iter_empty_eops = m_env.m_scb.empty_eop_count;
+        send_run_control_payload(iter, iter % 4, 1'b1, 1'b1, iter_history,
+          iter_traces, 0, $sformatf("%s prepare rewrite hit iter=%0d", ctx,
+          iter));
+        expect_trace_expected_latency_at(iter_traces, 64 + iter,
+          $sformatf("%s prepare rewrite trace latency iter=%0d", ctx, iter));
+        stop_run_with_endofrun(iter_history, iter_empty_eops, 1,
+          $sformatf("%s prepare rewrite iter=%0d", ctx, iter));
+        expect_total_count(48'd1, $sformatf("%s iter=%0d total", ctx, iter));
+        expect_discard_count(32'd0, $sformatf("%s iter=%0d discard", ctx,
+          iter));
+      end
+      wait_for_input_count(base_inputs + iterations, iterations + 512, ctx);
+      if (m_env.m_scb.beat_count != base_beats + (iterations * 5))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d beats after prepare rewrites, got %0d",
+            ctx, iterations * 5, m_env.m_scb.beat_count - base_beats))
+      if (m_env.m_scb.trace_history.size() != base_traces + iterations)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d traces after prepare rewrites, got %0d",
+            ctx, iterations, m_env.m_scb.trace_history.size() - base_traces))
+      if (m_env.m_scb.empty_eop_count != base_empty_eops + (iterations * 4))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d close markers after prepare rewrites, got %0d from base %0d",
+            ctx, iterations * 4, m_env.m_scb.empty_eop_count,
+            base_empty_eops))
+      expect_total_count(48'd1, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_flushing_csr_rewrite_case(int unsigned iterations,
+                                                 string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      base_inputs     = m_env.m_scb.hit0_history.size();
+      base_beats      = m_env.m_scb.beat_count;
+      base_traces     = m_env.m_scb.trace_history.size();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned iter_history;
+        int unsigned iter_traces;
+        int unsigned iter_empty_eops;
+        bit [31:0]   latency_value;
+
+        start_run_control_cycle(1'b0, iter, ctx);
+        iter_history    = m_env.m_scb.history.size();
+        iter_traces     = m_env.m_scb.trace_history.size();
+        iter_empty_eops = m_env.m_scb.empty_eop_count;
+        send_run_control_payload(iter, iter % 4, 1'b1, 1'b1, iter_history,
+          iter_traces, 0, $sformatf("%s pre-flush hit iter=%0d", ctx, iter));
+        pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
+        wait_for_ctrl_ready_low(4,
+          $sformatf("%s flushing rewrite ready low iter=%0d", ctx, iter));
+        latency_value = 128 + iter;
+        csr_write(3'd2, latency_value);
+        csr_read(3'd2, latency_value);
+        if (latency_value !== 128 + iter)
+          `uvm_fatal("MTSP_CASE",
+            $sformatf("%s flushing rewrite iter=%0d latency readback got %0d",
+              ctx, iter, latency_value))
+        send_endofrun_pulse();
+        wait_for_empty_eop_count(iter_empty_eops + 4, 256,
+          $sformatf("%s flushing rewrite close markers iter=%0d", ctx, iter));
+        wait_for_ctrl_ready_high(256,
+          $sformatf("%s flushing rewrite ready restore iter=%0d", ctx, iter));
+        expect_close_markers_since(iter_history, 4'b1111, 1,
+          $sformatf("%s flushing rewrite close detail iter=%0d", ctx, iter));
+        send_ctrl(CTRL_IDLE, $sformatf("IDLE_flushing_rewrite_%0d", iter));
+        expect_total_count(48'd1, $sformatf("%s iter=%0d total", ctx, iter));
+        expect_discard_count(32'd0, $sformatf("%s iter=%0d discard", ctx,
+          iter));
+      end
+      wait_for_input_count(base_inputs + iterations, iterations + 512, ctx);
+      if (m_env.m_scb.beat_count != base_beats + (iterations * 5))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d beats after flushing rewrites, got %0d",
+            ctx, iterations * 5, m_env.m_scb.beat_count - base_beats))
+      if (m_env.m_scb.trace_history.size() != base_traces + iterations)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d traces after flushing rewrites, got %0d",
+            ctx, iterations, m_env.m_scb.trace_history.size() - base_traces))
+      if (m_env.m_scb.empty_eop_count != base_empty_eops + (iterations * 4))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d close markers after flushing rewrites, got %0d from base %0d",
+            ctx, iterations * 4, m_env.m_scb.empty_eop_count,
+            base_empty_eops))
+      expect_total_count(48'd1, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
+    task automatic run_illegal_ctrl_chatter_case(int unsigned iterations,
+                                                 string ctx);
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_traces;
+      int unsigned base_empty_eops;
+      bit [47:0]   final_total;
+
+      wait_for_reset_release();
+      configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      base_inputs     = m_env.m_scb.hit0_history.size();
+      base_beats      = m_env.m_scb.beat_count;
+      base_traces     = m_env.m_scb.trace_history.size();
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      final_total      = 48'd0;
+      for (int unsigned iter = 0; iter < iterations; iter++) begin
+        int unsigned iter_history;
+        int unsigned iter_traces;
+        int unsigned iter_empty_eops;
+        bit [47:0]   expected_total;
+
+        pulse_ctrl(CTRL_RUNNING | CTRL_TERMINATING,
+          $sformatf("ILLEGAL_PRE_%0d", iter));
+        wait_cycles(1);
+        start_run_control_cycle(iter[0], iter, ctx);
+        pulse_ctrl(CTRL_RUN_PREPARE | CTRL_SYNC,
+          $sformatf("ILLEGAL_ACTIVE_%0d", iter));
+        wait_cycles(1);
+        expect_csr_mask(3'd0, 32'h0000_0001, 32'h0000_0001,
+          $sformatf("%s illegal active containment iter=%0d", ctx, iter));
+        iter_history    = m_env.m_scb.history.size();
+        iter_traces     = m_env.m_scb.trace_history.size();
+        iter_empty_eops = m_env.m_scb.empty_eop_count;
+        send_run_control_payload(iter, iter % 4, 1'b1, 1'b1, iter_history,
+          iter_traces, 0, $sformatf("%s illegal chatter hit iter=%0d", ctx,
+          iter));
+        pulse_ctrl(CTRL_RUNNING | CTRL_IDLE,
+          $sformatf("ILLEGAL_PRE_TERMINATE_%0d", iter));
+        wait_cycles(1);
+        stop_run_with_endofrun(iter_history, iter_empty_eops, 1,
+          $sformatf("%s illegal chatter iter=%0d", ctx, iter));
+        expected_total = iter[0] ? 48'd2 : 48'd1;
+        expect_total_count(expected_total, $sformatf("%s iter=%0d total",
+          ctx, iter));
+        final_total = expected_total;
+        expect_discard_count(32'd0, $sformatf("%s iter=%0d discard", ctx,
+          iter));
+      end
+      wait_for_input_count(base_inputs + iterations, iterations + 512, ctx);
+      if (m_env.m_scb.beat_count != base_beats + (iterations * 5))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d beats after illegal chatter, got %0d",
+            ctx, iterations * 5, m_env.m_scb.beat_count - base_beats))
+      if (m_env.m_scb.trace_history.size() != base_traces + iterations)
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d traces after illegal chatter, got %0d",
+            ctx, iterations, m_env.m_scb.trace_history.size() - base_traces))
+      if (m_env.m_scb.empty_eop_count != base_empty_eops + (iterations * 4))
+        `uvm_fatal("MTSP_CASE",
+          $sformatf("%s expected %0d close markers after illegal chatter, got %0d from base %0d",
+            ctx, iterations * 4, m_env.m_scb.empty_eop_count,
+            base_empty_eops))
+      expect_total_count(final_total, ctx);
+      expect_discard_count(32'd0, ctx);
+    endtask
+
     task automatic do_stress_001_line_rate_short_mode();
       run_stress_stream_case(64, 0, 1'b0, 1'b1, 1'b1, 0, 0, 0, 1'b1,
         1'b0, case_id);
@@ -7807,6 +8392,46 @@
       run_debug_streams_clear_repeated_case(4, 8, case_id);
     endtask
 
+    task automatic do_stress_061_hundred_empty_standard_runs();
+      run_empty_standard_runs_case(100, case_id);
+    endtask
+
+    task automatic do_stress_062_hundred_single_packet_runs();
+      run_single_packet_runs_case(100, case_id);
+    endtask
+
+    task automatic do_stress_063_hundred_multi_channel_runs();
+      run_multi_channel_runs_case(100, case_id);
+    endtask
+
+    task automatic do_stress_064_hundred_stop_cycles_ready_low();
+      run_ready_low_stop_cycles_case(100, case_id);
+    endtask
+
+    task automatic do_stress_065_hundred_running_abort_cycles();
+      run_running_abort_cycles_case(100, case_id);
+    endtask
+
+    task automatic do_stress_066_alternate_standard_and_legacy_starts();
+      run_alternate_start_styles_case(100, case_id);
+    endtask
+
+    task automatic do_stress_067_idleness_only_csr_rewrites();
+      run_idle_csr_rewrite_case(32, case_id);
+    endtask
+
+    task automatic do_stress_068_prepare_phase_csr_rewrites();
+      run_prepare_csr_rewrite_case(32, case_id);
+    endtask
+
+    task automatic do_stress_069_flushing_phase_csr_rewrites();
+      run_flushing_csr_rewrite_case(32, case_id);
+    endtask
+
+    task automatic do_stress_070_interspersed_illegal_ctrl_words();
+      run_illegal_ctrl_chatter_case(48, case_id);
+    endtask
+
     task automatic do_neg_021_hiterr_rejected_running();
       do_std_036_hiterr_discard_enabled();
     endtask
@@ -8140,6 +8765,16 @@
         "STRESS_MTS_058_expected_latency_at_distribution_edge": do_stress_058_expected_latency_at_distribution_edge();
         "STRESS_MTS_059_debug_streams_through_flushing": do_stress_059_debug_streams_through_flushing();
         "STRESS_MTS_060_debug_streams_clear_after_running": do_stress_060_debug_streams_clear_after_running();
+        "STRESS_MTS_061_hundred_empty_standard_runs": do_stress_061_hundred_empty_standard_runs();
+        "STRESS_MTS_062_hundred_single_packet_runs": do_stress_062_hundred_single_packet_runs();
+        "STRESS_MTS_063_hundred_multi_channel_runs": do_stress_063_hundred_multi_channel_runs();
+        "STRESS_MTS_064_hundred_stop_cycles_ready_low": do_stress_064_hundred_stop_cycles_ready_low();
+        "STRESS_MTS_065_hundred_running_abort_cycles": do_stress_065_hundred_running_abort_cycles();
+        "STRESS_MTS_066_alternate_standard_and_legacy_starts": do_stress_066_alternate_standard_and_legacy_starts();
+        "STRESS_MTS_067_idleness_only_csr_rewrites": do_stress_067_idleness_only_csr_rewrites();
+        "STRESS_MTS_068_prepare_phase_csr_rewrites": do_stress_068_prepare_phase_csr_rewrites();
+        "STRESS_MTS_069_flushing_phase_csr_rewrites": do_stress_069_flushing_phase_csr_rewrites();
+        "STRESS_MTS_070_interspersed_illegal_ctrl_words": do_stress_070_interspersed_illegal_ctrl_words();
         default:
           `uvm_fatal("MTSP_CASE",
             $sformatf("No explicit UVM stimulus handler for documented case '%s'", case_id))

@@ -46,8 +46,45 @@ Historical formal note:
 | [BUG-009-H](#bug-009-h-hit0-monitor-sampled-after-one-cycle-valid-deassert) | H | non-datapath-refactor | `directed-only (adjacent accepted hit0 visibility)` | fixed | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | `6f4bf95` | The hit0 monitor could miss a one-cycle accepted beat, weakening input-analysis-port evidence for dual normal/debug checks. |
 | [BUG-010-H](#bug-010-h-profile-helper-forced-zero-delay-error-on-valid-route-jump) | H | non-datapath-refactor | `directed-only (profile route-jump delay sanity)` | fixed | `STRESS_MTS_021_round_robin_enabled_channels` | `39fa9c0` | Profile helper forced zero delay-error even when normal output and debug math correctly agreed on a negative-delta route jump. |
 | [BUG-011-R](#bug-011-r-csr-soft-reset-left-timing-datapath-and-debug-history-live) | R | soft error | `occasional (routine CSR soft-reset recovery)` | fixed | `STRESS_MTS_035_soft_reset_every_10k_cycles` | `b1d45ba` | CSR soft reset cleared visible counters without clearing local timing, datapath, output, and debug history. |
+| [BUG-012-R](#bug-012-r-illegal-run-control-error-state-could-wedge-ctrl-ready-low) | R | hard stuck error | `directed-only (illegal control injection)` | fixed | `STRESS_MTS_070_interspersed_illegal_ctrl_words` | `pending` | An illegal run-control word decoded to `ERROR` and left `asi_ctrl_ready` low, blocking later legal recovery commands. |
 
 ## 2026-05-10
+
+### BUG-012-R: Illegal run-control ERROR state could wedge ctrl ready low
+
+- First seen:
+  - UVM case `STRESS_MTS_070_interspersed_illegal_ctrl_words`
+  - The first failing run stopped before payload traffic with `MTSP_CTRL_TIMEOUT` while waiting for a later legal `RUN_PREPARE`
+- Symptom:
+  - an injected multi-hot control word was accepted while the DUT was otherwise ready
+  - the decoder correctly classified the unsupported word as `ERROR`, but the control-ready equation had no ready-high recovery condition for `run_state_cmd=ERROR`
+  - all later legal control words were blocked because the UVM control driver waits for `asi_ctrl_ready=1` before completing the handshake
+- Root cause:
+  - `proc_run_control_mgmt_agent` preserved an observable `ERROR` command state for unsupported control words
+  - `ctrl_ready_comb` only acknowledged the known legal state/processor-state combinations, so `run_state_cmd=ERROR` became a sticky ready-low state
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - RTL still decodes unsupported run-control words to `ERROR`
+    - `ctrl_ready_comb` now asserts ready when `run_state_cmd=ERROR`, allowing the next legal control word to replace the error command and recover the local agent
+    - P070 keeps illegal multi-hot injections before and during legal sequences, then requires payload, debug, close-marker, and counter evidence after recovery
+  - before_fix_outcome:
+    - `STRESS_MTS_070_interspersed_illegal_ctrl_words` failed at `80148 ns` with `Timed out waiting for RUN_PREPARE ready after 10000 cycles`
+  - after_fix_outcome:
+    - `STRESS_MTS_070_interspersed_illegal_ctrl_words` passes with `csr=292 inputs=48 beats=240 payloads=48 eops=192 empty_eops=192 debug_ts=48 debug_burst=48 ts_delta=48 dual_path_pairs=48 traces=48`
+    - the final ordered documented-case rerun passes with `FULL_EXPLICIT_333_RERUN_PASS cases=333`
+    - the hard Questa static screen passes for `mts_processor.vhd` using `syn/quartus/mts_processor_static.f`
+  - potential_hazard:
+    - fixed for the current single-clock run-control agent and illegal-word recovery contract; broader system policy for illegal control injection remains covered by the remaining ERROR/NEG plan work
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - the artifact audit passed with `explicit_cases=333 missing_artifacts=0 failed_or_incomplete_logs=0`
+  - the source-homogeneous explicit-only coverage merge reported DUT statement `97.04%`, branch `95.49%`, condition `83.92%`, expression `100.00%`, FSM state `100.00%`, FSM transition `77.77%`, and toggle `55.65%`
+  - `rtl_style_check.py mts_processor.vhd` still fails on the legacy style baseline with 968 issues
+- Commit:
+  - `pending` (`[PATCH] Recover MTSP illegal control state`)
 
 ### BUG-011-R: CSR soft reset left timing datapath and debug history live
 
