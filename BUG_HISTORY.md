@@ -44,7 +44,7 @@ Historical formal note:
 | [BUG-007-R](#bug-007-r-csr-mode-fields-were-live-for-in-flight-hits) | R | soft error | `corner-only (CSR mode toggle while datapath pipeline is active)` | fixed | `CORNER_MTS_057_toggle_derive_tot_between_hits`, `CORNER_MTS_058_toggle_delay_field_between_hits` | `1e0d0cb` | CSR mode writes could reinterpret hits already accepted into the pipeline. |
 | [BUG-008-R](#bug-008-r-bypass-lapse-was-live-for-in-flight-hits) | R | soft error | `corner-only (CSR bypass toggle while datapath pipeline is active)` | fixed | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | `6f4bf95` | A CSR write to `bypass_lapse` could reinterpret the divider numerator source for a hit already accepted into the pipeline. |
 | [BUG-009-H](#bug-009-h-hit0-monitor-sampled-after-one-cycle-valid-deassert) | H | non-datapath-refactor | `directed-only (adjacent accepted hit0 visibility)` | fixed | `CORNER_MTS_039_bypass_toggle_after_hit_accept` | `6f4bf95` | The hit0 monitor could miss a one-cycle accepted beat, weakening input-analysis-port evidence for dual normal/debug checks. |
-| [BUG-010-H](#bug-010-h-profile-helper-forced-zero-delay-error-on-valid-route-jump) | H | non-datapath-refactor | `directed-only (profile route-jump delay sanity)` | fixed | `STRESS_MTS_021_round_robin_enabled_channels` | `pending current checkpoint` | Profile helper forced zero delay-error even when normal output and debug math correctly agreed on a negative-delta route jump. |
+| [BUG-010-H](#bug-010-h-profile-helper-forced-zero-delay-error-on-valid-route-jump) | H | non-datapath-refactor | `directed-only (profile route-jump delay sanity)` | fixed | `STRESS_MTS_021_round_robin_enabled_channels` | `39fa9c0` | Profile helper forced zero delay-error even when normal output and debug math correctly agreed on a negative-delta route jump. |
 
 ## 2026-05-10
 
@@ -78,7 +78,7 @@ Historical formal note:
   - the artifact audit passed with `explicit_cases=293 missing_artifacts=0`
   - the explicit-only coverage merge reported DUT statement `95.81%`, branch `94.60%`, condition `79.79%`, expression `100.00%`, FSM state `100.00%`, FSM transition `77.77%`, and toggle `53.23%`
 - Commit:
-  - pending current checkpoint
+  - `39fa9c0` (`[PATCH] Add MTSP high-variance stress cases`)
 
 ### BUG-009-H: hit0 monitor sampled after one-cycle valid deassert
 
