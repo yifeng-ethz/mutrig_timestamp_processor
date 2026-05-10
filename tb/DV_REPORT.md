@@ -23,23 +23,24 @@ This page is the chief-architect dashboard. All per-case evidence lives under [`
 
 | field | claimed value |
 |---|---|
-| DUT_IMPL | `VHDL rtl` |
-| RTL_VARIANT | `after` |
+| ALL_BUCKETS_FRAME_RUNS | `1/1` |
+| BUCKET_FRAME_RUNS | `4/4` |
 | DEBUG_PATH_REQUIRED | `1` |
-| RESET_EXPECTED_LATENCY | `2000` |
-| EXPLICIT_CASES | `521` |
 | DEBUG_REQUIRED_CASES | `521/521` |
 | DUAL_PATH_PAIRS | `19323` |
+| DUT_IMPL | `VHDL rtl` |
+| EVIDENCE_GIT_BRANCH | `master` |
+| EVIDENCE_GIT_COMMIT | `d276eb7` |
+| EXPLICIT_CASES | `521` |
+| RESET_EXPECTED_LATENCY | `2000` |
+| RTL_VARIANT | `after` |
 | SCOREBOARD_TRACES | `19323` |
 | TRACE_DETAIL_LINES | `19195` |
-| EVIDENCE_GIT_BRANCH | `master` |
-| EVIDENCE_GIT_COMMIT | `92c82da` |
 | probe_only_exclusions |  |
 
 ## Non-Claims
 
-- continuous-frame bucket_frame/all_buckets_frame no-restart baselines are not claimed by this isolated-artifact refresh.
-- structural coverage below target remains an open coverage-closure item; this report claims 521/521 stimulus evidence and normal/debug scoreboard agreement.
+- structural coverage below target remains an open coverage-closure item; this report claims 521/521 stimulus evidence, normal/debug scoreboard agreement, and mandatory continuous-frame baselines.
 
 ## Bucket Summary
 
@@ -76,6 +77,11 @@ This page is the chief-architect dashboard. All per-case evidence lives under [`
 | status | run_id | kind | build | seq | txns | cross_pct |
 |:---:|---|---|---|---|---:|---:|
 | ✅ | [`mtsp_explicit_521_ordered_isolated_merge`](REPORT/cross/mtsp_explicit_521_ordered_isolated_merge.md) | ordered_isolated_merge | after | mtsp_doc_case_test plus MTSP_CASE_ID for all explicit handlers | 29214 | 100.0 |
+| ✅ | [`mtsp_bucket_frame_BASIC`](REPORT/cross/mtsp_bucket_frame_BASIC.md) | bucket_frame | after | mtsp_continuous_frame_test ordered checkpoint stream | 130 | 100.0 |
+| ✅ | [`mtsp_bucket_frame_EDGE`](REPORT/cross/mtsp_bucket_frame_EDGE.md) | bucket_frame | after | mtsp_continuous_frame_test ordered checkpoint stream | 131 | 100.0 |
+| ✅ | [`mtsp_bucket_frame_PROF`](REPORT/cross/mtsp_bucket_frame_PROF.md) | bucket_frame | after | mtsp_continuous_frame_test ordered checkpoint stream | 130 | 100.0 |
+| ✅ | [`mtsp_bucket_frame_ERROR`](REPORT/cross/mtsp_bucket_frame_ERROR.md) | bucket_frame | after | mtsp_continuous_frame_test ordered checkpoint stream | 130 | 100.0 |
+| ✅ | [`mtsp_all_buckets_frame`](REPORT/cross/mtsp_all_buckets_frame.md) | all_buckets_frame | after | mtsp_continuous_frame_test ordered checkpoint stream | 521 | 100.0 |
 
 ## Index
 

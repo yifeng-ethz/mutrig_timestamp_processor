@@ -38,5 +38,10 @@ This page is the coverage summary only. Per-case incremental coverage lives unde
 | status | run_id | kind | build | bucket | case_count | stmt | branch | toggle | functional_cross_pct | txns |
 |:---:|---|---|---|---|---:|---|---|---|---:|---:|
 | ✅ | [`mtsp_explicit_521_ordered_isolated_merge`](REPORT/cross/mtsp_explicit_521_ordered_isolated_merge.md) | ordered_isolated_merge | after | - | 521 | 97.61 | 95.36 | 55.93 | 100.0 | 29214 |
+| ✅ | [`mtsp_bucket_frame_BASIC`](REPORT/cross/mtsp_bucket_frame_BASIC.md) | bucket_frame | after | BASIC | 130 | 84.62 | 73.82 | 27.25 | 100.0 | 130 |
+| ✅ | [`mtsp_bucket_frame_EDGE`](REPORT/cross/mtsp_bucket_frame_EDGE.md) | bucket_frame | after | EDGE | 131 | 84.62 | 73.82 | 27.25 | 100.0 | 131 |
+| ✅ | [`mtsp_bucket_frame_PROF`](REPORT/cross/mtsp_bucket_frame_PROF.md) | bucket_frame | after | PROF | 130 | 84.62 | 73.82 | 27.25 | 100.0 | 130 |
+| ✅ | [`mtsp_bucket_frame_ERROR`](REPORT/cross/mtsp_bucket_frame_ERROR.md) | bucket_frame | after | ERROR | 130 | 84.62 | 73.82 | 27.25 | 100.0 | 130 |
+| ✅ | [`mtsp_all_buckets_frame`](REPORT/cross/mtsp_all_buckets_frame.md) | all_buckets_frame | after | - | 521 | 85.92 | 76.17 | 30.90 | 100.0 | 521 |
 
-_Regenerate with `python3 tb/scripts/dv_report_gen_local.py --tb tb`._
+_Regenerate with `python3 ~/.codex/skills/dv-workflow/scripts/dv_report_gen.py <tb>`._

@@ -23,6 +23,11 @@
 | status | run_id | kind | build | bucket | seq | txns | cross_pct |
 |:---:|---|---|---|---|---|---:|---:|
 | ✅ | [`mtsp_explicit_521_ordered_isolated_merge`](cross/mtsp_explicit_521_ordered_isolated_merge.md) | ordered_isolated_merge | after | - | mtsp_doc_case_test plus MTSP_CASE_ID for all explicit handlers | 29214 | 100.0 |
+| ✅ | [`mtsp_bucket_frame_BASIC`](cross/mtsp_bucket_frame_BASIC.md) | bucket_frame | after | BASIC | mtsp_continuous_frame_test ordered checkpoint stream | 130 | 100.0 |
+| ✅ | [`mtsp_bucket_frame_EDGE`](cross/mtsp_bucket_frame_EDGE.md) | bucket_frame | after | EDGE | mtsp_continuous_frame_test ordered checkpoint stream | 131 | 100.0 |
+| ✅ | [`mtsp_bucket_frame_PROF`](cross/mtsp_bucket_frame_PROF.md) | bucket_frame | after | PROF | mtsp_continuous_frame_test ordered checkpoint stream | 130 | 100.0 |
+| ✅ | [`mtsp_bucket_frame_ERROR`](cross/mtsp_bucket_frame_ERROR.md) | bucket_frame | after | ERROR | mtsp_continuous_frame_test ordered checkpoint stream | 130 | 100.0 |
+| ✅ | [`mtsp_all_buckets_frame`](cross/mtsp_all_buckets_frame.md) | all_buckets_frame | after | - | mtsp_continuous_frame_test ordered checkpoint stream | 521 | 100.0 |
 
 ## Random long-run cases
 

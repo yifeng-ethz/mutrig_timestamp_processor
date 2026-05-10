@@ -27,23 +27,23 @@
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
 | ℹ️ | log | [`uvm/logs/NEG_MTS_130_full_run_sequence_upgrade_suite_after_s1.log`](../../uvm/logs/NEG_MTS_130_full_run_sequence_upgrade_suite_after_s1.log) |
 | ℹ️ | ucdb | [`uvm/cov_after/NEG_MTS_130_full_run_sequence_upgrade_suite_s1.ucdb`](../../uvm/cov_after/NEG_MTS_130_full_run_sequence_upgrade_suite_s1.ucdb) |
-| ℹ️ | log.csr | `164` |
-| ℹ️ | log.inputs | `120` |
 | ℹ️ | log.beats | `236` |
-| ℹ️ | log.payloads | `120` |
-| ℹ️ | log.eops | `116` |
-| ℹ️ | log.empty_eops | `116` |
-| ℹ️ | log.debug_ts | `120` |
+| ℹ️ | log.csr | `164` |
 | ℹ️ | log.debug_burst | `83` |
-| ℹ️ | log.ts_delta | `83` |
-| ℹ️ | log.ready_x | `0` |
-| ℹ️ | log.dual_path_pairs | `120` |
-| ℹ️ | log.traces | `120` |
 | ℹ️ | log.debug_path_required | `1` |
-| ℹ️ | log.trace_detail_lines | `120` |
-| ℹ️ | log.math_error_traces | `55` |
+| ℹ️ | log.debug_ts | `120` |
+| ℹ️ | log.dual_path_pairs | `120` |
+| ℹ️ | log.empty_eops | `116` |
+| ℹ️ | log.eops | `116` |
 | ℹ️ | log.hit_error_traces | `55` |
+| ℹ️ | log.inputs | `120` |
+| ℹ️ | log.math_error_traces | `55` |
+| ℹ️ | log.payloads | `120` |
+| ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
+| ℹ️ | log.trace_detail_lines | `120` |
+| ℹ️ | log.traces | `120` |
+| ℹ️ | log.ts_delta | `83` |
 
 ## Coverage
 

@@ -728,7 +728,7 @@
                                        output int unsigned expected_tcc8n,
                                        output int unsigned expected_tcc1n6,
                                        output int unsigned expected_et1n6,
-                                       string ctx);
+                                       input string ctx);
       case (kind)
         SMOKE_VEC_POSITIVE: begin
           tcc_raw_value   = 15'h0003;
@@ -13643,6 +13643,376 @@
     task run_phase(uvm_phase phase);
       phase.raise_objection(this);
       run_case_by_id();
+      phase.drop_objection(this);
+    endtask
+  endclass
+
+  class mtsp_continuous_frame_test extends mtsp_base_test;
+    `uvm_component_utils(mtsp_continuous_frame_test)
+
+    string frame_kind;
+    string frame_bucket;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+      frame_kind   = "bucket_frame";
+      frame_bucket = "BASIC";
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      void'($value$plusargs("MTSP_FRAME_KIND=%s", frame_kind));
+      void'($value$plusargs("MTSP_FRAME_BUCKET=%s", frame_bucket));
+    endfunction
+
+    function automatic int unsigned bucket_case_count(string bucket);
+      if (bucket == "BASIC")
+        return 130;
+      if (bucket == "EDGE")
+        return 131;
+      if (bucket == "PROF")
+        return 130;
+      if (bucket == "ERROR")
+        return 130;
+      return 0;
+    endfunction
+
+    task automatic wait_for_input_count(int unsigned expected_count,
+                                        int unsigned max_cycles,
+                                        string ctx);
+      repeat (max_cycles) begin
+        if (m_env.m_scb.hit0_history.size() >= expected_count)
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+      `uvm_fatal("MTSP_FRAME",
+        $sformatf("%s timed out waiting for input_count=%0d, got %0d",
+          ctx, expected_count, m_env.m_scb.hit0_history.size()))
+    endtask
+
+    task automatic wait_for_trace_count(int unsigned expected_count,
+                                        int unsigned max_cycles,
+                                        string ctx);
+      repeat (max_cycles) begin
+        if (m_env.m_scb.trace_history.size() >= expected_count)
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+      `uvm_fatal("MTSP_FRAME",
+        $sformatf("%s timed out waiting for trace_count=%0d, got %0d",
+          ctx, expected_count, m_env.m_scb.trace_history.size()))
+    endtask
+
+    task automatic wait_for_debug_ts_count(int unsigned expected_count,
+                                           int unsigned max_cycles,
+                                           string ctx);
+      repeat (max_cycles) begin
+        if (m_env.m_scb.debug_ts_count >= expected_count)
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+      `uvm_fatal("MTSP_FRAME",
+        $sformatf("%s timed out waiting for debug_ts_count=%0d, got %0d",
+          ctx, expected_count, m_env.m_scb.debug_ts_count))
+    endtask
+
+    task automatic wait_for_debug_burst_count(int unsigned expected_count,
+                                              int unsigned max_cycles,
+                                              string ctx);
+      repeat (max_cycles) begin
+        if (m_env.m_scb.debug_burst_count >= expected_count)
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+      `uvm_fatal("MTSP_FRAME",
+        $sformatf("%s timed out waiting for debug_burst_count=%0d, got %0d",
+          ctx, expected_count, m_env.m_scb.debug_burst_count))
+    endtask
+
+    task automatic wait_for_ts_delta_count(int unsigned expected_count,
+                                           int unsigned max_cycles,
+                                           string ctx);
+      repeat (max_cycles) begin
+        if (m_env.m_scb.ts_delta_count >= expected_count)
+          return;
+        @(posedge ctrl_vif.clk);
+      end
+      `uvm_fatal("MTSP_FRAME",
+        $sformatf("%s timed out waiting for ts_delta_count=%0d, got %0d",
+          ctx, expected_count, m_env.m_scb.ts_delta_count))
+    endtask
+
+    task automatic frame_vector_params(int unsigned kind,
+                                       output int unsigned tcc_raw_value,
+                                       output int unsigned ecc_raw_value,
+                                       output bit eflag_value,
+                                       output int unsigned expected_tcc8n,
+                                       output int unsigned expected_tcc1n6,
+                                       output int unsigned expected_et1n6);
+      case (kind % 4)
+        0: begin
+          tcc_raw_value   = 15'h0003;
+          ecc_raw_value   = 15'h000F;
+          eflag_value     = 1'b1;
+          expected_tcc8n  = 0;
+          expected_tcc1n6 = 1;
+          expected_et1n6  = 2;
+        end
+        1: begin
+          tcc_raw_value   = 15'h0003;
+          ecc_raw_value   = 15'h000F;
+          eflag_value     = 1'b0;
+          expected_tcc8n  = 0;
+          expected_tcc1n6 = 1;
+          expected_et1n6  = 0;
+        end
+        2: begin
+          tcc_raw_value   = 15'h000F;
+          ecc_raw_value   = 15'h0003;
+          eflag_value     = 1'b1;
+          expected_tcc8n  = 0;
+          expected_tcc1n6 = 3;
+          expected_et1n6  = 0;
+        end
+        default: begin
+          tcc_raw_value   = 15'h0001;
+          ecc_raw_value   = 15'h0000;
+          eflag_value     = 1'b1;
+          expected_tcc8n  = 0;
+          expected_tcc1n6 = 0;
+          expected_et1n6  = 511;
+        end
+      endcase
+    endtask
+
+    task automatic write_frame_mode();
+      // ToT derivation, T-path delay checking, and bypass mode keep one
+      // compact payload checkpoint mathematically self-contained.
+      csr_write(3'd0, 32'h6000_0009);
+      wait_cycles(2);
+    endtask
+
+    task automatic expect_frame_payload_at(int unsigned history_idx,
+                                           int unsigned asic_value,
+                                           int unsigned channel_value,
+                                           int unsigned tfine_value,
+                                           int unsigned tcc8n_value,
+                                           int unsigned tcc1n6_value,
+                                           int unsigned et1n6_value,
+                                           string ctx);
+      mtsp_hit1_obs_item hit_obs;
+
+      if (history_idx >= m_env.m_scb.history.size())
+        `uvm_fatal("MTSP_FRAME",
+          $sformatf("%s missing output history index %0d size=%0d",
+            ctx, history_idx, m_env.m_scb.history.size()))
+      hit_obs = m_env.m_scb.history[history_idx];
+      if (hit_obs.empty)
+        `uvm_fatal("MTSP_FRAME", $sformatf("%s expected a payload beat", ctx))
+      if (hit_obs.data[38:35] !== asic_value[3:0] ||
+          hit_obs.data[34:30] !== channel_value[4:0] ||
+          hit_obs.data[29:17] !== tcc8n_value[12:0] ||
+          hit_obs.data[16:14] !== tcc1n6_value[2:0] ||
+          hit_obs.data[13:9]  !== tfine_value[4:0] ||
+          hit_obs.data[8:0]   !== et1n6_value[8:0])
+        `uvm_fatal("MTSP_FRAME",
+          $sformatf("%s payload mismatch data=0x%010h asic=%0d channel=%0d tfine=%0d tcc8n=%0d tcc1n6=%0d et=%0d",
+            ctx, hit_obs.data, asic_value[3:0], channel_value[4:0],
+            tfine_value[4:0], tcc8n_value[12:0], tcc1n6_value[2:0],
+            et1n6_value[8:0]))
+    endtask
+
+    task automatic expect_frame_trace_at(int unsigned trace_idx, string ctx);
+      mtsp_hit_trace_item trace;
+
+      if (trace_idx >= m_env.m_scb.trace_history.size())
+        `uvm_fatal("MTSP_FRAME",
+          $sformatf("%s missing trace index %0d size=%0d",
+            ctx, trace_idx, m_env.m_scb.trace_history.size()))
+      trace = m_env.m_scb.trace_history[trace_idx];
+      if (trace.hit1_time_ps != trace.debug_time_ps)
+        `uvm_fatal("MTSP_FRAME",
+          $sformatf("%s normal/debug trace misaligned hit=%0t debug=%0t",
+            ctx, trace.hit1_time_ps, trace.debug_time_ps))
+      if (trace.math_error !== trace.hit1_error)
+        `uvm_fatal("MTSP_FRAME",
+          $sformatf("%s math/hit error mismatch debug_delta=%0d latency=%0d math=%0b hit=%0b",
+            ctx, trace.debug_delta, trace.expected_latency,
+            trace.math_error, trace.hit1_error))
+      `uvm_info("MTSP_TRACE",
+        $sformatf("%s trace seq=%0d hit_time=%0t debug_time=%0t route=%0d debug_delta=%0d expected_latency=%0d math_error=%0b hit_error=%0b data=0x%010h",
+          ctx, trace.seq_id, trace.hit1_time_ps, trace.debug_time_ps,
+          trace.channel, trace.debug_delta, trace.expected_latency,
+          trace.math_error, trace.hit1_error, trace.data),
+        UVM_LOW)
+    endtask
+
+    task automatic drive_frame_checkpoint(string bucket,
+                                          int unsigned bucket_idx,
+                                          int unsigned global_idx);
+      int unsigned tcc_raw_value;
+      int unsigned ecc_raw_value;
+      int unsigned expected_tcc8n;
+      int unsigned expected_tcc1n6;
+      int unsigned expected_et1n6;
+      int unsigned asic_value;
+      int unsigned channel_value;
+      int unsigned tfine_value;
+      int unsigned base_history;
+      int unsigned base_inputs;
+      int unsigned base_beats;
+      int unsigned base_traces;
+      int unsigned base_debug_ts;
+      int unsigned base_debug_burst;
+      int unsigned base_ts_delta;
+      int unsigned base_dual_pairs;
+      bit          eflag_value;
+      bit          sop_value;
+      bit          eop_value;
+      string       checkpoint_id;
+      string       checkpoint_prefix;
+
+      frame_vector_params(global_idx, tcc_raw_value, ecc_raw_value,
+        eflag_value, expected_tcc8n, expected_tcc1n6, expected_et1n6);
+      if (bucket == "BASIC")
+        checkpoint_prefix = "B";
+      else if (bucket == "EDGE")
+        checkpoint_prefix = "E";
+      else if (bucket == "PROF")
+        checkpoint_prefix = "P";
+      else if (bucket == "ERROR")
+        checkpoint_prefix = "X";
+      else
+        checkpoint_prefix = "U";
+      if (bucket_idx < 10)
+        $sformat(checkpoint_id, "%s00%0d", checkpoint_prefix, bucket_idx);
+      else if (bucket_idx < 100)
+        $sformat(checkpoint_id, "%s0%0d", checkpoint_prefix, bucket_idx);
+      else
+        $sformat(checkpoint_id, "%s%0d", checkpoint_prefix, bucket_idx);
+      asic_value    = global_idx % 4;
+      channel_value = global_idx % 32;
+      tfine_value   = (global_idx * 3) % 32;
+      sop_value     = (global_idx == 0) || ((global_idx % 32) == 0);
+      eop_value     = ((global_idx % 32) == 31);
+
+      base_history     = m_env.m_scb.history.size();
+      base_inputs      = m_env.m_scb.hit0_history.size();
+      base_beats       = m_env.m_scb.beat_count;
+      base_traces      = m_env.m_scb.trace_history.size();
+      base_debug_ts    = m_env.m_scb.debug_ts_count;
+      base_debug_burst = m_env.m_scb.debug_burst_count;
+      base_ts_delta    = m_env.m_scb.ts_delta_count;
+      base_dual_pairs  = m_env.m_scb.dual_path_pair_count;
+
+      hit1_drv_vif.ready <= ((global_idx % 7) == 0) ? 1'b0 : 1'b1;
+      send_hit_beat(asic_value, channel_value, tcc_raw_value, ecc_raw_value,
+        eflag_value, sop_value, eop_value, '0, 1'b1, tfine_value);
+      wait_for_input_count(base_inputs + 1, 256, checkpoint_id);
+      wait_for_beat_count(base_beats + 1, 512, checkpoint_id);
+      wait_for_trace_count(base_traces + 1, 512, checkpoint_id);
+      wait_for_debug_ts_count(base_debug_ts + 1, 256, checkpoint_id);
+      wait_for_debug_burst_count(base_debug_burst + 1, 256, checkpoint_id);
+      wait_for_ts_delta_count(base_ts_delta + 1, 256, checkpoint_id);
+      if (m_env.m_scb.dual_path_pair_count != base_dual_pairs + 1)
+        `uvm_fatal("MTSP_FRAME",
+          $sformatf("%s expected one new dual-path pair, got %0d from base %0d",
+            checkpoint_id, m_env.m_scb.dual_path_pair_count - base_dual_pairs,
+            base_dual_pairs))
+
+      expect_frame_payload_at(base_history, asic_value, channel_value,
+        tfine_value, expected_tcc8n, expected_tcc1n6, expected_et1n6,
+        checkpoint_id);
+      expect_frame_trace_at(base_traces, checkpoint_id);
+      `uvm_info("MTSP_FRAME",
+        $sformatf("checkpoint kind=%s bucket=%s case_token=%s index=%0d global_index=%0d inputs=%0d payloads=%0d dual_path_pairs=%0d traces=%0d ready=%0b sop=%0b eop=%0b",
+          frame_kind, bucket, checkpoint_id, bucket_idx, global_idx,
+          m_env.m_scb.hit0_history.size(), m_env.m_scb.payload_beat_count,
+          m_env.m_scb.dual_path_pair_count, m_env.m_scb.trace_history.size(),
+          hit1_drv_vif.ready, sop_value, eop_value),
+        UVM_LOW)
+      hit1_drv_vif.ready <= 1'b1;
+      wait_cycles(1);
+    endtask
+
+    task automatic run_one_bucket_frame(string bucket,
+                                        inout int unsigned global_idx,
+                                        output int unsigned checkpoints);
+      int unsigned count;
+
+      count = bucket_case_count(bucket);
+      if (count == 0)
+        `uvm_fatal("MTSP_FRAME", $sformatf("Unknown frame bucket '%s'", bucket))
+      checkpoints = 0;
+      `uvm_info("MTSP_FRAME",
+        $sformatf("bucket_start kind=%s bucket=%s planned=%0d global_start=%0d",
+          frame_kind, bucket, count, global_idx),
+        UVM_LOW)
+      for (int unsigned idx = 1; idx <= count; idx++) begin
+        drive_frame_checkpoint(bucket, idx, global_idx);
+        global_idx++;
+        checkpoints++;
+      end
+      `uvm_info("MTSP_FRAME",
+        $sformatf("bucket_done kind=%s bucket=%s checkpoints=%0d global_next=%0d",
+          frame_kind, bucket, checkpoints, global_idx),
+        UVM_LOW)
+    endtask
+
+    task automatic close_continuous_frame(int unsigned expected_payloads);
+      int unsigned base_empty_eops;
+
+      base_empty_eops = m_env.m_scb.empty_eop_count;
+      pulse_ctrl(CTRL_TERMINATING, "FRAME_TERMINATING");
+      send_endofrun_pulse();
+      wait_for_ctrl_ready_low(4, "continuous frame terminate ready low");
+      wait_for_empty_eop_count(base_empty_eops + 4, 256,
+        "continuous frame close markers");
+      wait_for_ctrl_ready_high(256, "continuous frame terminate ready high");
+      if (m_env.m_scb.payload_beat_count < expected_payloads)
+        `uvm_fatal("MTSP_FRAME",
+          $sformatf("continuous frame expected at least %0d payloads got %0d",
+            expected_payloads, m_env.m_scb.payload_beat_count))
+      send_ctrl(CTRL_IDLE, "FRAME_IDLE");
+      wait_cycles(4);
+    endtask
+
+    task run_phase(uvm_phase phase);
+      int unsigned global_idx;
+      int unsigned checkpoints;
+      int unsigned bucket_checkpoints;
+
+      phase.raise_objection(this);
+      wait_for_reset_release();
+      write_frame_mode();
+      run_start();
+
+      global_idx   = 0;
+      checkpoints  = 0;
+      if (frame_kind == "all_buckets_frame") begin
+        run_one_bucket_frame("BASIC", global_idx, bucket_checkpoints);
+        checkpoints += bucket_checkpoints;
+        run_one_bucket_frame("EDGE", global_idx, bucket_checkpoints);
+        checkpoints += bucket_checkpoints;
+        run_one_bucket_frame("PROF", global_idx, bucket_checkpoints);
+        checkpoints += bucket_checkpoints;
+        run_one_bucket_frame("ERROR", global_idx, bucket_checkpoints);
+        checkpoints += bucket_checkpoints;
+      end else begin
+        run_one_bucket_frame(frame_bucket, global_idx, bucket_checkpoints);
+        checkpoints += bucket_checkpoints;
+      end
+
+      close_continuous_frame(checkpoints);
+      `uvm_info("MTSP_FRAME_SUMMARY",
+        $sformatf("kind=%s bucket=%s checkpoints=%0d inputs=%0d payloads=%0d beats=%0d eops=%0d empty_eops=%0d dual_path_pairs=%0d traces=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d",
+          frame_kind, frame_bucket, checkpoints, m_env.m_scb.hit0_history.size(),
+          m_env.m_scb.payload_beat_count, m_env.m_scb.beat_count,
+          m_env.m_scb.eop_count, m_env.m_scb.empty_eop_count,
+          m_env.m_scb.dual_path_pair_count, m_env.m_scb.trace_history.size(),
+          m_env.m_scb.debug_ts_count, m_env.m_scb.debug_burst_count,
+          m_env.m_scb.ts_delta_count),
+        UVM_LOW)
       phase.drop_objection(this);
     endtask
   endclass

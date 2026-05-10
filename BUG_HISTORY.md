@@ -50,8 +50,53 @@ Historical formal note:
 | [BUG-013-H](#bug-013-h-inert-parameter-terminate-stimulus-left-input-packet-open) | H | non-datapath-refactor | `directed-only (parameter-sweep terminate stimulus)` | fixed | `STRESS_MTS_090_inert_parameter_sweep_compare` | `c2789b0` | P090 opened an input packet on one sideband channel and placed the terminal EOP on another, so the legal RTL drain held close markers off. |
 | [BUG-014-H](#bug-014-h-soft-reset-smoke-loop-checked-debug-burst-before-monitor-settled) | H | non-datapath-refactor | `directed-only (soft-reset smoke-loop debug timing)` | fixed | `STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs` | `dedab24` | P110 enforced exact debug-stream counts before bounded waits let the passive debug monitors report the final sample. |
 | [BUG-015-R](#bug-015-r-open-packet-could-block-terminal-close-markers-after-endofrun) | R | hard stuck error | `rare (routine stop while an input packet remains open or upstream EOP is missing)` | fixed | `NEG_MTS_118_missing_boundary_with_packet_open` | `a1d9155` | Stale open-packet bookkeeping could hold the terminal boundary generator busy forever after upstream end-of-run. |
+| [BUG-016-H](#bug-016-h-continuous-frame-checkpoint-token-metadata-was-cleared-by-implicit-port-direction) | H | non-datapath-refactor | `directed-only (continuous-frame reporting metadata)` | fixed | `mtsp_bucket_frame_BASIC` | `pending` | The new no-restart frame run passed datapath checks but emitted blank or malformed checkpoint tokens, weakening machine-readable cross-run traceability. |
 
 ## 2026-05-10
+
+### BUG-016-H: Continuous-frame checkpoint token metadata was cleared by implicit port direction
+
+- First seen:
+  - UVM frame run `mtsp_bucket_frame_BASIC`
+  - Initial continuous-frame bring-up after adding `mtsp_continuous_frame_test`
+- Symptom:
+  - the BASIC frame scoreboard passed payload, debug timestamp, debug burst, `ts_delta`, and normal/debug trace checks
+  - the checkpoint log first emitted `[MTSP_FRAME] checkpoint ... case_token=` with an empty token
+  - after the first helper fix, token formatting still emitted padded strings such as `B  1` instead of the canonical `B001` token required by the report parser
+- Root cause:
+  - `frame_vector_params` put a `string ctx` formal after output formals without an explicit `input` direction
+  - Questa treated the following argument context as output-like for this helper shape and cleared `checkpoint_id`, so the traceable case token was lost even while datapath math remained correct
+  - the `%03d` formatting path in this context also produced space-padded tokens, which were not acceptable as stable machine keys for `DV_CROSS.md`
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - removed the unused `string ctx` formal from the continuous-frame vector helper
+    - constructed frame checkpoint tokens explicitly as `B001`, `E001`, `P001`, and `X001` style keys
+    - restored the smoke helper signature and made its string context direction explicit as `input string ctx`
+    - hardened the report generator so malformed or missing frame tokens are detected and can be derived from bucket/index only as a defensive fallback
+  - before_fix_outcome:
+    - `mtsp_bucket_frame_BASIC` initially produced blank `case_token` fields in checkpoint lines
+    - a follow-up compile caught an overbroad helper edit, after which the smoke helper was restored with an explicit string input direction
+  - after_fix_outcome:
+    - `mtsp_bucket_frame_BASIC` passes with `checkpoints=130 malformed_tokens=0`
+    - `mtsp_bucket_frame_EDGE` passes with `checkpoints=131 malformed_tokens=0`
+    - `mtsp_bucket_frame_PROF` passes with `checkpoints=130 malformed_tokens=0`
+    - `mtsp_bucket_frame_ERROR` passes with `checkpoints=130 malformed_tokens=0`
+    - `mtsp_all_buckets_frame` passes with `checkpoints=521 malformed_tokens=0`
+  - potential_hazard:
+    - fixed for the continuous-frame metadata and report parser. Future SystemVerilog helpers that mix output formals with later string inputs should use explicit `input` directions so passive metadata cannot be cleared by formal-direction inheritance
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - `mtsp_bucket_frame_BASIC` reported `inputs=130 payloads=130 debug_ts=130 debug_burst=130 ts_delta=130 dual_path_pairs=130 traces=130`
+  - `mtsp_bucket_frame_EDGE` reported `inputs=131 payloads=131 debug_ts=131 debug_burst=131 ts_delta=131 dual_path_pairs=131 traces=131`
+  - `mtsp_bucket_frame_PROF` reported `inputs=130 payloads=130 debug_ts=130 debug_burst=130 ts_delta=130 dual_path_pairs=130 traces=130`
+  - `mtsp_bucket_frame_ERROR` reported `inputs=130 payloads=130 debug_ts=130 debug_burst=130 ts_delta=130 dual_path_pairs=130 traces=130`
+  - `mtsp_all_buckets_frame` reported `inputs=521 payloads=521 debug_ts=521 debug_burst=521 ts_delta=521 dual_path_pairs=521 traces=521`
+  - refreshed `tb/REPORT/cross/` pages now require scoreboard evidence tables for the normal payload path, debug path, and dual analysis-port trace counters
+- Commit:
+  - pending
 
 ### BUG-015-R: Open packet could block terminal close markers after endofrun
 

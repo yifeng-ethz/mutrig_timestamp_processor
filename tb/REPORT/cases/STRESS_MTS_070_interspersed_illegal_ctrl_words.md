@@ -27,23 +27,23 @@
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
 | ℹ️ | log | [`uvm/logs/STRESS_MTS_070_interspersed_illegal_ctrl_words_after_s1.log`](../../uvm/logs/STRESS_MTS_070_interspersed_illegal_ctrl_words_after_s1.log) |
 | ℹ️ | ucdb | [`uvm/cov_after/STRESS_MTS_070_interspersed_illegal_ctrl_words_s1.ucdb`](../../uvm/cov_after/STRESS_MTS_070_interspersed_illegal_ctrl_words_s1.ucdb) |
-| ℹ️ | log.csr | `292` |
-| ℹ️ | log.inputs | `48` |
 | ℹ️ | log.beats | `240` |
-| ℹ️ | log.payloads | `48` |
-| ℹ️ | log.eops | `192` |
-| ℹ️ | log.empty_eops | `192` |
-| ℹ️ | log.debug_ts | `48` |
+| ℹ️ | log.csr | `292` |
 | ℹ️ | log.debug_burst | `48` |
-| ℹ️ | log.ts_delta | `48` |
-| ℹ️ | log.ready_x | `0` |
-| ℹ️ | log.dual_path_pairs | `48` |
-| ℹ️ | log.traces | `48` |
 | ℹ️ | log.debug_path_required | `1` |
-| ℹ️ | log.trace_detail_lines | `48` |
-| ℹ️ | log.math_error_traces | `12` |
+| ℹ️ | log.debug_ts | `48` |
+| ℹ️ | log.dual_path_pairs | `48` |
+| ℹ️ | log.empty_eops | `192` |
+| ℹ️ | log.eops | `192` |
 | ℹ️ | log.hit_error_traces | `12` |
+| ℹ️ | log.inputs | `48` |
+| ℹ️ | log.math_error_traces | `12` |
+| ℹ️ | log.payloads | `48` |
+| ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
+| ℹ️ | log.trace_detail_lines | `48` |
+| ℹ️ | log.traces | `48` |
+| ℹ️ | log.ts_delta | `48` |
 
 ## Coverage
 

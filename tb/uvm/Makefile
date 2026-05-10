@@ -19,8 +19,10 @@ DPI_CPP       ?= /usr/bin/gcc
 RTL_VARIANT ?= after
 TEST        ?= COMBO_MTSP_001_terminate_contract_test
 CASE_ID     ?=
-BUCKET_FRAME_TEST ?= COMBO_MTSP_001_terminate_contract_test
-ALL_BUCKETS_FRAME_TEST ?= COMBO_MTSP_001_terminate_contract_test
+FRAME_KIND  ?= isolated
+FRAME_BUCKET ?= BASIC
+BUCKET_FRAME_TEST ?= mtsp_continuous_frame_test
+ALL_BUCKETS_FRAME_TEST ?= mtsp_continuous_frame_test
 SEED        ?= 1
 VERBOSITY   ?= UVM_MEDIUM
 TB_TOP      := tb_top
@@ -173,7 +175,8 @@ CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DV_COUNTER_SEED_ENABLE=1
 endif
 
 RTL_SRC = $(if $(filter before,$(RTL_VARIANT)),$(BUILD_DIR)/mts_processor.vhd,$(IP_SRC)/mts_processor.vhd)
-RUN_ID  = $(if $(CASE_ID),$(CASE_ID),$(TEST))
+RUN_ID_BASE = $(if $(CASE_ID),$(CASE_ID),$(TEST))
+RUN_ID ?= $(RUN_ID_BASE)
 
 UVM_SRCS = \
 	$(UVM_DIR)/mtsp_if.sv \
@@ -226,6 +229,7 @@ run_sim:
 	  -dpicpppath $(DPI_CPP) -sv_lib $(UVM_DPI_LIB) \
 	  -sv_seed $(SEED) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(if $(CASE_ID),+MTSP_CASE_ID=$(CASE_ID),) \
+	  +MTSP_FRAME_KIND=$(FRAME_KIND) +MTSP_FRAME_BUCKET=$(FRAME_BUCKET) \
 	  +MTSP_DEBUG_PATH_REQUIRED=$(DEBUG_PATH_REQUIRED) \
 	  +MTSP_EXPECTED_LATENCY_RESET=$(RESET_EXPECTED_LATENCY) \
 	  -suppress 3009 -suppress 3473 -voptargs="+acc" \
@@ -245,10 +249,14 @@ run_isolated:
 	@$(MAKE) -s run RTL_VARIANT=$(RTL_VARIANT) TEST=$(TEST) SEED=$(SEED)
 
 run_bucket_frame:
-	@$(MAKE) -s run RTL_VARIANT=$(RTL_VARIANT) TEST=$(BUCKET_FRAME_TEST) SEED=$(SEED)
+	@$(MAKE) -s run RTL_VARIANT=$(RTL_VARIANT) TEST=$(BUCKET_FRAME_TEST) \
+	  RUN_ID=mtsp_bucket_frame_$(FRAME_BUCKET) FRAME_KIND=bucket_frame \
+	  FRAME_BUCKET=$(FRAME_BUCKET) SEED=$(SEED)
 
 run_all_buckets_frame:
-	@$(MAKE) -s run RTL_VARIANT=$(RTL_VARIANT) TEST=$(ALL_BUCKETS_FRAME_TEST) SEED=$(SEED)
+	@$(MAKE) -s run RTL_VARIANT=$(RTL_VARIANT) TEST=$(ALL_BUCKETS_FRAME_TEST) \
+	  RUN_ID=mtsp_all_buckets_frame FRAME_KIND=all_buckets_frame \
+	  FRAME_BUCKET=ALL SEED=$(SEED)
 
 cov_report_case:
 	@$(VCOVER) report -details -code bcesft $(COV_DIR)/$(RUN_ID)_s$(SEED).ucdb | tee $(COV_DIR)/$(RUN_ID)_s$(SEED).txt

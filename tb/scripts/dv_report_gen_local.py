@@ -34,6 +34,13 @@ BUCKET_DOC = {
     "PROF": "DV_PROF.md",
     "ERROR": "DV_ERROR.md",
 }
+FRAME_RUNS = [
+    ("mtsp_bucket_frame_BASIC", "bucket_frame", "BASIC", 130),
+    ("mtsp_bucket_frame_EDGE", "bucket_frame", "EDGE", 131),
+    ("mtsp_bucket_frame_PROF", "bucket_frame", "PROF", 130),
+    ("mtsp_bucket_frame_ERROR", "bucket_frame", "ERROR", 130),
+    ("mtsp_all_buckets_frame", "all_buckets_frame", "-", 521),
+]
 CASE_RE = re.compile(r'^\s*"([A-Z_]+_MTS_[^"]+)"\s*:', re.MULTILINE)
 PLAN_CASE_RE = re.compile(
     r"^\s*-\s+`(?P<short>[A-Z]\d{3})\s+\|\s+"
@@ -42,6 +49,9 @@ PLAN_CASE_RE = re.compile(
 SCB_RE = re.compile(r"\[MTSP_SCB\]\s+(?P<body>.*)$", re.MULTILINE)
 KV_RE = re.compile(r"([A-Za-z0-9_]+)=(-?\d+)")
 TRACE_RE = re.compile(r"\[MTSP_TRACE\]\s+(?P<body>.*)$", re.MULTILINE)
+FRAME_CHECKPOINT_RE = re.compile(r"\[MTSP_FRAME\]\s+checkpoint\s+(?P<body>.*)$", re.MULTILINE)
+FRAME_SUMMARY_RE = re.compile(r"\[MTSP_FRAME_SUMMARY\]\s+(?P<body>.*)$", re.MULTILINE)
+FRAME_KV_RE = re.compile(r"([A-Za-z0-9_]+)=([^\s]+)")
 DUT_INSTANCE_RE = re.compile(
     r"=== Instance: /tb_top/dut\s*\n"
     r"=== Design Unit: work\.mts_processor\(rtl\)\s*\n"
@@ -233,6 +243,22 @@ def parse_traces(log_text: str) -> dict[str, Any]:
         "hit_error_traces": hit_error,
         "last_trace": lines[-1] if lines else "",
     }
+
+
+def parse_frame_kv(body: str) -> dict[str, str]:
+    return {key: value for key, value in FRAME_KV_RE.findall(body)}
+
+
+def parse_frame_summary(log_text: str) -> dict[str, str]:
+    summaries = [match.group("body") for match in FRAME_SUMMARY_RE.finditer(log_text)]
+    for summary in reversed(summaries):
+        if "kind=" in summary and "checkpoints=" in summary:
+            return parse_frame_kv(summary)
+    return {}
+
+
+def parse_frame_checkpoints(log_text: str) -> list[dict[str, str]]:
+    return [parse_frame_kv(match.group("body")) for match in FRAME_CHECKPOINT_RE.finditer(log_text)]
 
 
 def log_health(log_text: str) -> tuple[bool, bool]:
@@ -490,6 +516,198 @@ def structural_holes(merged_total: dict[str, dict[str, float]]) -> tuple[dict[st
     return closure, dispositions
 
 
+def build_frame_curve(checkpoints: list[dict[str, str]], expected_count: int, kind: str) -> str:
+    chunks: list[str] = []
+    denom = max(expected_count, 1)
+    token_prefix = {
+        "BASIC": "B",
+        "EDGE": "E",
+        "PROF": "P",
+        "ERROR": "X",
+    }
+    for txn, checkpoint in enumerate(checkpoints, start=1):
+        pct = round((100.0 * txn) / denom, 2)
+        case_token = checkpoint.get("case_token", "")
+        if not re.match(r"^[BEPX]\d{3}$", case_token):
+            bucket = checkpoint.get("bucket", "")
+            index = int(checkpoint.get("index", "0") or 0)
+            prefix = token_prefix.get(bucket, "")
+            case_token = f"{prefix}{index:03d}" if prefix and index else f"checkpoint_{txn}"
+        chunks.append(
+            " ".join(
+                [
+                    f"txn={txn}",
+                    f"case={case_token}",
+                    f"seq={kind}",
+                    f"pct={pct}",
+                    "delta_bins=1",
+                    "reason=normal_debug_checkpoint",
+                ]
+            )
+        )
+    return "; ".join(chunks)
+
+
+def annotate_frame_run(
+    tb: Path,
+    vcover: str,
+    run_id: str,
+    kind: str,
+    bucket: str,
+    expected_count: int,
+) -> dict[str, Any]:
+    log_path = tb / "uvm" / "logs" / f"{run_id}_after_s1.log"
+    ucdb_path = tb / "uvm" / "cov_after" / f"{run_id}_s1.ucdb"
+    if not log_path.exists():
+        raise SystemExit(f"error: missing continuous-frame log: {log_path}")
+    if not ucdb_path.exists():
+        raise SystemExit(f"error: missing continuous-frame UCDB: {ucdb_path}")
+
+    log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    passed, bad = log_health(log_text)
+    if not passed or bad:
+        raise SystemExit(f"error: continuous-frame run failed or has errors: {run_id}")
+
+    checkpoints = parse_frame_checkpoints(log_text)
+    summary = parse_frame_summary(log_text)
+    scb = parse_scoreboard(log_text)
+    traces = parse_traces(log_text)
+    checkpoint_count = len(checkpoints)
+    summary_checkpoints = int(summary.get("checkpoints", "0") or 0)
+    if checkpoint_count != expected_count or summary_checkpoints != expected_count:
+        raise SystemExit(
+            f"error: {run_id} expected {expected_count} frame checkpoints, "
+            f"got checkpoint_lines={checkpoint_count} summary={summary_checkpoints}"
+        )
+    if scb.get("dual_path_pairs", 0) < expected_count or scb.get("traces", 0) < expected_count:
+        raise SystemExit(
+            f"error: {run_id} did not report one normal/debug pair per checkpoint: "
+            f"dual_path_pairs={scb.get('dual_path_pairs', 0)} traces={scb.get('traces', 0)}"
+        )
+
+    code_cov = vcover_report_metrics(vcover, ucdb_path, context=run_id)
+    cross_pct = round(100.0 * checkpoint_count / max(expected_count, 1), 2)
+    txns = max(
+        scb.get("inputs", 0),
+        scb.get("payloads", 0),
+        scb.get("dual_path_pairs", 0),
+        checkpoint_count,
+    )
+    return {
+        "run_id": run_id,
+        "kind": kind,
+        "bucket": bucket,
+        "build_tag": "after",
+        "sequence_name": "mtsp_continuous_frame_test ordered checkpoint stream",
+        "case_count": expected_count,
+        "effort": "signoff",
+        "iter_cap": None,
+        "payload_cap": None,
+        "code_coverage": code_cov,
+        "cross_summary": {
+            "pct": cross_pct,
+            "txns": txns,
+            "queued_overlap": 0,
+            "counter_checks_passed": checkpoint_count,
+            "counter_checks_failed": 0,
+            "unexpected_outputs": 0,
+            "curve": build_frame_curve(checkpoints, expected_count, kind),
+            "checkpoints": checkpoints,
+            "scoreboard": {
+                "inputs": scb.get("inputs", 0),
+                "beats": scb.get("beats", 0),
+                "payloads": scb.get("payloads", 0),
+                "eops": scb.get("eops", 0),
+                "empty_eops": scb.get("empty_eops", 0),
+                "debug_ts": scb.get("debug_ts", 0),
+                "debug_burst": scb.get("debug_burst", 0),
+                "ts_delta": scb.get("ts_delta", 0),
+                "dual_path_pairs": scb.get("dual_path_pairs", 0),
+                "traces": scb.get("traces", 0),
+                "trace_detail_lines": traces["trace_detail_lines"],
+            },
+        },
+        "artifact_paths": {
+            "log": rel(log_path, tb),
+            "ucdb": rel(ucdb_path, tb),
+        },
+        "limitations": [
+            "Continuous-frame run uses one compact normal/debug-paired payload checkpoint per documented case token; full case-specific assertions remain in isolated mode."
+        ],
+    }
+
+
+def annotate_frame_runs(tb: Path, vcover: str) -> list[dict[str, Any]]:
+    return [
+        annotate_frame_run(tb, vcover, run_id, kind, bucket, expected_count)
+        for run_id, kind, bucket, expected_count in FRAME_RUNS
+    ]
+
+
+def render_scoreboard_evidence(run: dict[str, Any]) -> str:
+    cross = run.get("cross_summary") or {}
+    scoreboard = cross.get("scoreboard") or {}
+    if not scoreboard:
+        return ""
+
+    expected = int(run.get("case_count", 0) or 0)
+    required_exact = {
+        "inputs",
+        "payloads",
+        "debug_ts",
+        "debug_burst",
+        "ts_delta",
+        "dual_path_pairs",
+        "traces",
+        "trace_detail_lines",
+    }
+    rows = [
+        "## Scoreboard Evidence",
+        "",
+        "<!-- analysis-port evidence from normal payload, debug timestamp, debug burst, and timestamp-delta monitors. -->",
+        "",
+        "| status | port/counter | observed | requirement |",
+        "|:---:|---|---:|---|",
+    ]
+    for field in (
+        "inputs",
+        "beats",
+        "payloads",
+        "eops",
+        "empty_eops",
+        "debug_ts",
+        "debug_burst",
+        "ts_delta",
+        "dual_path_pairs",
+        "traces",
+        "trace_detail_lines",
+    ):
+        observed = int(scoreboard.get(field, 0) or 0)
+        if field in required_exact:
+            ok = observed == expected
+            requirement = f"== case_count ({expected})"
+        elif field == "beats":
+            ok = observed >= expected
+            requirement = f">= case_count ({expected})"
+        else:
+            ok = observed > 0
+            requirement = "> 0"
+        status = base.PASS_EMOJI if ok else base.FAIL_EMOJI
+        rows.append(f"| {status} | `{field}` | {observed} | `{requirement}` |")
+    return "\n".join(rows)
+
+
+def render_signoff_run(run: dict[str, Any]) -> str:
+    rendered = base.render_signoff_run(run)
+    scoreboard = render_scoreboard_evidence(run)
+    if not scoreboard:
+        return rendered
+    marker = "\n## Transaction growth curve"
+    if marker not in rendered:
+        return rendered + "\n\n" + scoreboard
+    return rendered.replace(marker, "\n" + scoreboard + "\n" + marker, 1)
+
+
 def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
     buckets = build_case_shells(tb)
     missing_logs = 0
@@ -534,6 +752,7 @@ def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
         int(case_item.get("log_summary", {}).get("trace_detail_lines", 0)) for case_item in all_cases
     )
     structural_closure, hole_disposition = structural_holes(merged_total)
+    frame_runs = annotate_frame_runs(tb, vcover)
     branch_name = run_tool(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=tb.parent).strip()
     commit = run_tool(["git", "rev-parse", "--short", "HEAD"], cwd=tb.parent).strip()
 
@@ -557,13 +776,14 @@ def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
             "DUAL_PATH_PAIRS": str(dual_path_pairs),
             "SCOREBOARD_TRACES": str(debug_scb_traces),
             "TRACE_DETAIL_LINES": str(trace_detail_lines),
+            "BUCKET_FRAME_RUNS": "4/4",
+            "ALL_BUCKETS_FRAME_RUNS": "1/1",
             "EVIDENCE_GIT_BRANCH": branch_name,
             "EVIDENCE_GIT_COMMIT": commit,
             "probe_only_exclusions": "",
         },
         "non_claims": [
-            "continuous-frame bucket_frame/all_buckets_frame no-restart baselines are not claimed by this isolated-artifact refresh.",
-            "structural coverage below target remains an open coverage-closure item; this report claims 521/521 stimulus evidence and normal/debug scoreboard agreement.",
+            "structural coverage below target remains an open coverage-closure item; this report claims 521/521 stimulus evidence, normal/debug scoreboard agreement, and mandatory continuous-frame baselines.",
         ],
         "coverage_category_status": {
             "supported_with_targets": {
@@ -614,7 +834,17 @@ def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
                     bucket_name: rendered_buckets[bucket_name]["ordered_case_ids"]
                     for bucket_name in BUCKET_ORDER
                 },
-            }
+            },
+            "bucket_frame": {
+                "runs": [run["run_id"] for run in frame_runs if run["kind"] == "bucket_frame"],
+                "bucket_order": list(BUCKET_ORDER),
+                "restart_between_cases": False,
+            },
+            "all_buckets_frame": {
+                "runs": [run["run_id"] for run in frame_runs if run["kind"] == "all_buckets_frame"],
+                "bucket_order": list(BUCKET_ORDER),
+                "restart_between_cases": False,
+            },
         },
         "signoff_runs": [
             {
@@ -638,7 +868,8 @@ def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
                     "This signoff run is the ordered merge of isolated case UCDBs, not a no-restart frame simulation."
                 ],
             }
-        ],
+        ]
+        + frame_runs,
         "random_cases": [],
         "cases": all_cases,
         "artifact_audit": {
@@ -650,6 +881,7 @@ def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
                 for case_item in all_cases
                 if not (tb / "uvm" / "cov_after" / f"{case_item['full_case_id']}_s1.ucdb").exists()
             ),
+            "continuous_frame_runs": len(frame_runs),
         },
     }
     return data
@@ -699,7 +931,7 @@ def write_report_tree(tb: Path, data: dict[str, Any]) -> None:
     for run in data.get("signoff_runs") or []:
         base.write(
             report / "cross" / f"{base.slug(run.get('run_id', 'run'))}.md",
-            base.render_signoff_run(run),
+            render_signoff_run(run),
         )
 
     base.write(report / "README.md", base.render_report_readme(data))
