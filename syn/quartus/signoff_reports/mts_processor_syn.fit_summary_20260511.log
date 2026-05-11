@@ -1,0 +1,20 @@
+Fitter Status : Successful - Mon May 11 10:56:01 2026
+Quartus Prime Version : 18.1.0 Build 625 09/12/2018 SJ Standard Edition
+Revision Name : mts_processor_syn
+Top-level Entity Name : mts_processor_syn_top
+Family : Arria V
+Device : 5AGXBA7D4F31C5
+Timing Models : Final
+Logic utilization (in ALMs) : 1,156 / 91,680 ( 1 % )
+Total registers : 1960
+Total pins : 33 / 426 ( 8 % )
+Total virtual pins : 0
+Total block memory bits : 491,670 / 13,987,840 ( 4 % )
+Total RAM Blocks : 62 / 1,366 ( 5 % )
+Total DSP Blocks : 0 / 800 ( 0 % )
+Total HSSI RX PCSs : 0 / 9 ( 0 % )
+Total HSSI PMA RX Deserializers : 0 / 9 ( 0 % )
+Total HSSI TX PCSs : 0 / 9 ( 0 % )
+Total HSSI PMA TX Serializers : 0 / 9 ( 0 % )
+Total PLLs : 0 / 21 ( 0 % )
+Total DLLs : 0 / 4 ( 0 % )

@@ -1,0 +1,633 @@
+#
+# Questa Static Verification System
+# Version 2024.1_2 5779543 linux_x86_64 03-Apr-2024
+#
+# This material contains trade secrets or otherwise
+# confidential information owned by
+# Siemens Industry Software Inc. or its affiliates
+# (collectively, "SISW"), or its licensors. Access
+# to and use of this information is strictly limited
+# as set forth in the customer's applicable
+# agreements with SISW.
+#
+# Unpublished work. Copyright 2024 Siemens
+#
+# do /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/questa_static_screen.do
+# Command : onerror {quit -code 1}
+# Command : vlib work
+# ** Warning: (vlib-34) Library already exists at "work".
+# Errors: 0, Warnings: 1
+# Command : vmap work work
+# QuestaSim-64 vmap 2024.1_2 Lib Mapping Utility 2024.03 Mar 28 2024
+# vmap work work
+# Modifying modelsim.ini
+# Command : vlib lpm
+# ** Warning: (vlib-34) Library already exists at "lpm".
+# Errors: 0, Warnings: 1
+# Command : vmap lpm lpm
+# QuestaSim-64 vmap 2024.1_2 Lib Mapping Utility 2024.03 Mar 28 2024
+# vmap lpm lpm
+# Modifying modelsim.ini
+# Command : vcom -2008 -work lpm /data1/intelFPGA_pro/23.1/quartus/eda/sim_lib/220pack.vhd
+# QuestaSim-64 vcom 2024.1_2 Compiler 2024.03 Mar 28 2024
+# Start time: 10:58:13 on May 11,2026
+# vcom -2008 -work lpm /data1/intelFPGA_pro/23.1/quartus/eda/sim_lib/220pack.vhd
+# -- Loading package STANDARD
+# -- Loading package TEXTIO
+# -- Loading package std_logic_1164
+# -- Compiling package LPM_COMPONENTS
+# End time: 10:58:13 on May 11,2026, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0
+# Command : vcom -2008 -work lpm /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_lpm_static_stubs.vhd
+# QuestaSim-64 vcom 2024.1_2 Compiler 2024.03 Mar 28 2024
+# Start time: 10:58:13 on May 11,2026
+# vcom -2008 -work lpm /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_lpm_static_stubs.vhd
+# -- Loading package STANDARD
+# -- Loading package TEXTIO
+# -- Loading package std_logic_1164
+# -- Compiling entity LPM_COUNTER
+# -- Compiling architecture qverify_stub of LPM_COUNTER
+# -- Compiling entity LPM_DIVIDE
+# -- Compiling architecture qverify_stub of LPM_DIVIDE
+# End time: 10:58:13 on May 11,2026, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0
+# Command : vcom -2008 -work work /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/mts_processor.vhd
+# QuestaSim-64 vcom 2024.1_2 Compiler 2024.03 Mar 28 2024
+# Start time: 10:58:13 on May 11,2026
+# vcom -2008 -work work /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/mts_processor.vhd
+# -- Loading package STANDARD
+# -- Loading package TEXTIO
+# -- Loading package std_logic_1164
+# -- Loading package NUMERIC_STD
+# -- Loading package MATH_REAL
+# -- Loading package LPM_COMPONENTS
+# -- Compiling entity mts_processor
+# -- Compiling architecture rtl of mts_processor
+# End time: 10:58:13 on May 11,2026, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0
+# Command : vcom -2008 -work work /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/mts_processor_syn_top.vhd
+# QuestaSim-64 vcom 2024.1_2 Compiler 2024.03 Mar 28 2024
+# Start time: 10:58:13 on May 11,2026
+# vcom -2008 -work work /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/mts_processor_syn_top.vhd
+# -- Loading package STANDARD
+# -- Loading package TEXTIO
+# -- Loading package std_logic_1164
+# -- Loading package NUMERIC_STD
+# -- Compiling entity mts_processor_syn_top
+# -- Compiling architecture rtl of mts_processor_syn_top
+# -- Loading package MATH_REAL
+# -- Loading package LPM_COMPONENTS
+# -- Loading entity mts_processor
+# End time: 10:58:13 on May 11,2026, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0
+# Command : vlog -work work -sv /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_dual_port_rom_stub.v
+# QuestaSim-64 vlog 2024.1_2 Compiler 2024.03 Mar 28 2024
+# Start time: 10:58:13 on May 11,2026
+# vlog -work work -sv /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_dual_port_rom_stub.v
+# -- Compiling module dual_port_rom
+#
+# Top level modules:
+# 	dual_port_rom
+# End time: 10:58:13 on May 11,2026, Elapsed time: 0:00:00
+# Errors: 0, Warnings: 0
+# Info    : Loop unroll bound set by user.  Loop type 'while', Bound '4096'.  [elaboration-116]
+#
+# Loaded goal 'start'.
+# Command : lint run -d mts_processor_syn_top -exit_on_errors
+#
+# Questa Static Verification System
+# Version 2024.1_2 5779543 linux_x86_64 03-Apr-2024
+# log created Mon May 11 10:58:13 2026 by yifeng on teferi.ethz.ch
+#
+# Executing Command : lint run -d mts_processor_syn_top -exit_on_errors
+# File: /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/questa_static_screen.do, Line: 14
+# Info    : Loop unroll bound set by user.  Loop type 'while', Bound '4096'.  [elaboration-116]
+#
+### Starting Step: netlist elaborate ###
+#
+## Elaborating Design...
+# Reading MTI mapping for library mapping
+# Writing all MTI mappings to vmap output ...
+#
+# Top level modules:
+# 	mts_processor_syn_top
+#
+# Analyzing design...
+# -- Loading package STANDARD
+#
+# Performing 106 Lint Checks
+# =============================
+#
+# Lint Stage 1 of 5 - Pre Design Elaboration (6 checks)
+# ------------------------------------------------------
+# -- Loading package TEXTIO
+# -- Loading package std_logic_1164
+# -- Loading package NUMERIC_STD
+# -- Loading entity mts_processor_syn_top
+# -- Loading architecture rtl of mts_processor_syn_top
+# -- Loading package MATH_REAL
+# -- Loading package LPM_COMPONENTS
+# -- Loading entity mts_processor
+# -- Loading architecture rtl of mts_processor
+# -- Loading module z0in_work.dual_port_rom
+# -- Loading package vl_types
+# -- Loading entity dual_port_rom
+# -- Loading entity LPM_DIVIDE
+# -- Loading architecture qverify_stub of LPM_DIVIDE
+# Optimizing 5 design-units (inlining 0/1 module instances, 0/4 architecture instances):
+# -- Optimizing package LPM_COMPONENTS
+# -- Optimizing architecture qverify_stub of LPM_DIVIDE
+# Lint Stage-1 100% complete [Total Progress -   7%]
+#
+# Lint Stage 2 of 5 - Design Elaboration (65 checks)
+# ---------------------------------------------------
+# -- Optimizing module z0in_work.dual_port_rom(fast)
+# Lint Stage-2  25% complete (1 out of 4 modules checked) [Total Progress -   9%]
+# -- Optimizing architecture rtl of mts_processor
+# Lint Stage-2  50% complete (2 out of 4 modules checked) [Total Progress -  14%]
+# -- Optimizing architecture rtl of mts_processor_syn_top
+# Lint Stage-2  75% complete (3 out of 4 modules checked) [Total Progress -  18%]
+# Optimized design name is zi_opt_def_325365957_1
+# Lint Stage-2 100% complete (4 out of 4 modules checked) [Total Progress -  23%]
+#
+### Starting Step: netlist create ###
+#
+## Synthesizing netlist...
+#
+# Lint Stage 3 of 5 - Post Design Elaboration (18 checks)
+# --------------------------------------------------------
+# Lint Stage-3  22% complete [Total Progress -  27%]
+# Lint Stage-3  44% complete [Total Progress -  29%]
+# Lint Stage-3  67% complete [Total Progress -  31%]
+# Lint Stage-3 100% complete [Total Progress -  35%]
+# Analyzing designs.
+# Elaborating module 'dual_port_rom'.
+# Elaborating module 'lpm.lpm_divide(qverify_stub)#50,3,UNSIGNED,UNSIGNED,4,L_DIVIDE,LPM_REMAINDERPOSITIVE=TRUE'.
+# Elaborating module 'mts_processor(rtl)#2,1,0,UP,3,0,512,4,2000,2000,1,FALSE,0'.
+# Elaborating module 'mts_processor_syn_top(rtl)'.
+#
+# Lint Stage 4 of 5 - Design Synthesis (2 checks)
+# ------------------------------------------------
+# Lint Stage-4  50% complete [Total Progress -  70%]
+# Lint Stage-4 100% complete [Total Progress -  75%]
+# Flattening design 'dual_port_rom'.
+# Flattening design 'lpm.lpm_divide(qverify_stub)#50,3,UNSIGNED,UNSIGNED,4,L_DIVIDE,LPM_REMAINDERPOSITIVE=TRUE'.
+# Flattening design 'mts_processor(rtl)#2,1,0,UP,3,0,512,4,2000,2000,1,FALSE,0'.
+# Flattening design 'mts_processor_syn_top(rtl)'.
+#
+# Lint Stage 5 of 5 - Post Design Synthesis (15 checks)
+# ------------------------------------------------------
+# Lint Stage-5  20% complete [Total Progress -  88%]
+# Lint Stage-5  40% complete [Total Progress -  91%]
+# Lint Stage-5  60% complete [Total Progress -  94%]
+# Lint Stage-5  80% complete [Total Progress -  97%]
+# Lint Stage-5 100% complete [Total Progress - 100%]
+#
+# Lint Checking Completed
+#
+# Trend Report: Trend directory path is not set, HTML trend report will not be generated.
+#
+##Time Taken (Synthesis) = 96055.000000 ticks = 0.096055 secs
+## Applying Lint Waivers...
+#
+# Message Summary
+# ---------------------------------------------------------------------------
+# Count  Type     Message ID         Summary
+# ---------------------------------------------------------------------------
+#     1  Info     elaboration-116    Loop unroll bound set by user.
+#
+# Final Process Statistics: Max memory 584MB, CPU time 0s, Total time 1s
+# Result Summary
+# -----------------------------------------------------------
+# Error (0)
+# -----------------------------------------------------------
+#
+# -----------------------------------------------------------
+# Warning (48)
+# -----------------------------------------------------------
+#   flop_output_in_initial                  :36
+#   func_expr_input_size_mismatch           :1
+#   if_with_memory_output                   :1
+#   process_var_assign_disorder             :6
+#   seq_block_has_duplicate_assign          :1
+#   assign_with_multi_arith_operations      :2
+#   process_exceeds_line_limit              :1
+#
+# -----------------------------------------------------------
+# Info (97)
+# -----------------------------------------------------------
+#   async_reset_active_high                 :1
+#   flop_redundant                          :6
+#   line_char_large                         :84
+#   process_signal_assign_large             :6
+#
+# -----------------------------------------------------------
+# Resolved (0)
+# -----------------------------------------------------------
+#
+# Generating Debug Information...
+#
+# =================================================================
+# To view results in batch
+#   /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/qverify_db/lint.rpt
+#
+# To view results in GUI
+#   qverify /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/qverify_db/lint.db
+# =================================================================
+#
+# End of log Mon May 11 10:58:15 2026
+#
+# Info    : Loaded goal.  Goal 'start', File '/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/questa_static_screen.do', Line '15'.  [cdc-75]
+# Command : cdc run -d mts_processor_syn_top -cdc_report /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/reports/cdc.rpt -settings_report /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/reports/cdc_settings.rpt
+#
+# Questa Static Verification System
+# Version 2024.1_2 5779543 linux_x86_64 03-Apr-2024
+# log created Mon May 11 10:58:15 2026 by yifeng on teferi.ethz.ch
+#
+# Executing Command : cdc run -d mts_processor_syn_top -cdc_report /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/reports/cdc.rpt -settings_report /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/reports/cdc_settings.rpt
+# File: /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/questa_static_screen.do, Line: 16
+# Info    : Loop unroll bound set by user.  Loop type 'while', Bound '4096'.  [elaboration-116]
+# Performance stats (Design elaboration::started) : cpu : 0(1) sec  memory : 0(258) mb  elapsed : 0(2) sec
+#
+### Starting Step: netlist elaborate ###
+#
+## Elaborating Design...
+# Reading MTI mapping for library mapping
+# Writing all MTI mappings to vmap output ...
+#
+# Top level modules:
+# 	mts_processor_syn_top
+#
+# Analyzing design...
+# -- Loading package STANDARD
+# -- Loading package TEXTIO
+# -- Loading package std_logic_1164
+# -- Loading package NUMERIC_STD
+# -- Loading entity mts_processor_syn_top
+# -- Loading architecture rtl of mts_processor_syn_top
+# -- Loading package MATH_REAL
+# -- Loading package LPM_COMPONENTS
+# -- Loading entity mts_processor
+# -- Loading architecture rtl of mts_processor
+# -- Loading package vl_types
+# -- Loading entity dual_port_rom
+# -- Loading entity LPM_DIVIDE
+# -- Loading module z0in_work.dual_port_rom
+# -- Loading architecture qverify_stub of LPM_DIVIDE
+# Optimizing 5 design-units (inlining 0/1 module instances, 0/4 architecture instances):
+# -- Optimizing package LPM_COMPONENTS
+# -- Optimizing architecture qverify_stub of LPM_DIVIDE
+# -- Optimizing module z0in_work.dual_port_rom(fast)
+# -- Optimizing architecture rtl of mts_processor
+# -- Optimizing architecture rtl of mts_processor_syn_top
+# Optimized design name is zi_opt_cdc_325365957_1
+# Performance stats (Design elaboration::ended) : cpu : 0(1) sec  memory : 328(586) mb  elapsed : 1(3) sec
+# Performance stats (Design synthesis::started) : cpu : 0(1) sec  memory : 0(258) mb  elapsed : 0(3) sec
+#
+### Starting Step: netlist create ###
+#
+## Synthesizing netlist...
+# Elaborating module 'dual_port_rom'.
+# Elaborating module 'lpm.lpm_divide(qverify_stub)#50,3,UNSIGNED,UNSIGNED,4,L_DIVIDE,LPM_REMAINDERPOSITIVE=TRUE'.
+# Elaborating module 'mts_processor(rtl)#2,1,0,UP,3,0,512,4,2000,2000,1,FALSE,0'.
+# Elaborating module 'mts_processor_syn_top(rtl)'.
+#
+##Time Taken (Synthesis) = 95822.000000 ticks = 0.095822 secs
+# Performance stats (Design synthesis::ended) : cpu : 0(1) sec  memory : 440(698) mb  elapsed : 0(3) sec
+# Performance stats (CDC setup::started) : cpu : 0(1) sec  memory : 0(258) mb  elapsed : 0(3) sec
+#
+### Starting Step: cdc setup ###
+#
+## CDC Setup Design...
+# Restoring module 'dual_port_rom'.
+# Restoring module 'lpm.lpm_divide(qverify_stub)#50,3,UNSIGNED,UNSIGNED,4,L_DIVIDE,LPM_REMAINDERPOSITIVE=TRUE'.
+# Restoring module 'mts_processor(rtl)#2,1,0,UP,3,0,512,4,2000,2000,1,FALSE,0'.
+# Restoring module 'mts_processor_syn_top(rtl)'.
+#
+## Continuing CDC Setup
+# Performance stats (Netlist flattening::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Flattening design 'mts_processor_syn_top(rtl)'.
+# Performance stats (Netlist flattening::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# CDC netlist complexity for module 'mts_processor_syn_top' is 3360.
+# Performance stats (Constant propagation phase-1::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Performance stats (Constant propagation phase-1::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Performance stats (Constant propagation phase-2::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Performance stats (Constant propagation phase-2::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Performance stats (Stable propagation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (Stable propagation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Analyzing clocks and resets for module 'mts_processor_syn_top'
+# Performance stats (Reset detection and propagation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Warning : Found internal reset signals.  [netlist-82]
+#         : Signals are not resets.
+# Internal resets
+# ===============
+# rst
+# ---------------
+# Info    : Reset detection done.  Identified '1' resets: '0' user-specified and '1' inferred resets.  [reset-4]
+# Performance stats (Reset detection and propagation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (Reset check analysis::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (Reset check analysis::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (Clock detection and propagation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Info    : Clock processing done.  Identified '1' clocks; '0' user-specified and '1' inferred clocks.  [cdc-44]
+# Performance stats (Clock detection and propagation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Warning : Synchronous design found.  The design has less than 2 asynchronous clock groups.  [hdl-279]
+#         : Review clock definitions.
+# Performance stats (Clock check analysis::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (Clock check analysis::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Info    : Design has latches.  Identified '7' total latches. '0' clocked, '7' inferred , '0' unknown and '0' multiple domain(s).  [cdc-49]
+# Checking input/output specifications for black box and custom synchronizer modules.
+# Warning : Inferred clock present.  Please review the clock tree and use 'netlist clock' to convert the inferred clock to user clock.  [hdl-241]
+# Warning : Inferred reset present.  Review the reset tree and use 'netlist reset' to convert the inferred reset to user reset.  [hdl-238]
+# Performance stats (CDC settings report generation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (CDC settings report generation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+#
+# Performance stats (CDC report generation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (CDC report generation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+#
+# See '/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/reports/cdc.rpt' for detailed CDC report.
+#
+# To view CDC Setup information, use qverify as follows:
+#       qverify /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/qverify_db/cdc.db
+#
+# Summary: 4 Warnings in cdc setup
+# Performance stats (CDC setup::ended) : cpu : 0(1) sec  memory : 440(698) mb  elapsed : 0(3) sec
+# Performance stats (CDC analysis::started) : cpu : 0(1) sec  memory : 0(258) mb  elapsed : 0(3) sec
+#
+### Starting Step: cdc run ###
+#
+## Analyzing CDC Design...
+#
+## Continuing CDC Analysis
+# Info    : Possible dead end CDC paths not reported.  [hdl-222]
+#         : CDC paths may exist that do not propagate to a sequential element or an output port of the design. Please refer to the CDC setup checks window to review the dead end registers.
+# Performance stats (CDC creation::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+# Performance stats (CDC creation::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+# Warning : Only 1 RX per crossings reported.  [hdl-255]
+# Processing 0 CDC signals after duplicate RX removal.
+# Processing 0 CDC signals after duplicate removal.
+# Performance stats (CDC schemes checking::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+# Performance stats (Reset deassertion synchronization phase 1::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+# Performance stats (Reset deassertion synchronization phase 1::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+# Processing control signals.
+# Processing data signals.
+# Performance stats (Reset deassertion synchronization phase 2::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+# Performance stats (Reset deassertion synchronization phase 2::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+# Processing FIFO.
+# Warning : Reconvergence is not enabled.  [hdl-271]
+#         : No reconvergence analysis will be performed
+# Performance stats (CDC schemes checking::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+# Generating design report.
+# Performance stats (CDC settings report generation::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+# Performance stats (CDC settings report generation::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+#
+# Performance stats (CDC report generation::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+# Performance stats (CDC report generation::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(1) sec
+#
+# See '/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/reports/cdc.rpt' for detailed CDC report.
+#
+# To view CDC information, use CDC as follows:
+#       qverify /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/qverify_db/cdc.db
+#
+## Generating Argument Files...
+# Performance stats (CDC analysis::ended) : cpu : 0(1) sec  memory : 356(614) mb  elapsed : 1(4) sec
+# Reading design database from /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/qverify_db/qcache/CDC/CACHE...completed (0.012004 (s)).
+# Performance stats (CDC status update::started) : cpu : 0(1) sec  memory : 0(262) mb  elapsed : 0(4) sec
+## Applying CDC Design Waivers...
+#
+# CDC Results
+# =================================================================
+#
+# -----------------------------------------------------------------
+# Total number of checks                                       (0)
+# -----------------------------------------------------------------
+#
+# Violations (0)
+# -----------------------------------------------------------------
+# <None>
+#
+# Cautions (0)
+# -----------------------------------------------------------------
+# <None>
+#
+# Evaluations (0)
+# -----------------------------------------------------------------
+# <None>
+#
+# Resolved - Waived or Verified Status (0)
+# -----------------------------------------------------------------
+# <None>
+#
+# Proven (0)
+# -----------------------------------------------------------------
+# <None>
+#
+# Filtered (0)
+# -----------------------------------------------------------------
+# <None>
+#
+#
+# Performance stats (CDC report generation::started) : cpu : 0(0) sec  memory : 0(268) mb  elapsed : 0(0) sec
+# Performance stats (CDC report generation::ended) : cpu : 0(0) sec  memory : 0(268) mb  elapsed : 0(0) sec
+#
+#
+# Message Summary
+# ---------------------------------------------------------------------------
+# Count  Type     Message ID         Summary
+# ---------------------------------------------------------------------------
+#     1  Warning  hdl-238            Inferred reset present.
+#     1  Warning  hdl-241            Inferred clock present.
+#     1  Warning  hdl-255            Only 1 RX per crossings reported.
+#     1  Warning  hdl-271            Reconvergence is not enabled.
+#     1  Warning  hdl-279            Synchronous design found.
+#     1  Warning  netlist-82         Found internal reset signals.
+#     1  Info     cdc-44             Clock processing done.
+#     1  Info     cdc-49             Design has latches.
+#     1  Info     elaboration-116    Loop unroll bound set by user.
+#     1  Info     hdl-222            Possible dead end CDC paths not reported.
+#     1  Info     reset-4            Reset detection done.
+#
+# Summary: 6 Warnings in processing "cdc run"
+# Final Process Statistics: Max memory 440MB, CPU time 0s, Total time 2s
+# Performance stats (CDC status update::ended) : cpu : 0(1) sec  memory : 268(530) mb  elapsed : 0(4) sec
+#
+# End of log Mon May 11 10:58:17 2026
+#
+# Info    : Loaded goal.  Goal 'start', File '/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/questa_static_screen.do', Line '17'.  [cdc-75]
+# Command : rdc run -d mts_processor_syn_top -settings_report /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/reports/rdc_settings.rpt
+#
+# Questa Static Verification System
+# Version 2024.1_2 5779543 linux_x86_64 03-Apr-2024
+# log created Mon May 11 10:58:17 2026 by yifeng on teferi.ethz.ch
+#
+# Executing Command : rdc run -d mts_processor_syn_top -settings_report /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/reports/rdc_settings.rpt
+# File: /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/questa_static_screen.do, Line: 18
+# Info    : Loop unroll bound set by user.  Loop type 'while', Bound '4096'.  [elaboration-116]
+# Performance stats (Design elaboration::started) : cpu : 0(1) sec  memory : 0(262) mb  elapsed : 0(4) sec
+#
+### Starting Step: netlist elaborate ###
+#
+## Elaborating Design...
+# Reading MTI mapping for library mapping
+# Writing all MTI mappings to vmap output ...
+#
+# Top level modules:
+# 	mts_processor_syn_top
+#
+# Analyzing design...
+# -- Loading package STANDARD
+# -- Loading package TEXTIO
+# -- Loading package std_logic_1164
+# -- Loading package NUMERIC_STD
+# -- Loading entity mts_processor_syn_top
+# -- Loading architecture rtl of mts_processor_syn_top
+# -- Loading package MATH_REAL
+# -- Loading package LPM_COMPONENTS
+# -- Loading entity mts_processor
+# -- Loading architecture rtl of mts_processor
+# -- Loading package vl_types
+# -- Loading entity dual_port_rom
+# -- Loading entity LPM_DIVIDE
+# -- Loading module z0in_work.dual_port_rom
+# -- Loading architecture qverify_stub of LPM_DIVIDE
+# Optimizing 5 design-units (inlining 0/1 module instances, 0/4 architecture instances):
+# -- Optimizing package LPM_COMPONENTS
+# -- Optimizing architecture qverify_stub of LPM_DIVIDE
+# -- Optimizing module z0in_work.dual_port_rom(fast)
+# -- Optimizing architecture rtl of mts_processor
+# -- Optimizing architecture rtl of mts_processor_syn_top
+# Optimized design name is zi_opt_def_325365957_1
+# Performance stats (Design elaboration::ended) : cpu : 0(1) sec  memory : 328(590) mb  elapsed : 1(5) sec
+# Performance stats (Design synthesis::started) : cpu : 0(1) sec  memory : 0(262) mb  elapsed : 0(5) sec
+#
+### Starting Step: netlist create ###
+#
+## Synthesizing netlist...
+# Analyzing designs.
+# Elaborating module 'dual_port_rom'.
+# Elaborating module 'lpm.lpm_divide(qverify_stub)#50,3,UNSIGNED,UNSIGNED,4,L_DIVIDE,LPM_REMAINDERPOSITIVE=TRUE'.
+# Elaborating module 'mts_processor(rtl)#2,1,0,UP,3,0,512,4,2000,2000,1,FALSE,0'.
+# Elaborating module 'mts_processor_syn_top(rtl)'.
+#
+##Time Taken (Synthesis) = 94918.000000 ticks = 0.094918 secs
+# Performance stats (Design synthesis::ended) : cpu : 0(1) sec  memory : 440(702) mb  elapsed : 0(5) sec
+# Performance stats (RDC analysis::started) : cpu : 0(1) sec  memory : 0(262) mb  elapsed : 0(5) sec
+#
+### Starting Step: rdc run ###
+#
+## Analyzing Design in RDC...
+# Warning : Mismatch in specified methodology and run.  Methodology specified for: 'cdc', Run specified for: 'resetcheck'.  [command-269]
+# Analyzing designs.
+# Restoring module 'dual_port_rom'.
+# Restoring module 'lpm.lpm_divide(qverify_stub)#50,3,UNSIGNED,UNSIGNED,4,L_DIVIDE,LPM_REMAINDERPOSITIVE=TRUE'.
+# Restoring module 'mts_processor(rtl)#2,1,0,UP,3,0,512,4,2000,2000,1,FALSE,0'.
+# Restoring module 'mts_processor_syn_top(rtl)'.
+# Warning : Reset deassertion synchronization schemes are identified as obsolete and are no longer supported in RDC as full support exists in CDC.  We recommend to disable 'reset_cdc_sync_incorrect_polarity' scheme(s) in rdc run and enable equivalent schemes in cdc run.  [reset-59]
+#
+## Continuing RDC Analysis
+# Performance stats (Netlist flattening::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Flattening design 'mts_processor_syn_top(rtl)'.
+# Performance stats (Netlist flattening::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Info    : Possible dead end paths not reported.  [hdl-262]
+#         : Design paths may exist that do not propagate to a sequential element or an output port of the design.
+# Performance stats (Constant propagation phase-1::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Performance stats (Constant propagation phase-1::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Performance stats (Constant propagation phase-2::started) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Performance stats (Constant propagation phase-2::ended) : cpu : 0(0) sec  memory : 0(356) mb  elapsed : 0(0) sec
+# Performance stats (Stable propagation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (Stable propagation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Processing Reset checks for module 'mts_processor_syn_top'
+# Performance stats (Reset detection and propagation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Warning : Found internal reset signals.  [netlist-82]
+#         : Signals are not resets.
+# Internal resets
+# ===============
+# rst
+# ---------------
+# Info    : Reset detection done.  Identified '1' resets: '0' user-specified and '1' inferred resets.  [reset-4]
+# Performance stats (Reset detection and propagation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (Reset check analysis::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Warning : Asynchronous reset used as data.  Reset 'rst', File '/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/mts_processor_syn_top.vhd', Line '58'.  [resetcheck-1]
+# Performance stats (Reset check analysis::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (Clock detection and propagation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Info    : Clock processing done.  Identified '1' clocks; '0' user-specified and '1' inferred clocks.  [cdc-44]
+# Performance stats (Clock detection and propagation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Warning : Inferred reset present.  Review the reset tree and use 'netlist reset' to convert the inferred reset to user reset.  [hdl-238]
+# Warning : Inferred clock present.  Please review the clock tree and use 'netlist clock' to convert the inferred clock to user clock.  [hdl-241]
+# Checking input/output specifications for black box and custom synchronizer modules.
+# Performance stats (RDC creation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (RDC creation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (RDC schemes checking::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Processing 0 RDC signals after duplicate removal.
+# Performance stats (RDC schemes checking::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (RDC assist::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (RDC assist::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (RDC settings report generation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (RDC settings report generation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+## Generating RDC Report...
+# Performance stats (RDC resetchecks report generation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (RDC resetchecks report generation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (RDC report generation::started) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+# Performance stats (RDC report generation::ended) : cpu : 0(0) sec  memory : 0(440) mb  elapsed : 0(0) sec
+#
+# Performance stats (RDC analysis::ended) : cpu : 0(1) sec  memory : 440(702) mb  elapsed : 0(5) sec
+# Reading design database from /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/qverify_db/qcache/RESETCHECK/CACHE...completed (0.01158 (s)).
+# Performance stats (RDC status update::started) : cpu : 0(1) sec  memory : 0(263) mb  elapsed : 0(5) sec
+## Applying RDC Design Waivers...
+# Creating report file rdc.rpt
+# Performance stats (RDC report generation::started) : cpu : 0(0) sec  memory : 0(268) mb  elapsed : 0(1) sec
+# Performance stats (RDC report generation::ended) : cpu : 0(0) sec  memory : 0(268) mb  elapsed : 0(1) sec
+#
+# RDC Summary
+# -----------------------------------------------------------------
+# Total number of checks:                                      (0)
+# -----------------------------------------------------------------
+#
+# Violation (0)
+# -----------------------------------------------------------------
+# <None>
+#
+# Caution (0)
+# -----------------------------------------------------------------
+# <None>
+#
+# Evaluation (0)
+# -----------------------------------------------------------------
+# <None>
+#
+# Resolved - Waived or Verified Status (0)
+# -----------------------------------------------------------------
+# <None>
+#
+# Filtered (0)
+# -----------------------------------------------------------------
+# <None>
+#
+#
+#
+# See '/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/qverify_db/rdc.rpt' for detailed rdc report.
+#
+# To view RDC information, use qverify as follows:
+#       qverify /home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/syn/quartus/questa_static_20260511/qverify_db/rdc.db
+#
+# Message Summary
+# ---------------------------------------------------------------------------
+# Count  Type     Message ID         Summary
+# ---------------------------------------------------------------------------
+#     1  Warning  command-269        Mismatch in specified methodology and run.
+#     1  Warning  hdl-238            Inferred reset present.
+#     1  Warning  hdl-241            Inferred clock present.
+#     1  Warning  netlist-82         Found internal reset signals.
+#     1  Warning  reset-59           Reset deassertion synchronization schemes are identified as obsolete and are no longer supported in RDC as full support exists in CDC.
+#     1  Warning  resetcheck-1       Asynchronous reset used as data.
+#     1  Info     cdc-44             Clock processing done.
+#     1  Info     elaboration-116    Loop unroll bound set by user.
+#     1  Info     hdl-262            Possible dead end paths not reported.
+#     1  Info     reset-4            Reset detection done.
+#
+# Summary: 6 Warnings in processing "rdc run"
+# Final Process Statistics: Max memory 440MB, CPU time 0s, Total time 2s
+# Performance stats (RDC status update::ended) : cpu : 0(1) sec  memory : 268(531) mb  elapsed : 1(6) sec
+#
+# End of log Mon May 11 10:58:19 2026
+#
+# Command : exit -f

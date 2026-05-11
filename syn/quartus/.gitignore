@@ -6,3 +6,4 @@ output_files/
 *.summary
 *.pin
 gate_sim/
+questa_static_*/

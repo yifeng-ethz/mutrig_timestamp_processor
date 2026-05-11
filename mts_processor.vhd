@@ -51,6 +51,8 @@
 --      Date: May 10, 2026
 -- Revision: 5.20 (Do not let stale open-packet bookkeeping block terminal close markers)
 --      Date: May 10, 2026
+-- Revision: 5.21 (Use a local hex formatter for Quartus 18.1 debug-report compatibility)
+--      Date: May 11, 2026
 -- Revision: 5.15 (Add DEBUG status conduit and 64-bit hit metadata sidecar)
 --      Date: May 6, 2026
 -- Version : 26.1.0
@@ -419,6 +421,37 @@ architecture rtl of mts_processor is
         end if;
         return std_logic_vector(result_v);
     end function natural_to_slv_sat;
+
+    function slv_to_hex(value : std_logic_vector) return string is
+        variable result_v : string(1 to value'length / 4);
+        variable nibble_v : std_logic_vector(3 downto 0);
+        variable left_i   : integer;
+    begin
+        for digit_i in result_v'range loop
+            left_i := value'left - ((digit_i - 1) * 4);
+            nibble_v := value(left_i downto left_i - 3);
+            case nibble_v is
+                when "0000" => result_v(digit_i) := '0';
+                when "0001" => result_v(digit_i) := '1';
+                when "0010" => result_v(digit_i) := '2';
+                when "0011" => result_v(digit_i) := '3';
+                when "0100" => result_v(digit_i) := '4';
+                when "0101" => result_v(digit_i) := '5';
+                when "0110" => result_v(digit_i) := '6';
+                when "0111" => result_v(digit_i) := '7';
+                when "1000" => result_v(digit_i) := '8';
+                when "1001" => result_v(digit_i) := '9';
+                when "1010" => result_v(digit_i) := 'A';
+                when "1011" => result_v(digit_i) := 'B';
+                when "1100" => result_v(digit_i) := 'C';
+                when "1101" => result_v(digit_i) := 'D';
+                when "1110" => result_v(digit_i) := 'E';
+                when "1111" => result_v(digit_i) := 'F';
+                when others => result_v(digit_i) := 'X';
+            end case;
+        end loop;
+        return result_v;
+    end function slv_to_hex;
     
     -- processor
     constant ROUTE_LANE_COUNT_CONST      : natural := 4;
@@ -1447,7 +1480,7 @@ begin
                     & " hit_in_ok=" & std_logic'image(hit_in_ok)
                     & " state=" & processor_state_t'image(processor_state)
                     & " reset_flow=" & reset_flow_t'image(reset_flow)
-                    & " total_pre=0x" & to_hstring(std_logic_vector(debug_msg.total_hit_cnt))
+                    & " total_pre=0x" & slv_to_hex(std_logic_vector(debug_msg.total_hit_cnt))
                     severity note;
             end if;
 

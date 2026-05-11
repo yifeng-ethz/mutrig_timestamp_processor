@@ -1,0 +1,197 @@
+Info: *******************************************************************
+Info: Running Quartus Prime Timing Analyzer
+    Info: Version 18.1.0 Build 625 09/12/2018 SJ Standard Edition
+    Info: Copyright (C) 2018  Intel Corporation. All rights reserved.
+    Info: Your use of Intel Corporation's design tools, logic functions
+    Info: and other software and tools, and its AMPP partner logic
+    Info: functions, and any output files from any of the foregoing
+    Info: (including device programming or simulation files), and any
+    Info: associated documentation or information are expressly subject
+    Info: to the terms and conditions of the Intel Program License
+    Info: Subscription Agreement, the Intel Quartus Prime License Agreement,
+    Info: the Intel FPGA IP License Agreement, or other applicable license
+    Info: agreement, including, without limitation, that your use is for
+    Info: the sole purpose of programming logic devices manufactured by
+    Info: Intel and sold by Intel or its authorized distributors.  Please
+    Info: refer to the applicable agreement for further details.
+    Info: Processing started: Mon May 11 10:57:30 2026
+Info: Command: quartus_sta mts_processor_syn -c mts_processor_syn --do_report_timing --model=fast --temperature=0 --voltage=1100
+Info: qsta_default_script.tcl version: #1
+Info: Using timing model fast
+Info: Using operating voltage 1100
+Info: Using operating temperature 0
+Info (20032): Parallel compilation is enabled and will use up to 4 processors
+Info (21077): Core supply voltage is 1.1V
+Info (332104): Reading SDC File: 'mts_processor_syn.sdc'
+Info (332143): No user constrained clock uncertainty found in the design. Calling "derive_clock_uncertainty"
+Info (332123): Deriving Clock Uncertainty. Please refer to report_sdc in the Timing Analyzer to see clock uncertainties.
+Info: Found TIMING_ANALYZER_REPORT_SCRIPT_INCLUDE_DEFAULT_ANALYSIS = ON
+Info (332146): Worst-case setup slack is 4.142
+    Info (332119):     Slack       End Point TNS Clock
+    Info (332119): ========= =================== =====================
+    Info (332119):     4.142               0.000 clk
+Info (332146): Worst-case hold slack is 0.151
+    Info (332119):     Slack       End Point TNS Clock
+    Info (332119): ========= =================== =====================
+    Info (332119):     0.151               0.000 clk
+Info (332146): Worst-case recovery slack is 4.919
+    Info (332119):     Slack       End Point TNS Clock
+    Info (332119): ========= =================== =====================
+    Info (332119):     4.919               0.000 clk
+Info (332146): Worst-case removal slack is 0.641
+    Info (332119):     Slack       End Point TNS Clock
+    Info (332119): ========= =================== =====================
+    Info (332119):     0.641               0.000 clk
+Info (332146): Worst-case minimum pulse width slack is 2.473
+    Info (332119):     Slack       End Point TNS Clock
+    Info (332119): ========= =================== =====================
+    Info (332119):     2.473               0.000 clk
+Info (332115): Report Timing: Found 1 setup paths (0 violated).  Worst case slack is 4.142
+    Info (332115): -to_clock [get_clocks {clk}]
+    Info (332115): -setup
+    Info (332115): -stdout
+Info (332115): Path #1: Setup slack is 4.142
+    Info (332115): ===================================================================
+    Info (332115): From Node    : mts_processor:u_dut|lpm_divide:ecc_div|lpm_divide_1sq:auto_generated|sign_div_unsign_77i:divider|alt_u_div_6af:divider|altshift_taps:DFFNumerator_rtl_1|shift_taps_ae21:auto_generated|altsyncram_lk91:altsyncram4|ram_block5a0
+    Info (332115): To Node      : mts_processor:u_dut|lpm_divide:ecc_div|lpm_divide_1sq:auto_generated|sign_div_unsign_77i:divider|alt_u_div_6af:divider|StageOut[172]~22_OTERM827_OTERM1315
+    Info (332115): Launch Clock : clk
+    Info (332115): Latch Clock  : clk
+    Info (332115): Data Arrival Path:
+    Info (332115): Total (ns)  Incr (ns)     Type  Element
+    Info (332115): ==========  ========= ==  ====  ===================================
+    Info (332115):      0.000      0.000           launch edge time
+    Info (332115):      2.130      2.130  R        clock network delay
+    Info (332115):      2.130      0.000     uTco  mts_processor:u_dut|lpm_divide:ecc_div|lpm_divide_1sq:auto_generated|sign_div_unsign_77i:divider|alt_u_div_6af:divider|altshift_taps:DFFNumerator_rtl_1|shift_taps_ae21:auto_generated|altsyncram_lk91:altsyncram4|ram_block5a0
+    Info (332115):      2.141      0.011 FF  CELL  u_dut|ecc_div|auto_generated|divider|divider|DFFNumerator_rtl_1|auto_generated|altsyncram4|ram_block5a0|portbdataout[0]
+    Info (332115):      2.546      0.405 FF    IC  u_dut|ecc_div|auto_generated|divider|divider|StageOut[129]~11|datad
+    Info (332115):      2.685      0.139 FR  CELL  u_dut|ecc_div|auto_generated|divider|divider|StageOut[129]~11|combout
+    Info (332115):      2.790      0.105 RR    IC  u_dut|ecc_div|auto_generated|divider|divider|op_29~0|datac
+    Info (332115):      2.996      0.206 RF  CELL  u_dut|ecc_div|auto_generated|divider|divider|op_29~0|combout
+    Info (332115):      3.164      0.168 FF    IC  u_dut|ecc_div|auto_generated|divider|divider|StageOut[137]~15|dataf
+    Info (332115):      3.210      0.046 FF  CELL  u_dut|ecc_div|auto_generated|divider|divider|StageOut[137]~15|combout
+    Info (332115):      3.509      0.299 FF    IC  u_dut|ecc_div|auto_generated|divider|divider|op_31~0|datae
+    Info (332115):      3.604      0.095 FR  CELL  u_dut|ecc_div|auto_generated|divider|divider|op_31~0|combout
+    Info (332115):      3.721      0.117 RR    IC  u_dut|ecc_div|auto_generated|divider|divider|op_33~0|dataf
+    Info (332115):      3.772      0.051 RR  CELL  u_dut|ecc_div|auto_generated|divider|divider|op_33~0|combout
+    Info (332115):      3.893      0.121 RR    IC  u_dut|ecc_div|auto_generated|divider|divider|op_36~0|datac
+    Info (332115):      4.097      0.204 RF  CELL  u_dut|ecc_div|auto_generated|divider|divider|op_36~0|combout
+    Info (332115):      4.708      0.611 FF    IC  u_dut|ecc_div|auto_generated|divider|divider|StageOut[165]~20_Duplicate|datad
+    Info (332115):      4.900      0.192 FF  CELL  u_dut|ecc_div|auto_generated|divider|divider|StageOut[165]~20_Duplicate|combout
+    Info (332115):      4.900      0.000 FF    IC  u_dut|ecc_div|auto_generated|divider|divider|StageOut[172]~22_OTERM827_NEW_REG1314|d
+    Info (332115):      5.027      0.127 FF  CELL  mts_processor:u_dut|lpm_divide:ecc_div|lpm_divide_1sq:auto_generated|sign_div_unsign_77i:divider|alt_u_div_6af:divider|StageOut[172]~22_OTERM827_OTERM1315
+    Info (332115): Data Required Path:
+    Info (332115): Total (ns)  Incr (ns)     Type  Element
+    Info (332115): ==========  ========= ==  ====  ===================================
+    Info (332115):      7.273      7.273           latch edge time
+    Info (332115):      9.186      1.913  R        clock network delay
+    Info (332115):      9.219      0.033           clock pessimism removed
+    Info (332115):      9.169     -0.050           clock uncertainty
+    Info (332115):      9.169      0.000     uTsu  mts_processor:u_dut|lpm_divide:ecc_div|lpm_divide_1sq:auto_generated|sign_div_unsign_77i:divider|alt_u_div_6af:divider|StageOut[172]~22_OTERM827_OTERM1315
+    Info (332115): Data Arrival Time  :     5.027
+    Info (332115): Data Required Time :     9.169
+    Info (332115): Slack              :     4.142
+    Info (332115): ===================================================================
+Info (332115): Report Timing: Found 1 hold paths (0 violated).  Worst case slack is 0.151
+    Info (332115): -to_clock [get_clocks {clk}]
+    Info (332115): -hold
+    Info (332115): -stdout
+Info (332115): Path #1: Hold slack is 0.151
+    Info (332115): ===================================================================
+    Info (332115): From Node    : mts_processor:u_dut|lpm_divide:tcc_div|lpm_divide_tgr:auto_generated|sign_div_unsign_77i:divider|alt_u_div_6af:divider|op_26~0_OTERM353_OTERM625
+    Info (332115): To Node      : mts_processor:u_dut|lpm_divide:tcc_div|lpm_divide_tgr:auto_generated|sign_div_unsign_77i:divider|alt_u_div_6af:divider|DFFQuotient[168]
+    Info (332115): Launch Clock : clk
+    Info (332115): Latch Clock  : clk
+    Info (332115): Data Arrival Path:
+    Info (332115): Total (ns)  Incr (ns)     Type  Element
+    Info (332115): ==========  ========= ==  ====  ===================================
+    Info (332115):      0.000      0.000           launch edge time
+    Info (332115):      1.921      1.921  R        clock network delay
+    Info (332115):      1.921      0.000     uTco  mts_processor:u_dut|lpm_divide:tcc_div|lpm_divide_tgr:auto_generated|sign_div_unsign_77i:divider|alt_u_div_6af:divider|op_26~0_OTERM353_OTERM625
+    Info (332115):      1.921      0.000 RR  CELL  u_dut|tcc_div|auto_generated|divider|divider|op_26~0_OTERM353_NEW_REG624|q
+    Info (332115):      2.036      0.115 RR    IC  u_dut|tcc_div|auto_generated|divider|divider|op_26~0|dataf
+    Info (332115):      2.068      0.032 RR  CELL  u_dut|tcc_div|auto_generated|divider|divider|op_26~0|combout
+    Info (332115):      2.068      0.000 RR    IC  u_dut|tcc_div|auto_generated|divider|divider|DFFQuotient[168]|d
+    Info (332115):      2.092      0.024 RR  CELL  mts_processor:u_dut|lpm_divide:tcc_div|lpm_divide_tgr:auto_generated|sign_div_unsign_77i:divider|alt_u_div_6af:divider|DFFQuotient[168]
+    Info (332115): Data Required Path:
+    Info (332115): Total (ns)  Incr (ns)     Type  Element
+    Info (332115): ==========  ========= ==  ====  ===================================
+    Info (332115):      0.000      0.000           latch edge time
+    Info (332115):      1.983      1.983  R        clock network delay
+    Info (332115):      1.941     -0.042           clock pessimism removed
+    Info (332115):      1.941      0.000      uTh  mts_processor:u_dut|lpm_divide:tcc_div|lpm_divide_tgr:auto_generated|sign_div_unsign_77i:divider|alt_u_div_6af:divider|DFFQuotient[168]
+    Info (332115): Data Arrival Time  :     2.092
+    Info (332115): Data Required Time :     1.941
+    Info (332115): Slack              :     0.151
+    Info (332115): ===================================================================
+Info (332115): Report Timing: Found 1 recovery paths (0 violated).  Worst case slack is 4.919
+    Info (332115): -to_clock [get_clocks {clk}]
+    Info (332115): -recovery
+    Info (332115): -stdout
+Info (332115): Path #1: Recovery slack is 4.919
+    Info (332115): ===================================================================
+    Info (332115): From Node    : rst_ctr[6]
+    Info (332115): To Node      : mts_processor:u_dut|hit_prediv.tcc_div_numer[15]
+    Info (332115): Launch Clock : clk
+    Info (332115): Latch Clock  : clk
+    Info (332115): Data Arrival Path:
+    Info (332115): Total (ns)  Incr (ns)     Type  Element
+    Info (332115): ==========  ========= ==  ====  ===================================
+    Info (332115):      0.000      0.000           launch edge time
+    Info (332115):      1.974      1.974  R        clock network delay
+    Info (332115):      1.974      0.000     uTco  rst_ctr[6]
+    Info (332115):      1.974      0.000 RR  CELL  rst_ctr[6]|q
+    Info (332115):      2.115      0.141 RR    IC  LessThan0~0|datab
+    Info (332115):      2.328      0.213 RF  CELL  LessThan0~0|combout
+    Info (332115):      4.038      1.710 FF    IC  u_dut|hit_prediv.tcc_div_numer[15]|clrn
+    Info (332115):      4.258      0.220 FR  CELL  mts_processor:u_dut|hit_prediv.tcc_div_numer[15]
+    Info (332115): Data Required Path:
+    Info (332115): Total (ns)  Incr (ns)     Type  Element
+    Info (332115): ==========  ========= ==  ====  ===================================
+    Info (332115):      7.273      7.273           latch edge time
+    Info (332115):      9.194      1.921  R        clock network delay
+    Info (332115):      9.227      0.033           clock pessimism removed
+    Info (332115):      9.177     -0.050           clock uncertainty
+    Info (332115):      9.177      0.000     uTsu  mts_processor:u_dut|hit_prediv.tcc_div_numer[15]
+    Info (332115): Data Arrival Time  :     4.258
+    Info (332115): Data Required Time :     9.177
+    Info (332115): Slack              :     4.919
+    Info (332115): ===================================================================
+Info (332115): Report Timing: Found 1 removal paths (0 violated).  Worst case slack is 0.641
+    Info (332115): -to_clock [get_clocks {clk}]
+    Info (332115): -removal
+    Info (332115): -stdout
+Info (332115): Path #1: Removal slack is 0.641
+    Info (332115): ===================================================================
+    Info (332115): From Node    : rst_ctr[5]~DUPLICATE
+    Info (332115): To Node      : mts_processor:u_dut|debug_msg.total_hit_cnt[31]
+    Info (332115): Launch Clock : clk
+    Info (332115): Latch Clock  : clk
+    Info (332115): Data Arrival Path:
+    Info (332115): Total (ns)  Incr (ns)     Type  Element
+    Info (332115): ==========  ========= ==  ====  ===================================
+    Info (332115):      0.000      0.000           launch edge time
+    Info (332115):      1.908      1.908  R        clock network delay
+    Info (332115):      1.908      0.000     uTco  rst_ctr[5]~DUPLICATE
+    Info (332115):      1.908      0.000 FF  CELL  rst_ctr[5]~DUPLICATE|q
+    Info (332115):      2.095      0.187 FF    IC  LessThan0~0|dataf
+    Info (332115):      2.140      0.045 FR  CELL  LessThan0~0|combout
+    Info (332115):      2.489      0.349 RR    IC  u_dut|debug_msg.total_hit_cnt[31]|clrn
+    Info (332115):      2.574      0.085 RF  CELL  mts_processor:u_dut|debug_msg.total_hit_cnt[31]
+    Info (332115): Data Required Path:
+    Info (332115): Total (ns)  Incr (ns)     Type  Element
+    Info (332115): ==========  ========= ==  ====  ===================================
+    Info (332115):      0.000      0.000           latch edge time
+    Info (332115):      1.966      1.966  R        clock network delay
+    Info (332115):      1.933     -0.033           clock pessimism removed
+    Info (332115):      1.933      0.000      uTh  mts_processor:u_dut|debug_msg.total_hit_cnt[31]
+    Info (332115): Data Arrival Time  :     2.574
+    Info (332115): Data Required Time :     1.933
+    Info (332115): Slack              :     0.641
+    Info (332115): ===================================================================
+Info (332102): Design is not fully constrained for setup requirements
+Info (332102): Design is not fully constrained for hold requirements
+Info: Quartus Prime Timing Analyzer was successful. 0 errors, 0 warnings
+    Info: Peak virtual memory: 1154 megabytes
+    Info: Processing ended: Mon May 11 10:57:32 2026
+    Info: Elapsed time: 00:00:02
+    Info: Total CPU time (on all processors): 00:00:02
