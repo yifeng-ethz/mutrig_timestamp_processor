@@ -53,10 +53,13 @@
 --      Date: May 10, 2026
 -- Revision: 5.21 (Use a local hex formatter for Quartus 18.1 debug-report compatibility)
 --      Date: May 11, 2026
+-- Revision: 5.22 (Drop the run_ctrl ready output to align with the rc-network readyless contract;
+--                 ctrl_ready_comb remains as an internal command-capture gate)
+--      Date: May 11, 2026
 -- Revision: 5.15 (Add DEBUG status conduit and 64-bit hit metadata sidecar)
 --      Date: May 6, 2026
--- Version : 26.1.0
--- Date    : 20260506
+-- Version : 26.2.0
+-- Date    : 20260511
 -- Change  : Add DEBUG-controlled synthesizable sideband observability. DEBUG >= 1 exposes a
 --           packed debug status conduit with ready/accept/busy/state/occupancy information.
 --           DEBUG >= 2 carries a 64-bit metadata sidecar from accepted hit_type0 payload beats
@@ -264,9 +267,12 @@ port (
     -- 7: RESET
     -- 8: OUT_OF_DAQ
     asi_ctrl_valid			: in  std_logic;
-    asi_ctrl_ready			: out std_logic;
-    
-    -- AVST <debug_ts> 
+    -- NOTE: rc-network is readyless (USE_READY=0 broadcast). The local
+    -- ctrl_ready_comb FSM gate is preserved internally as a write-enable on
+    -- the run-command capture path; it is no longer driven onto the entity
+    -- boundary.
+
+    -- AVST <debug_ts>
     -- debug port (showing the time difference of gts - mts)
     aso_debug_ts_valid		: out std_logic;
     aso_debug_ts_data		: out std_logic_vector(15 downto 0);
@@ -894,7 +900,8 @@ begin
         or fpga_overflow_will_happen = '1'
     ) else '0';
 
-    asi_ctrl_ready <= ctrl_ready_comb;
+    -- rc-network is readyless; ctrl_ready_comb remains an internal FSM gate
+    -- consumed by the local run-command capture process and the status word.
     asi_hit_type0_ready <= asi_hit_type0_ready_i;
     asi_hit_type0_accept <= asi_hit_type0_valid and asi_hit_type0_ready_i;
     with run_state_cmd select run_state_cmd_code <=

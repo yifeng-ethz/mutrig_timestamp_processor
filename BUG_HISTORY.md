@@ -52,6 +52,45 @@ Historical formal note:
 | [BUG-015-R](#bug-015-r-open-packet-could-block-terminal-close-markers-after-endofrun) | R | hard stuck error | `rare (routine stop while an input packet remains open or upstream EOP is missing)` | fixed | `NEG_MTS_118_missing_boundary_with_packet_open` | `a1d9155` | Stale open-packet bookkeeping could hold the terminal boundary generator busy forever after upstream end-of-run. |
 | [BUG-016-H](#bug-016-h-continuous-frame-checkpoint-token-metadata-was-cleared-by-implicit-port-direction) | H | non-datapath-refactor | `directed-only (continuous-frame reporting metadata)` | fixed | `mtsp_bucket_frame_BASIC` | `5e60c20` | The new no-restart frame run passed datapath checks but emitted blank or malformed checkpoint tokens, weakening machine-readable cross-run traceability. |
 | [BUG-017-R](#bug-017-r-debug-burst-and-ts-delta-leaked-dropped-delay-error-hits) | R | non-datapath-refactor | `directed-only (drop-delay-error debug observability)` | fixed | `NEG_MTS_045_zero_window_fault_everything` | `b8c02b8` | Debug burst and timestamp-delta sidebands could report a hit intentionally dropped by `drop_delay_error`. |
+| [BUG-018-R](#bug-018-r-run-ctrl-sink-still-declared-asi-ctrl-ready-against-the-rc-network-readyless-contract) | R | non-datapath-refactor | `directed-only (Qsys auto-inserts timing_adapter on rc fan-out)` | fixed | FEB v3 integration audit `tb_int_run_emulator_directed` | this commit | The `run_ctrl` sink still declared `asi_ctrl_ready` so Qsys auto-inserted `altera_avalon_st_timing_adapter` on the rc fan-out, carrying the B002 ready-default hazard on silicon. |
+
+## 2026-05-11
+
+### BUG-018-R: run_ctrl sink still declared asi_ctrl_ready against the rc-network readyless contract
+
+- First seen:
+  - FEB v3 integration audit during the rc-readyless rollout
+  - Hub `runctl_mgmt_host._hw.tcl` advertises `USE_READY=0` for the broadcast `runctl` source; every sink that still declared `asi_*_ready` caused Qsys to silently auto-insert `altera_avalon_st_timing_adapter` on the rc fan-out
+  - The timing_adapter is the structural carrier of the B002 ready-default hazard already documented for the FEB SC plane
+- Symptom:
+  - `mts_processor.run_ctrl` still exposed `asi_ctrl_ready` on the entity boundary even though the hub source has no ready signal
+  - Qsys-generated `feb_system_v3_data_path_subsystem_*` wrappers wired through a `mutrig_datapath_subsystem_0_avalon_st_adapter_timing_adapter_0` on the rc path
+  - Functional simulation still passed but the rc fan-out on silicon could silently drop broadcast beats (B002)
+- Root cause:
+  - The Avalon-ST sink interface contract is "readyless" only when both ends declare `USE_READY=0`. `mts_processor` was still on the legacy backpressured-rc form.
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - Removed the `asi_ctrl_ready` entity port from `mts_processor.vhd` and the matching `add_interface_port` line from `mts_processor_hw.tcl`
+    - Removed the assignment `asi_ctrl_ready <= ctrl_ready_comb;` from the architecture body
+    - Preserved the internal `ctrl_ready_comb` FSM signal that gates the run-command capture process and the status word; only the entity-level driver was dropped
+    - Bumped `VERSION` 26.1.0.0506 -> 26.2.0.0511 in both `_hw.tcl` and the VHDL revision header
+  - before_fix_outcome:
+    - Qsys generation log emitted `altera_avalon_st_timing_adapter` instances on the rc fan-out
+    - Sink boundary advertised `USE_READY=1` against a `USE_READY=0` source
+  - after_fix_outcome:
+    - FEB v3 Qsys regeneration produced `feb_system_v3.vhd` with `asi_ctrl_valid => avalon_st_adapter_020_out_0_valid` and no paired `asi_ctrl_ready` wire on the `mts_preprocessor_0` and `mts_preprocessor_1` instances
+    - `tb_int` regression passed: `B065`, `B066`, `B067`, `B068`, `B069`, and the directed `RC_EMUL` run all reported `*** TEST PASSED ***` with zero UVM errors and zero UVM fatals
+  - potential_hazard:
+    - The change is interface-contract only; no internal logic was modified.
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - The rc-readyless rollout was applied across five sink IPs: `mts_processor`, `mutrig_injector_multiheader`, `mutrig_reset_controller`, `histogram_statistics_v2`, and `arb_hit_type0`; this entry covers the `mts_processor` slice
+  - Standalone tb / standalone syn rerun was explicitly de-scoped by the user because the change is interface-contract only and the internal command-capture logic is unchanged
+- Commit:
+  - this commit (`[FIX] HW: Drop run_ctrl ready output (rc-network readyless contract)`)
 
 ## 2026-05-10
 

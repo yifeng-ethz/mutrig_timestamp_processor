@@ -18,10 +18,10 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
-set VERSION_MINOR_DEFAULT_CONST            1
+set VERSION_MINOR_DEFAULT_CONST            2
 set VERSION_PATCH_DEFAULT_CONST            0
-set BUILD_DEFAULT_CONST                    506
-set VERSION_DATE_DEFAULT_CONST             20260506
+set BUILD_DEFAULT_CONST                    511
+set VERSION_DATE_DEFAULT_CONST             20260511
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -541,7 +541,6 @@ set_interface_property run_ctrl readyLatency 0
 set_interface_property run_ctrl ENABLED true
 add_interface_port run_ctrl asi_ctrl_data  data  Input 9
 add_interface_port run_ctrl asi_ctrl_valid valid Input 1
-add_interface_port run_ctrl asi_ctrl_ready ready Output 1
 
 add_interface hit_type0_in avalon_streaming end
 set_interface_property hit_type0_in associatedClock clock_interface
