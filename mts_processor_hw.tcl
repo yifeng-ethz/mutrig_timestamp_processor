@@ -18,10 +18,10 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
-set VERSION_MINOR_DEFAULT_CONST            2
+set VERSION_MINOR_DEFAULT_CONST            3
 set VERSION_PATCH_DEFAULT_CONST            0
-set BUILD_DEFAULT_CONST                    511
-set VERSION_DATE_DEFAULT_CONST             20260511
+set BUILD_DEFAULT_CONST                    512
+set VERSION_DATE_DEFAULT_CONST             20260512
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -121,7 +121,7 @@ Bank <b>%s</b>, enabled channel window <b>%d..%d</b> (%d channels), divider pipe
     catch {
         set_display_item_property debug_html TEXT {<html>\
 <b>DEBUG</b><br/>\
-Controls built-in report instrumentation and standalone observability. Non-zero values increase debug visibility; they do not add a backpressure model to <b>hit_type1_out</b>. Hit counters count accepted <b>hit_type0_in</b> ready/valid transfers only.<br/><br/>\
+Controls built-in report instrumentation and standalone observability. Non-zero values increase debug visibility; they do not add a backpressure model to <b>hit_type1_out</b>. Hit counters count accepted <b>hit_type0_in</b> valid transfers only.<br/><br/>\
 <b>DEBUG = 0</b>: no optional debug conduits are materialized by Platform Designer; the HDL status and sidecar outputs are tied to zero.<br/>\
 <b>DEBUG &gt;= 1</b>: adds <b>debug_status</b>, a 32-bit synthesizable status conduit with ready, accept, busy, state, occupancy, termination, and debug-level fields.<br/>\
 <b>DEBUG &gt;= 2</b>: adds the 64-bit <b>hit_type0_sidecar</b> input conduit and <b>hit_type1_sidecar</b> output conduit. Metadata is sampled only with hit_type0 beats accepted into the datapath and is emitted only with delivered hit_type1 payload beats; terminate markers and locally dropped delay-error hits do not assert sidecar valid.</html>}
@@ -558,7 +558,6 @@ add_interface_port hit_type0_in asi_hit_type0_endofrun      endofrun      Input 
 add_interface_port hit_type0_in asi_hit_type0_error         error         Input 3
 add_interface_port hit_type0_in asi_hit_type0_data          data          Input 45
 add_interface_port hit_type0_in asi_hit_type0_valid         valid         Input 1
-add_interface_port hit_type0_in asi_hit_type0_ready         ready         Output 1
 
 add_interface hit_type1_out avalon_streaming start
 set_interface_property hit_type1_out associatedClock clock_interface
