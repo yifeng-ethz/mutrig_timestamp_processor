@@ -8,3 +8,10 @@ tb/sim_work/
 lpm/
 modelsim.ini
 work/
+
+# --- Per-run sim transcripts ---
+tb/run_*.log
+tb/transcript
+tb/*.wlf
+tb/**/transcript
+tb/**/*.wlf
