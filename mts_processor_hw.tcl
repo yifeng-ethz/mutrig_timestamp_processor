@@ -19,7 +19,7 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
 set VERSION_MINOR_DEFAULT_CONST            3
-set VERSION_PATCH_DEFAULT_CONST            2
+set VERSION_PATCH_DEFAULT_CONST            3
 set BUILD_DEFAULT_CONST                    515
 set VERSION_DATE_DEFAULT_CONST             20260515
 set VERSION_GIT_DEFAULT_CONST              0
@@ -333,6 +333,9 @@ proc elaborate {} {
     catch {set_parameter_property VERSION_GIT ENABLED [get_parameter_value GIT_STAMP_OVERRIDE]}
 
     set_debug_interface_enable $debug_level
+    set_interface_property debug_ts ENABLED [expr {$debug_level >= 1}]
+    set_interface_property debug_burst ENABLED [expr {$debug_level >= 1}]
+    set_interface_property ts_delta ENABLED [expr {$debug_level >= 1}]
 }
 
 # ========================================================================
@@ -585,7 +588,7 @@ set_interface_property debug_ts errorDescriptor ""
 set_interface_property debug_ts firstSymbolInHighOrderBits true
 set_interface_property debug_ts maxChannel 0
 set_interface_property debug_ts readyLatency 0
-set_interface_property debug_ts ENABLED true
+set_interface_property debug_ts ENABLED false
 add_interface_port debug_ts aso_debug_ts_valid valid Output 1
 add_interface_port debug_ts aso_debug_ts_data  data  Output 16
 
@@ -595,7 +598,7 @@ set_interface_property debug_burst associatedReset reset_interface
 set_interface_property debug_burst dataBitsPerSymbol 16
 set_interface_property debug_burst errorDescriptor ""
 set_interface_property debug_burst firstSymbolInHighOrderBits true
-set_interface_property debug_burst ENABLED true
+set_interface_property debug_burst ENABLED false
 add_interface_port debug_burst aso_debug_burst_valid valid Output 1
 add_interface_port debug_burst aso_debug_burst_data  data  Output 16
 
@@ -605,7 +608,7 @@ set_interface_property ts_delta associatedReset reset_interface
 set_interface_property ts_delta dataBitsPerSymbol 16
 set_interface_property ts_delta errorDescriptor ""
 set_interface_property ts_delta firstSymbolInHighOrderBits true
-set_interface_property ts_delta ENABLED true
+set_interface_property ts_delta ENABLED false
 add_interface_port ts_delta aso_ts_delta_valid valid Output 1
 add_interface_port ts_delta aso_ts_delta_data  data  Output 16
 

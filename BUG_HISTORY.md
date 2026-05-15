@@ -54,8 +54,35 @@ Historical formal note:
 | [BUG-017-R](#bug-017-r-debug-burst-and-ts-delta-leaked-dropped-delay-error-hits) | R | non-datapath-refactor | `directed-only (drop-delay-error debug observability)` | fixed | `NEG_MTS_045_zero_window_fault_everything` | `b8c02b8` | Debug burst and timestamp-delta sidebands could report a hit intentionally dropped by `drop_delay_error`. |
 | [BUG-018-R](#bug-018-r-run-ctrl-sink-still-declared-asi-ctrl-ready-against-the-rc-network-readyless-contract) | R | non-datapath-refactor | `directed-only (Qsys auto-inserts timing_adapter on rc fan-out)` | fixed | FEB v3 integration audit `tb_int_run_emulator_directed` | this commit | The `run_ctrl` sink still declared `asi_ctrl_ready` so Qsys auto-inserted `altera_avalon_st_timing_adapter` on the rc fan-out, carrying the B002 ready-default hazard on silicon. |
 | [BUG-019-R](#bug-019-r-readyless-run_prepare-could-be-ignored-while-local-control-ready-is-low) | R | hard stuck error | `common (fresh run after terminate / live readback loop)` | fixed / FEB retest pending | live FEB histogram zero capture after source-mux and CSR aperture fixes | pending | A readyless `RUN_PREPARE` command could arrive while local control ready was low and be ignored, leaving the next run stuck in stale flushing/idle state. |
+| [BUG-020-H](#bug-020-h-disabled-mts-debug-streams-still-reported-as-unconnected) | H | non-datapath-refactor | `common (FEB v3 Platform Designer open/generate)` | fixed | FEB v3 Qsys GUI/generation cleanup 2026-05-15 | this commit | MTS debug streams remained enabled in packaging metadata even when the production FEB v3 configuration set `DEBUG=0`. |
 
 ## 2026-05-15
+
+### BUG-020-H: disabled MTS debug streams still reported as unconnected
+
+- First seen:
+  - FEB v3 `quartus_systems/feb_system_v3.qsys` Platform Designer open/generate cleanup on 2026-05-15.
+  - The v3 integration uses the production MTS configuration with `DEBUG=0`.
+- Symptom:
+  - Platform Designer reported `debug_ts`, `debug_burst`, and `ts_delta` as unconnected Avalon-ST sources.
+- Root cause:
+  - `mts_processor_hw.tcl` declared the three debug streams enabled by default, regardless of the `DEBUG` parameter.
+- Fix status:
+  - state:
+    - fixed
+  - mechanism:
+    - The debug stream interfaces now default disabled and are enabled during elaboration only when `DEBUG >= 1`.
+    - Package version was bumped to 26.3.3.0515.
+  - before_fix_outcome:
+    - FEB v3 Qsys GUI/generation reported disabled MTS debug observability streams as unconnected warnings.
+  - after_fix_outcome:
+    - `qsys-generate quartus_systems/feb_system_v3.qsys --synthesis=VERILOG` exited with status 0, no `Error:` lines, and 82 remaining warnings in `/tmp/qsys_generate_feb_v3_top_20260515_121600.log`.
+  - potential_hazard:
+    - Low. This is package metadata gating only; debug stream visibility is unchanged for debug-enabled configurations.
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Commit:
+  - this commit (`[FIX] Gate MTS debug streams in Qsys`)
 
 ### BUG-019-R: readyless RUN_PREPARE could be ignored while local control ready is low
 
