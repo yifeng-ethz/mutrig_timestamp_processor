@@ -19,7 +19,7 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
 set VERSION_MINOR_DEFAULT_CONST            3
-set VERSION_PATCH_DEFAULT_CONST            3
+set VERSION_PATCH_DEFAULT_CONST            4
 set BUILD_DEFAULT_CONST                    515
 set VERSION_DATE_DEFAULT_CONST             20260515
 set VERSION_GIT_DEFAULT_CONST              0
@@ -166,9 +166,11 @@ Single synchronous <b>clock_interface</b> domain with <b>reset_interface</b> ass
 45-bit payload = ASIC[44:41], channel[40:36], TCC[35:21], TFine[20:16], ECC[15:1], EFlag[0].\
 SOP/EOP delimit one MuTRiG frame. A dedicated <b>endofrun</b> pulse marks the last packet of the run; under TERMINATING the processor accepts tail packets until that pulse arrives, then drains and closes each downstream lane.<br/><br/>\
 <b>Egress stream: hit_type1_out</b><br/>\
-87-bit payload = true hit ts[47:0] in data[86:39] plus legacy Type1 data in data[38:0] (ASIC[38:35], channel[34:30], TCC_8n[29:17], TCC_1n6[16:14], TFine[13:9], ET_1n6[8:0]).\
+39-bit Type1 payload = ASIC[38:35], channel[34:30], TCC_8n[29:17], TCC_1n6[16:14], TFine[13:9], ET_1n6[8:0].\
 <b>startofpacket</b> marks the first accepted beat for each enabled channel in a run. <b>endofpacket</b> marks the terminating boundary.\
 <b>empty</b> is asserted only for the dedicated per-lane terminate marker. The current RTL exposes <b>aso_hit_type1_ready</b> for interface compatibility but does not stall on it.<br/><br/>\
+<b>Streaming debug plane</b><br/>\
+<b>hit_type1_extended_0</b> and <b>hit_type1_extended_1</b> are readyless 87-bit sources that carry data[86:39]=true hit ts[47:0] and data[38:0]=the Type1 payload. BANK=UP drives extended_0; BANK=DW/DOWN drives extended_1. These ports assert valid only for real payload beats, not terminate markers.<br/><br/>\
 <b>Debug streams</b><br/>\
 <b>debug_ts</b>, <b>debug_burst</b>, and <b>ts_delta</b> are observation-only outputs for standalone bring-up and profiling.<br/><br/>\
 <b>Optional DEBUG conduits</b><br/>\
@@ -565,13 +567,13 @@ add_interface_port hit_type0_in asi_hit_type0_valid         valid         Input 
 add_interface hit_type1_out avalon_streaming start
 set_interface_property hit_type1_out associatedClock clock_interface
 set_interface_property hit_type1_out associatedReset reset_interface
-set_interface_property hit_type1_out dataBitsPerSymbol 87
+set_interface_property hit_type1_out dataBitsPerSymbol 39
 set_interface_property hit_type1_out errorDescriptor {"tserr"}
 set_interface_property hit_type1_out firstSymbolInHighOrderBits true
 set_interface_property hit_type1_out maxChannel 15
 set_interface_property hit_type1_out readyLatency 0
 set_interface_property hit_type1_out ENABLED true
-add_interface_port hit_type1_out aso_hit_type1_data          data          Output 87
+add_interface_port hit_type1_out aso_hit_type1_data          data          Output 39
 add_interface_port hit_type1_out aso_hit_type1_valid         valid         Output 1
 add_interface_port hit_type1_out aso_hit_type1_ready         ready         Input 1
 add_interface_port hit_type1_out aso_hit_type1_channel       channel       Output 4
@@ -579,6 +581,30 @@ add_interface_port hit_type1_out aso_hit_type1_endofpacket   endofpacket   Outpu
 add_interface_port hit_type1_out aso_hit_type1_startofpacket startofpacket Output 1
 add_interface_port hit_type1_out aso_hit_type1_empty         empty         Output 1
 add_interface_port hit_type1_out aso_hit_type1_error         error         Output 1
+
+add_interface hit_type1_extended_0 avalon_streaming start
+set_interface_property hit_type1_extended_0 associatedClock clock_interface
+set_interface_property hit_type1_extended_0 associatedReset reset_interface
+set_interface_property hit_type1_extended_0 dataBitsPerSymbol 87
+set_interface_property hit_type1_extended_0 errorDescriptor ""
+set_interface_property hit_type1_extended_0 firstSymbolInHighOrderBits true
+set_interface_property hit_type1_extended_0 maxChannel 0
+set_interface_property hit_type1_extended_0 readyLatency 0
+set_interface_property hit_type1_extended_0 ENABLED true
+add_interface_port hit_type1_extended_0 aso_hit_type1_extended_0_data  data  Output 87
+add_interface_port hit_type1_extended_0 aso_hit_type1_extended_0_valid valid Output 1
+
+add_interface hit_type1_extended_1 avalon_streaming start
+set_interface_property hit_type1_extended_1 associatedClock clock_interface
+set_interface_property hit_type1_extended_1 associatedReset reset_interface
+set_interface_property hit_type1_extended_1 dataBitsPerSymbol 87
+set_interface_property hit_type1_extended_1 errorDescriptor ""
+set_interface_property hit_type1_extended_1 firstSymbolInHighOrderBits true
+set_interface_property hit_type1_extended_1 maxChannel 0
+set_interface_property hit_type1_extended_1 readyLatency 0
+set_interface_property hit_type1_extended_1 ENABLED true
+add_interface_port hit_type1_extended_1 aso_hit_type1_extended_1_data  data  Output 87
+add_interface_port hit_type1_extended_1 aso_hit_type1_extended_1_valid valid Output 1
 
 add_interface debug_ts avalon_streaming start
 set_interface_property debug_ts associatedClock clock_interface

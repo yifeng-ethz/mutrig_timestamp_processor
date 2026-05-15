@@ -40,6 +40,10 @@ architecture rtl of mts_processor_syn_top is
     signal aso_hit_type1_ready         : std_logic := '1';
     signal aso_hit_type1_empty         : std_logic;
     signal aso_hit_type1_error         : std_logic;
+    signal aso_hit_type1_extended_0_data  : std_logic_vector(86 downto 0);
+    signal aso_hit_type1_extended_0_valid : std_logic;
+    signal aso_hit_type1_extended_1_data  : std_logic_vector(86 downto 0);
+    signal aso_hit_type1_extended_1_valid : std_logic;
 
     signal asi_ctrl_data               : std_logic_vector(8 downto 0) := (others => '0');
     signal asi_ctrl_valid              : std_logic := '0';
@@ -57,6 +61,7 @@ architecture rtl of mts_processor_syn_top is
 begin
     rst <= '1' when rst_ctr < to_unsigned(32, rst_ctr'length) else '0';
     activity_probe <= probe_accum;
+    asi_ctrl_ready <= coe_debug_status_data(11);
 
     u_dut : entity work.mts_processor
         generic map(
@@ -87,9 +92,12 @@ begin
             aso_hit_type1_ready         => aso_hit_type1_ready,
             aso_hit_type1_empty         => aso_hit_type1_empty,
             aso_hit_type1_error         => aso_hit_type1_error,
+            aso_hit_type1_extended_0_data  => aso_hit_type1_extended_0_data,
+            aso_hit_type1_extended_0_valid => aso_hit_type1_extended_0_valid,
+            aso_hit_type1_extended_1_data  => aso_hit_type1_extended_1_data,
+            aso_hit_type1_extended_1_valid => aso_hit_type1_extended_1_valid,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
-            asi_ctrl_ready              => asi_ctrl_ready,
             aso_debug_ts_valid          => aso_debug_ts_valid,
             aso_debug_ts_data           => aso_debug_ts_data,
             aso_debug_burst_valid       => aso_debug_burst_valid,
@@ -197,6 +205,12 @@ begin
                     probe_next(5)          := probe_next(5) xor aso_hit_type1_endofpacket;
                     probe_next(6)          := probe_next(6) xor aso_hit_type1_empty;
                     probe_next(7)          := probe_next(7) xor aso_hit_type1_error;
+                end if;
+                if aso_hit_type1_extended_0_valid = '1' then
+                    probe_next := probe_next xor aso_hit_type1_extended_0_data(31 downto 0);
+                end if;
+                if aso_hit_type1_extended_1_valid = '1' then
+                    probe_next := probe_next xor aso_hit_type1_extended_1_data(31 downto 0);
                 end if;
                 if aso_debug_ts_valid = '1' then
                     probe_next(15 downto 0) := probe_next(15 downto 0) xor aso_debug_ts_data;

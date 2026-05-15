@@ -109,6 +109,12 @@
 --           the upper timestamp sideband to histogram delay mode.
 --           Accept RUN_PREPARE while the local ready gate is low so the readyless
 --           broadcast run-control stream can re-arm MTS from a stale FLUSHING state.
+-- Version : 26.3.4
+-- Date    : 20260515
+-- Change  : Restore hit_type1_out to the 39-bit Type1 main-datapath contract and
+--           move the true 48-bit timestamp onto readyless streaming-debug-plane
+--           sources. BANK=UP drives hit_type1_extended_0, BANK=DW/DOWN drives
+--           hit_type1_extended_1. RUN_PREPARE readyless recovery is preserved.
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -140,7 +146,8 @@
     --		TFine	5
     --		ET_1n6	9	(for type 1b, E-T; for type 1a, =all "0"s while EFlag=0 / =all "1"s while EFlag=1)
     -- ==================
-    --		Total	39 legacy payload bits plus true hit timestamp sideband in data[86:39]
+    --		Total	39 payload bits. The streaming debug plane carries
+    --      {true_ts[47:0], payload[38:0]} for histogram delay mode.
     -- (a and b are automatically switch over, depending on the current hit flag from the upstream mutrig_frame_assembly. 
     
     -- Latency: 
@@ -225,7 +232,7 @@ port (
     aso_hit_type1_channel			: out  std_logic_vector(3 downto 0); -- routing index for downstream hit-stack splitter; ASIC ID stays in data[38:35]
     aso_hit_type1_startofpacket		: out  std_logic; -- marks the start and end of run
     aso_hit_type1_endofpacket		: out  std_logic;
-    aso_hit_type1_data				: out  std_logic_vector(86 downto 0);
+    aso_hit_type1_data				: out  std_logic_vector(38 downto 0);
     aso_hit_type1_valid				: out  std_logic; 
     aso_hit_type1_ready				: in   std_logic; 
     aso_hit_type1_empty				: out  std_logic; -- TODO: marks the eor of this mutrig link (avst-channel), if theeor cycle does not contain hit.
@@ -235,6 +242,12 @@ port (
     aso_hit_type1_error             : out std_logic; -- { tserr : possible wrong timestamp }
                                                                         -- tserr is asserted to indicate this hit timestamp is not within the range of (0-2000 cycles delay)
                                                                         -- the upstream (ring-buffer cam) should ignore this hit as it is not meaningful. 
+
+    -- readyless streaming debug plane, one source per FEB bank
+    aso_hit_type1_extended_0_data    : out std_logic_vector(86 downto 0);
+    aso_hit_type1_extended_0_valid   : out std_logic;
+    aso_hit_type1_extended_1_data    : out std_logic_vector(86 downto 0);
+    aso_hit_type1_extended_1_valid   : out std_logic;
     
 
     -- input stream of control signal (enable)
@@ -1924,6 +1937,7 @@ begin
         variable input_lane_v     : natural;
         variable input_slot_v     : natural;
         variable terminate_lane_v : natural;
+        variable extended_data_v   : std_logic_vector(86 downto 0);
     begin
         if (i_rst = '1') then 
             route_startofrun_sent         <= (others => '0');
@@ -1937,6 +1951,10 @@ begin
             aso_hit_type1_endofpacket     <= '0';
             aso_hit_type1_empty           <= '0';
             aso_hit_type1_error           <= '0';
+            aso_hit_type1_extended_0_data  <= (others => '0');
+            aso_hit_type1_extended_0_valid <= '0';
+            aso_hit_type1_extended_1_data  <= (others => '0');
+            aso_hit_type1_extended_1_valid <= '0';
             coe_hit_type1_sidecar_data    <= (others => '0');
             coe_hit_type1_sidecar_valid   <= '0';
         
@@ -1948,6 +1966,10 @@ begin
             aso_hit_type1_endofpacket     <= '0';
             aso_hit_type1_empty           <= '0';
             aso_hit_type1_error           <= '0';
+            aso_hit_type1_extended_0_data  <= (others => '0');
+            aso_hit_type1_extended_0_valid <= '0';
+            aso_hit_type1_extended_1_data  <= (others => '0');
+            aso_hit_type1_extended_1_valid <= '0';
             coe_hit_type1_sidecar_data    <= (others => '0');
             coe_hit_type1_sidecar_valid   <= '0';
 
@@ -1974,7 +1996,14 @@ begin
             ) then
                 if (hit_out.valid = '1' and (csr.drop_delay_error = '0' or hit_out_delay_error = '0')) then
                     route_lane_v := to_integer(unsigned(hit_out.tcc_8n(5 downto 4)));
-                    aso_hit_type1_data(86 downto 39)                            <= hit_out_debug_timestamp;
+                    extended_data_v                                               := (others => '0');
+                    extended_data_v(86 downto 39)                                 := hit_out_debug_timestamp;
+                    extended_data_v(O_ASIC_HI downto O_ASIC_LO)                  := hit_out.asic;
+                    extended_data_v(O_CHANNEL_HI downto O_CHANNEL_LO)            := hit_out.channel;
+                    extended_data_v(O_TCC8N_HI downto O_TCC8N_LO)                := hit_out.tcc_8n;
+                    extended_data_v(O_TCC1N6_HI downto O_TCC1N6_LO)              := hit_out.tcc_1n6;
+                    extended_data_v(O_TFINE_HI downto O_TFINE_LO)                := hit_out.tfine;
+                    extended_data_v(O_ET1N6_HI downto O_ET1N6_LO)                := hit_out.et_1n6;
                     aso_hit_type1_data(O_ASIC_HI downto O_ASIC_LO)               <= hit_out.asic;
                     aso_hit_type1_data(O_CHANNEL_HI downto O_CHANNEL_LO)         <= hit_out.channel;
                     aso_hit_type1_data(O_TCC8N_HI downto O_TCC8N_LO)             <= hit_out.tcc_8n;
@@ -1984,6 +2013,13 @@ begin
                     aso_hit_type1_valid                                          <= '1';
                     aso_hit_type1_channel                                        <= "00" & hit_out.tcc_8n(5 downto 4);
                     aso_hit_type1_error                                          <= hit_out_delay_error;
+                    if (BANK = "DW" or BANK = "DOWN") then
+                        aso_hit_type1_extended_1_data                            <= extended_data_v;
+                        aso_hit_type1_extended_1_valid                           <= '1';
+                    else
+                        aso_hit_type1_extended_0_data                            <= extended_data_v;
+                        aso_hit_type1_extended_0_valid                           <= '1';
+                    end if;
                     if (DEBUG >= 2) then
                         coe_hit_type1_sidecar_data                               <= debug_sidecar_hit_out;
                         coe_hit_type1_sidecar_valid                              <= debug_sidecar_hit_out_valid;

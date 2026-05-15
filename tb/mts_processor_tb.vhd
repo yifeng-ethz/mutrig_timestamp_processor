@@ -39,11 +39,15 @@ architecture sim of mts_processor_tb is
     signal aso_hit_type1_channel    : std_logic_vector(3 downto 0);
     signal aso_hit_type1_startofpacket : std_logic;
     signal aso_hit_type1_endofpacket   : std_logic;
-    signal aso_hit_type1_data       : std_logic_vector(86 downto 0);
+    signal aso_hit_type1_data       : std_logic_vector(38 downto 0);
     signal aso_hit_type1_valid      : std_logic;
     signal aso_hit_type1_ready      : std_logic := '1';
     signal aso_hit_type1_empty      : std_logic;
     signal aso_hit_type1_error      : std_logic;
+    signal aso_hit_type1_extended_0_data : std_logic_vector(86 downto 0);
+    signal aso_hit_type1_extended_0_valid: std_logic;
+    signal aso_hit_type1_extended_1_data : std_logic_vector(86 downto 0);
+    signal aso_hit_type1_extended_1_valid: std_logic;
     signal asi_ctrl_data            : std_logic_vector(8 downto 0) := (others => '0');
     signal asi_ctrl_valid           : std_logic := '0';
     signal aso_debug_ts_valid       : std_logic;
@@ -157,7 +161,9 @@ architecture sim of mts_processor_tb is
     procedure expect_et(
         signal clk                  : in  std_logic;
         signal hit_valid            : in  std_logic;
-        signal hit_data             : in  std_logic_vector(86 downto 0);
+        signal hit_data             : in  std_logic_vector(38 downto 0);
+        signal ext_valid            : in  std_logic;
+        signal ext_data             : in  std_logic_vector(86 downto 0);
         signal sidecar_valid        : in  std_logic;
         signal sidecar_data         : in  std_logic_vector(63 downto 0);
         constant expected_et        : in  natural;
@@ -173,6 +179,18 @@ architecture sim of mts_processor_tb is
                         & " got=0x"
                         & to_hstring(hit_data(ET_FIELD_HI_CONST downto ET_FIELD_LO_CONST))
                         severity failure;
+                assert ext_valid = '1'
+                    report "Expected extended debug-plane valid with the hit_type1 payload"
+                    severity failure;
+                assert ext_data(38 downto 0) = hit_data
+                    report "Extended debug-plane payload does not match hit_type1 data exp=0x"
+                        & to_hstring(hit_data)
+                        & " got=0x"
+                        & to_hstring(ext_data(38 downto 0))
+                        severity failure;
+                assert aso_hit_type1_extended_1_valid = '0'
+                    report "Default UP-bank testbench unexpectedly drove extended bank 1"
+                    severity failure;
                 assert sidecar_valid = '1'
                     report "Expected DEBUG sidecar valid with the hit_type1 payload"
                     severity failure;
@@ -222,6 +240,10 @@ begin
             aso_hit_type1_ready         => aso_hit_type1_ready,
             aso_hit_type1_empty         => aso_hit_type1_empty,
             aso_hit_type1_error         => aso_hit_type1_error,
+            aso_hit_type1_extended_0_data  => aso_hit_type1_extended_0_data,
+            aso_hit_type1_extended_0_valid => aso_hit_type1_extended_0_valid,
+            aso_hit_type1_extended_1_data  => aso_hit_type1_extended_1_data,
+            aso_hit_type1_extended_1_valid => aso_hit_type1_extended_1_valid,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
             aso_debug_ts_valid          => aso_debug_ts_valid,
@@ -285,6 +307,8 @@ begin
             clk                     => i_clk,
             hit_valid               => aso_hit_type1_valid,
             hit_data                => aso_hit_type1_data,
+            ext_valid               => aso_hit_type1_extended_0_valid,
+            ext_data                => aso_hit_type1_extended_0_data,
             sidecar_valid           => coe_hit_type1_sidecar_valid,
             sidecar_data            => coe_hit_type1_sidecar_data,
             expected_et             => 2,
@@ -311,6 +335,8 @@ begin
             clk                     => i_clk,
             hit_valid               => aso_hit_type1_valid,
             hit_data                => aso_hit_type1_data,
+            ext_valid               => aso_hit_type1_extended_0_valid,
+            ext_data                => aso_hit_type1_extended_0_data,
             sidecar_valid           => coe_hit_type1_sidecar_valid,
             sidecar_data            => coe_hit_type1_sidecar_data,
             expected_et             => 0,
@@ -337,6 +363,8 @@ begin
             clk                     => i_clk,
             hit_valid               => aso_hit_type1_valid,
             hit_data                => aso_hit_type1_data,
+            ext_valid               => aso_hit_type1_extended_0_valid,
+            ext_data                => aso_hit_type1_extended_0_data,
             sidecar_valid           => coe_hit_type1_sidecar_valid,
             sidecar_data            => coe_hit_type1_sidecar_data,
             expected_et             => 0,
@@ -363,6 +391,8 @@ begin
             clk                     => i_clk,
             hit_valid               => aso_hit_type1_valid,
             hit_data                => aso_hit_type1_data,
+            ext_valid               => aso_hit_type1_extended_0_valid,
+            ext_data                => aso_hit_type1_extended_0_data,
             sidecar_valid           => coe_hit_type1_sidecar_valid,
             sidecar_data            => coe_hit_type1_sidecar_data,
             expected_et             => 511,

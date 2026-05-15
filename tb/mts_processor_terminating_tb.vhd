@@ -32,11 +32,15 @@ architecture sim of mts_processor_terminating_tb is
     signal aso_hit_type1_channel       : std_logic_vector(3 downto 0);
     signal aso_hit_type1_startofpacket : std_logic;
     signal aso_hit_type1_endofpacket   : std_logic;
-    signal aso_hit_type1_data          : std_logic_vector(86 downto 0);
+    signal aso_hit_type1_data          : std_logic_vector(38 downto 0);
     signal aso_hit_type1_valid         : std_logic;
     signal aso_hit_type1_ready         : std_logic := '1';
     signal aso_hit_type1_empty         : std_logic;
     signal aso_hit_type1_error         : std_logic;
+    signal aso_hit_type1_extended_0_data  : std_logic_vector(86 downto 0);
+    signal aso_hit_type1_extended_0_valid : std_logic;
+    signal aso_hit_type1_extended_1_data  : std_logic_vector(86 downto 0);
+    signal aso_hit_type1_extended_1_valid : std_logic;
     signal asi_ctrl_data               : std_logic_vector(8 downto 0) := (others => '0');
     signal asi_ctrl_valid              : std_logic := '0';
     signal asi_ctrl_ready              : std_logic;
@@ -181,6 +185,10 @@ begin
             aso_hit_type1_ready         => aso_hit_type1_ready,
             aso_hit_type1_empty         => aso_hit_type1_empty,
             aso_hit_type1_error         => aso_hit_type1_error,
+            aso_hit_type1_extended_0_data  => aso_hit_type1_extended_0_data,
+            aso_hit_type1_extended_0_valid => aso_hit_type1_extended_0_valid,
+            aso_hit_type1_extended_1_data  => aso_hit_type1_extended_1_data,
+            aso_hit_type1_extended_1_valid => aso_hit_type1_extended_1_valid,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
             aso_debug_ts_valid          => aso_debug_ts_valid,
@@ -268,10 +276,25 @@ begin
                 if aso_hit_type1_empty = '0' then
                     payload_count_v := payload_count_v + 1;
                     payload_mask_v(to_integer(unsigned(aso_hit_type1_channel(1 downto 0)))) := '1';
+                    assert aso_hit_type1_extended_0_valid = '1'
+                        report "Payload beat did not drive the UP-bank extended debug plane"
+                        severity failure;
+                    assert aso_hit_type1_extended_0_data(38 downto 0) = aso_hit_type1_data
+                        report "Extended debug-plane payload differs from hit_type1 payload"
+                        severity failure;
+                    assert aso_hit_type1_extended_1_valid = '0'
+                        report "Default UP-bank terminating testbench unexpectedly drove extended bank 1"
+                        severity failure;
                     assert aso_hit_type1_endofpacket = '0'
                         report "Active terminate must close via dedicated empty markers, not on the payload beat"
                         severity failure;
                 elsif aso_hit_type1_endofpacket = '1' then
+                    assert aso_hit_type1_extended_0_valid = '0'
+                        report "Empty close marker must not drive the extended debug plane"
+                        severity failure;
+                    assert aso_hit_type1_extended_1_valid = '0'
+                        report "Empty close marker must not drive extended bank 1"
+                        severity failure;
                     close_mask_v(to_integer(unsigned(aso_hit_type1_channel(1 downto 0)))) := '1';
                     close_count_v := close_count_v + 1;
                     if (payload_mask_v(to_integer(unsigned(aso_hit_type1_channel(1 downto 0)))) = '1') then
@@ -321,6 +344,12 @@ begin
         for wait_idx in 0 to 128 loop
             wait until rising_edge(i_clk);
             if aso_hit_type1_valid = '1' and aso_hit_type1_endofpacket = '1' then
+                assert aso_hit_type1_extended_0_valid = '0'
+                    report "Idle close marker must not drive the extended debug plane"
+                    severity failure;
+                assert aso_hit_type1_extended_1_valid = '0'
+                    report "Idle close marker must not drive extended bank 1"
+                    severity failure;
                 assert aso_hit_type1_empty = '1'
                     report "Idle-close termination must emit empty close markers"
                     severity failure;
