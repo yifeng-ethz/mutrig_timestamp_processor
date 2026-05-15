@@ -53,6 +53,46 @@ Historical formal note:
 | [BUG-016-H](#bug-016-h-continuous-frame-checkpoint-token-metadata-was-cleared-by-implicit-port-direction) | H | non-datapath-refactor | `directed-only (continuous-frame reporting metadata)` | fixed | `mtsp_bucket_frame_BASIC` | `5e60c20` | The new no-restart frame run passed datapath checks but emitted blank or malformed checkpoint tokens, weakening machine-readable cross-run traceability. |
 | [BUG-017-R](#bug-017-r-debug-burst-and-ts-delta-leaked-dropped-delay-error-hits) | R | non-datapath-refactor | `directed-only (drop-delay-error debug observability)` | fixed | `NEG_MTS_045_zero_window_fault_everything` | `b8c02b8` | Debug burst and timestamp-delta sidebands could report a hit intentionally dropped by `drop_delay_error`. |
 | [BUG-018-R](#bug-018-r-run-ctrl-sink-still-declared-asi-ctrl-ready-against-the-rc-network-readyless-contract) | R | non-datapath-refactor | `directed-only (Qsys auto-inserts timing_adapter on rc fan-out)` | fixed | FEB v3 integration audit `tb_int_run_emulator_directed` | this commit | The `run_ctrl` sink still declared `asi_ctrl_ready` so Qsys auto-inserted `altera_avalon_st_timing_adapter` on the rc fan-out, carrying the B002 ready-default hazard on silicon. |
+| [BUG-019-R](#bug-019-r-readyless-run_prepare-could-be-ignored-while-local-control-ready-is-low) | R | hard stuck error | `common (fresh run after terminate / live readback loop)` | fixed / FEB retest pending | live FEB histogram zero capture after source-mux and CSR aperture fixes | pending | A readyless `RUN_PREPARE` command could arrive while local control ready was low and be ignored, leaving the next run stuck in stale flushing/idle state. |
+
+## 2026-05-15
+
+### BUG-019-R: readyless RUN_PREPARE could be ignored while local control ready is low
+
+- First seen:
+  - live FEB histogram capture after the readyless splitter, source-mux, and emulator CSR aperture fixes, where emulator/source-mux activity was configured but MTS/rbCAM/hist counters stayed at zero on fresh captures
+  - focused legacy benches `make run_term` and `make run_math` after adding a readyless `RUN_PREPARE` rearm regression point
+- Symptom:
+  - a new run could fail to re-arm the timestamp processor after a prior stop/readback sequence
+  - downstream histogram readback stayed empty even though the live bring-up script started a fresh run and selected the emulator path
+- Root cause:
+  - the run-control sink is now readyless at the Qsys boundary, so broadcast run-control beats cannot be backpressured
+  - `proc_run_control_mgmt_agent` still gated all command capture with local `ctrl_ready_comb`
+  - if `RUN_PREPARE` arrived while the internal termination/flush state held `ctrl_ready_comb=0`, the beat was lost and no later control word restored the expected fresh-run state
+- Fix status:
+  - state:
+    - fixed in RTL and `_hw.tcl`; generated FEB Qsys updated; full FEB board retest pending
+  - mechanism:
+    - decode each incoming run-control word unconditionally into a local `incoming_run_state_v`
+    - continue gating ordinary commands with `ctrl_ready_comb`
+    - explicitly accept `RUN_PREPARE` even when `ctrl_ready_comb=0`, so the readyless network can always re-arm the processor for a new run
+    - bump the MTS patch version to `26.3.2` with build/date `515` / `20260515`
+  - before_fix_outcome:
+    - live histogram captures after earlier integration fixes still produced zero rbCAM pushes and zero histogram bins across fresh runs
+  - after_fix_outcome:
+    - `make clean compile` completed in `mutrig_timestamp_processor/tb`
+    - `make run_term 2>&1 | tee run_term_20260515_mts_runprep_rearm.log` passed with `mts_processor_terminating_tb PASSED`
+    - `make run_math 2>&1 | tee run_math_20260515_mts_runprep_rearm.log` passed with `mts_processor_tb PASSED`
+    - FEB v3 Qsys regeneration with stamp `20260515_mts_runprep_rearm` exited 0 and generated MTS source containing the readyless `RUN_PREPARE` exception
+  - potential_hazard:
+    - medium until a newly compiled FEB SOF is programmed and live captures show nonzero pre/post rbCAM histogram bins in both mode0 and delay mode
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - The live capture script now uses separate run numbers for active-run histogram readback and the CSR counter snapshot, so this bug was visible as a routine repeated-run bring-up failure rather than a one-shot smoke issue.
+  - The FEB `tb_int` directed emulator scenario passed after regeneration with `RC_EMUL_FIXED` reconciling `A=16 stable_A=16 PRE=16 POST=16 FEB=16 closed=16 stable_closed=16`.
+- Commit:
+  - pending
 
 ## 2026-05-11
 

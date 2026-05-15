@@ -32,7 +32,7 @@ architecture sim of mts_processor_terminating_tb is
     signal aso_hit_type1_channel       : std_logic_vector(3 downto 0);
     signal aso_hit_type1_startofpacket : std_logic;
     signal aso_hit_type1_endofpacket   : std_logic;
-    signal aso_hit_type1_data          : std_logic_vector(38 downto 0);
+    signal aso_hit_type1_data          : std_logic_vector(86 downto 0);
     signal aso_hit_type1_valid         : std_logic;
     signal aso_hit_type1_ready         : std_logic := '1';
     signal aso_hit_type1_empty         : std_logic;
@@ -46,6 +46,7 @@ architecture sim of mts_processor_terminating_tb is
     signal aso_debug_burst_data        : std_logic_vector(15 downto 0);
     signal aso_ts_delta_valid          : std_logic;
     signal aso_ts_delta_data           : std_logic_vector(15 downto 0);
+    signal coe_debug_status_data       : std_logic_vector(31 downto 0);
     signal i_rst                       : std_logic := '1';
     signal i_clk                       : std_logic := '0';
 
@@ -182,19 +183,20 @@ begin
             aso_hit_type1_error         => aso_hit_type1_error,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
-            asi_ctrl_ready              => asi_ctrl_ready,
             aso_debug_ts_valid          => aso_debug_ts_valid,
             aso_debug_ts_data           => aso_debug_ts_data,
             aso_debug_burst_valid       => aso_debug_burst_valid,
             aso_debug_burst_data        => aso_debug_burst_data,
             aso_ts_delta_valid          => aso_ts_delta_valid,
             aso_ts_delta_data           => aso_ts_delta_data,
-            coe_debug_status_data       => open,
+            coe_debug_status_data       => coe_debug_status_data,
             coe_hit_type1_sidecar_data  => open,
             coe_hit_type1_sidecar_valid => open,
             i_rst                       => i_rst,
             i_clk                       => i_clk
         );
+
+    asi_ctrl_ready <= coe_debug_status_data(11);
 
     stim : process
         variable payload_count_v          : natural;
@@ -346,6 +348,7 @@ begin
         send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_RUN_PREP_CONST);
         send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_SYNC_CONST);
         send_ctrl_until_ready(i_clk, asi_ctrl_data, asi_ctrl_valid, asi_ctrl_ready, CTRL_RUNNING_CONST);
+        wait_cycles(i_clk, 2);
 
         pulse_ctrl(i_clk, asi_ctrl_data, asi_ctrl_valid, CTRL_TERMINATE_CONST);
         wait_cycles(i_clk, 4);

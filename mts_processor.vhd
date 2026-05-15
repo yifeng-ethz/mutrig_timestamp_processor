@@ -101,6 +101,14 @@
 --           asi_ctrl_ready stuck low; the next legal control word can recover the local agent.
 --           Once upstream end-of-run is observed, stale packet-open bookkeeping no longer blocks
 --           the terminal close-marker train; the physical input pipeline still drains first.
+-- Version : 26.3.2
+-- Date    : 20260515
+-- Change  : Extend hit_type1_out to 87 bits by appending the true 48-bit hit timestamp
+--           in data[86:39]. The legacy Type1 payload remains in data[38:0] so the
+--           histogram bridge can trim the rbCAM-facing pre-rbCAM stream while forwarding
+--           the upper timestamp sideband to histogram delay mode.
+--           Accept RUN_PREPARE while the local ready gate is low so the readyless
+--           broadcast run-control stream can re-arm MTS from a stale FLUSHING state.
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -132,7 +140,7 @@
     --		TFine	5
     --		ET_1n6	9	(for type 1b, E-T; for type 1a, =all "0"s while EFlag=0 / =all "1"s while EFlag=1)
     -- ==================
-    --		Total	39
+    --		Total	39 legacy payload bits plus true hit timestamp sideband in data[86:39]
     -- (a and b are automatically switch over, depending on the current hit flag from the upstream mutrig_frame_assembly. 
     
     -- Latency: 
@@ -217,7 +225,7 @@ port (
     aso_hit_type1_channel			: out  std_logic_vector(3 downto 0); -- routing index for downstream hit-stack splitter; ASIC ID stays in data[38:35]
     aso_hit_type1_startofpacket		: out  std_logic; -- marks the start and end of run
     aso_hit_type1_endofpacket		: out  std_logic;
-    aso_hit_type1_data				: out  std_logic_vector(38 downto 0);
+    aso_hit_type1_data				: out  std_logic_vector(86 downto 0);
     aso_hit_type1_valid				: out  std_logic; 
     aso_hit_type1_ready				: in   std_logic; 
     aso_hit_type1_empty				: out  std_logic; -- TODO: marks the eor of this mutrig link (avst-channel), if theeor cycle does not contain hit.
@@ -269,8 +277,8 @@ port (
     asi_ctrl_valid			: in  std_logic;
     -- NOTE: rc-network is readyless (USE_READY=0 broadcast). The local
     -- ctrl_ready_comb FSM gate is preserved internally as a write-enable on
-    -- the run-command capture path; it is no longer driven onto the entity
-    -- boundary.
+    -- the run-command capture path, with RUN_PREPARE as the readyless re-arm
+    -- escape; it is no longer driven onto the entity boundary.
 
     -- AVST <debug_ts>
     -- debug port (showing the time difference of gts - mts)
@@ -902,6 +910,8 @@ begin
 
     -- rc-network is readyless; ctrl_ready_comb remains an internal FSM gate
     -- consumed by the local run-command capture process and the status word.
+    -- RUN_PREPARE is still accepted with ready low to allow fresh-run re-arm
+    -- from a stale FLUSHING state.
     asi_hit_type0_ready <= asi_hit_type0_ready_i;
     asi_hit_type0_accept <= asi_hit_type0_valid and asi_hit_type0_ready_i;
     with run_state_cmd select run_state_cmd_code <=
@@ -1050,38 +1060,43 @@ begin
     padding_logic_gts_product <= std_logic_vector(counter_ov_base_1n6);
     
     proc_run_control_mgmt_agent : process (i_rst, i_clk)
-        variable decoded_run_state_v : run_state_t;
+        variable decoded_run_state_v  : run_state_t;
+        variable incoming_run_state_v : run_state_t;
     begin
         if (i_rst = '1') then 
             run_state_cmd		<= IDLE;
         elsif (rising_edge(i_clk)) then
             decoded_run_state_v := run_state_cmd;
-            if (asi_ctrl_valid = '1' and ctrl_ready_comb = '1') then
+            incoming_run_state_v := run_state_cmd;
+            if (asi_ctrl_valid = '1') then
                 case asi_ctrl_data is 
                     when "000000001" =>
-                        decoded_run_state_v := IDLE;
+                        incoming_run_state_v := IDLE;
                     when "000000010" => 
-                        decoded_run_state_v := RUN_PREPARE;
+                        incoming_run_state_v := RUN_PREPARE;
                     when "000000100" =>
-                        decoded_run_state_v := SYNC;
+                        incoming_run_state_v := SYNC;
                     when "000001000" =>
-                        decoded_run_state_v := RUNNING;
+                        incoming_run_state_v := RUNNING;
                     when "000010000" =>
-                        decoded_run_state_v := TERMINATING;
+                        incoming_run_state_v := TERMINATING;
                     when "000100000" => 
-                        decoded_run_state_v := LINK_TEST;
+                        incoming_run_state_v := LINK_TEST;
                     when "001000000" =>
-                        decoded_run_state_v := SYNC_TEST;
+                        incoming_run_state_v := SYNC_TEST;
                     -- This IP has no dedicated local behavior for broadcast
                     -- RESET / OUT_OF_DAQ. Treat them as a synchronous IDLE
                     -- abort so the shared run-control fanout can retire.
                     when "010000000" =>
-                        decoded_run_state_v := IDLE;
+                        incoming_run_state_v := IDLE;
                     when "100000000" =>
-                        decoded_run_state_v := IDLE;
+                        incoming_run_state_v := IDLE;
                     when others =>
-                        decoded_run_state_v := ERROR;
+                        incoming_run_state_v := ERROR;
                 end case;
+                if (ctrl_ready_comb = '1' or incoming_run_state_v = RUN_PREPARE) then
+                    decoded_run_state_v := incoming_run_state_v;
+                end if;
             end if;
             run_state_cmd <= decoded_run_state_v;
         end if;
@@ -1959,6 +1974,7 @@ begin
             ) then
                 if (hit_out.valid = '1' and (csr.drop_delay_error = '0' or hit_out_delay_error = '0')) then
                     route_lane_v := to_integer(unsigned(hit_out.tcc_8n(5 downto 4)));
+                    aso_hit_type1_data(86 downto 39)                            <= hit_out_debug_timestamp;
                     aso_hit_type1_data(O_ASIC_HI downto O_ASIC_LO)               <= hit_out.asic;
                     aso_hit_type1_data(O_CHANNEL_HI downto O_CHANNEL_LO)         <= hit_out.channel;
                     aso_hit_type1_data(O_TCC8N_HI downto O_TCC8N_LO)             <= hit_out.tcc_8n;
