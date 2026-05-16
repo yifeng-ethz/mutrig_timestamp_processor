@@ -323,6 +323,7 @@ proc validate {} {
 proc elaborate {} {
     compute_derived_values
     set debug_level [get_parameter_value DEBUG]
+    set bank_name [string toupper [get_parameter_value BANK]]
 
     set_parameter_property FRAME_CORRPT_BIT_LOC ENABLED false
     set_parameter_property CRCERR_BIT_LOC ENABLED false
@@ -335,6 +336,8 @@ proc elaborate {} {
     catch {set_parameter_property VERSION_GIT ENABLED [get_parameter_value GIT_STAMP_OVERRIDE]}
 
     set_debug_interface_enable $debug_level
+    set_interface_property hit_type1_extended_0 ENABLED [expr {$bank_name eq "UP"}]
+    set_interface_property hit_type1_extended_1 ENABLED [expr {$bank_name ne "UP"}]
     set_interface_property debug_ts ENABLED [expr {$debug_level >= 1}]
     set_interface_property debug_burst ENABLED [expr {$debug_level >= 1}]
     set_interface_property ts_delta ENABLED [expr {$debug_level >= 1}]
@@ -380,6 +383,7 @@ set_parameter_property HITERR_BIT_LOC VISIBLE false
 add_parameter BANK STRING UP
 set_parameter_property BANK DISPLAY_NAME "Bank Tag"
 set_parameter_property BANK HDL_PARAMETER true
+set_parameter_property BANK AFFECTS_ELABORATION true
 set_parameter_property BANK DESCRIPTION "Label carried by debug messages and standalone profiling output."
 
 add_parameter ENABLED_CHANNEL_LO NATURAL 0

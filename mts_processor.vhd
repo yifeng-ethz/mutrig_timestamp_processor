@@ -1507,7 +1507,7 @@ begin
             debug_msg.discard_hit_cnt		<= (others => '0');
             debug_msg.total_hit_cnt			<= (others => '0');
         elsif (rising_edge(i_clk)) then 
-            if (DEBUG /= 0 and asi_hit_type0_valid = '1') then
+            if (DEBUG_TRACE_REPORTS and DEBUG /= 0 and asi_hit_type0_valid = '1') then
                 report "MTS_COUNT[" & BANK & "] valid="
                     & std_logic'image(asi_hit_type0_valid)
                     & " ready=" & std_logic'image(asi_hit_type0_ready_i)
