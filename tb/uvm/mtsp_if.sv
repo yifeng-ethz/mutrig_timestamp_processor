@@ -71,6 +71,7 @@ interface mtsp_hit1_if(input logic clk, input logic rst);
   logic        sop;
   logic        eop;
   logic [38:0] data;
+  logic [47:0] ts;
   logic        valid;
   logic        ready;
   logic        empty;
@@ -78,11 +79,11 @@ interface mtsp_hit1_if(input logic clk, input logic rst);
 
   modport drv (
     output ready,
-    input  channel, sop, eop, data, valid, empty, error, clk, rst
+    input  channel, sop, eop, data, ts, valid, empty, error, clk, rst
   );
 
   modport mon (
-    input channel, sop, eop, data, valid, ready, empty, error, clk, rst
+    input channel, sop, eop, data, ts, valid, ready, empty, error, clk, rst
   );
 endinterface
 

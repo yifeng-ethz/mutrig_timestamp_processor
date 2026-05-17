@@ -7,6 +7,11 @@ module tb_top;
 
   logic clk = 1'b0;
   logic rst;
+  logic [31:0] debug_status_data;
+  logic [63:0] hit0_sidecar_data;
+  logic        hit0_sidecar_valid;
+  logic [63:0] hit1_sidecar_data;
+  logic        hit1_sidecar_valid;
 
   always #(CLK_PERIOD_PS/2) clk = ~clk;
 
@@ -30,6 +35,10 @@ module tb_top;
     hit1_if.ready = 1'b1;
   end
 
+  assign ctrl_if.ready = debug_status_data[11];
+  assign hit0_sidecar_data  = 64'd0;
+  assign hit0_sidecar_valid = 1'b0;
+
   mts_processor dut (
     .avs_csr_readdata            (csr_if.readdata),
     .avs_csr_read                (csr_if.read),
@@ -45,6 +54,8 @@ module tb_top;
     .asi_hit_type0_data          (hit0_if.data),
     .asi_hit_type0_valid         (hit0_if.valid),
     .asi_hit_type0_ready         (hit0_if.ready),
+    .coe_hit_type0_sidecar_data  (hit0_sidecar_data),
+    .coe_hit_type0_sidecar_valid (hit0_sidecar_valid),
     .aso_hit_type1_channel       (hit1_if.channel),
     .aso_hit_type1_startofpacket (hit1_if.sop),
     .aso_hit_type1_endofpacket   (hit1_if.eop),
@@ -53,15 +64,18 @@ module tb_top;
     .aso_hit_type1_ready         (hit1_if.ready),
     .aso_hit_type1_empty         (hit1_if.empty),
     .aso_hit_type1_error         (hit1_if.error),
+    .coe_hit_type1_ts            (hit1_if.ts),
     .asi_ctrl_data               (ctrl_if.data),
     .asi_ctrl_valid              (ctrl_if.valid),
-    .asi_ctrl_ready              (ctrl_if.ready),
     .aso_debug_ts_valid          (dbg_if.debug_ts_valid),
     .aso_debug_ts_data           (dbg_if.debug_ts_data),
     .aso_debug_burst_valid       (dbg_if.debug_burst_valid),
     .aso_debug_burst_data        (dbg_if.debug_burst_data),
     .aso_ts_delta_valid          (dbg_if.ts_delta_valid),
     .aso_ts_delta_data           (dbg_if.ts_delta_data),
+    .coe_debug_status_data       (debug_status_data),
+    .coe_hit_type1_sidecar_data  (hit1_sidecar_data),
+    .coe_hit_type1_sidecar_valid (hit1_sidecar_valid),
     .i_rst                       (rst),
     .i_clk                       (clk)
   );

@@ -40,6 +40,7 @@ architecture rtl of mts_processor_syn_top is
     signal aso_hit_type1_ready         : std_logic := '1';
     signal aso_hit_type1_empty         : std_logic;
     signal aso_hit_type1_error         : std_logic;
+    signal coe_hit_type1_ts            : std_logic_vector(47 downto 0);
 
     signal asi_ctrl_data               : std_logic_vector(8 downto 0) := (others => '0');
     signal asi_ctrl_valid              : std_logic := '0';
@@ -87,6 +88,7 @@ begin
             aso_hit_type1_ready         => aso_hit_type1_ready,
             aso_hit_type1_empty         => aso_hit_type1_empty,
             aso_hit_type1_error         => aso_hit_type1_error,
+            coe_hit_type1_ts            => coe_hit_type1_ts,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
             asi_ctrl_ready              => asi_ctrl_ready,
@@ -192,6 +194,8 @@ begin
                 probe_next := probe_accum xor avs_csr_readdata xor std_logic_vector(stim_ctr);
                 if aso_hit_type1_valid = '1' then
                     probe_next := probe_next xor aso_hit_type1_data(31 downto 0);
+                    probe_next := probe_next xor coe_hit_type1_ts(31 downto 0);
+                    probe_next(31 downto 16) := probe_next(31 downto 16) xor coe_hit_type1_ts(47 downto 32);
                     probe_next(3 downto 0) := probe_next(3 downto 0) xor aso_hit_type1_channel;
                     probe_next(4)          := probe_next(4) xor aso_hit_type1_startofpacket;
                     probe_next(5)          := probe_next(5) xor aso_hit_type1_endofpacket;

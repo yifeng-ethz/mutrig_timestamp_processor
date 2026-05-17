@@ -39,11 +39,12 @@ architecture sim of mts_processor_tb is
     signal aso_hit_type1_channel    : std_logic_vector(3 downto 0);
     signal aso_hit_type1_startofpacket : std_logic;
     signal aso_hit_type1_endofpacket   : std_logic;
-    signal aso_hit_type1_data       : std_logic_vector(86 downto 0);
+    signal aso_hit_type1_data       : std_logic_vector(38 downto 0);
     signal aso_hit_type1_valid      : std_logic;
     signal aso_hit_type1_ready      : std_logic := '1';
     signal aso_hit_type1_empty      : std_logic;
     signal aso_hit_type1_error      : std_logic;
+    signal coe_hit_type1_ts         : std_logic_vector(47 downto 0);
     signal asi_ctrl_data            : std_logic_vector(8 downto 0) := (others => '0');
     signal asi_ctrl_valid           : std_logic := '0';
     signal aso_debug_ts_valid       : std_logic;
@@ -157,7 +158,7 @@ architecture sim of mts_processor_tb is
     procedure expect_et(
         signal clk                  : in  std_logic;
         signal hit_valid            : in  std_logic;
-        signal hit_data             : in  std_logic_vector(86 downto 0);
+        signal hit_data             : in  std_logic_vector(38 downto 0);
         signal sidecar_valid        : in  std_logic;
         signal sidecar_data         : in  std_logic_vector(63 downto 0);
         constant expected_et        : in  natural;
@@ -222,6 +223,7 @@ begin
             aso_hit_type1_ready         => aso_hit_type1_ready,
             aso_hit_type1_empty         => aso_hit_type1_empty,
             aso_hit_type1_error         => aso_hit_type1_error,
+            coe_hit_type1_ts            => coe_hit_type1_ts,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
             aso_debug_ts_valid          => aso_debug_ts_valid,
