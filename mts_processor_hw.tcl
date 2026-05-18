@@ -19,9 +19,9 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
 set VERSION_MINOR_DEFAULT_CONST            3
-set VERSION_PATCH_DEFAULT_CONST            4
-set BUILD_DEFAULT_CONST                    515
-set VERSION_DATE_DEFAULT_CONST             20260515
+set VERSION_PATCH_DEFAULT_CONST            5
+set BUILD_DEFAULT_CONST                    518
+set VERSION_DATE_DEFAULT_CONST             20260518
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -609,6 +609,17 @@ set_interface_property hit_type1_extended_1 readyLatency 0
 set_interface_property hit_type1_extended_1 ENABLED true
 add_interface_port hit_type1_extended_1 aso_hit_type1_extended_1_data  data  Output 87
 add_interface_port hit_type1_extended_1 aso_hit_type1_extended_1_valid valid Output 1
+
+# hit_type1_ts: 48-bit true hit timestamp on a separate conduit, fed directly to
+# the V3 histogram_statistics_v2 type1_{up,down}_ts inputs (delay-mode entry).
+# Coexists with hit_type1_extended_{0,1}; the two paths carry the same
+# timestamp but in different framings. Merged from commit eb67302 on
+# backup/codex/stream-debug-plane-feb-v3-20260515.
+add_interface hit_type1_ts conduit start
+set_interface_property hit_type1_ts associatedClock clock_interface
+set_interface_property hit_type1_ts associatedReset reset_interface
+set_interface_property hit_type1_ts ENABLED true
+add_interface_port hit_type1_ts coe_hit_type1_ts export Output 48
 
 add_interface debug_ts avalon_streaming start
 set_interface_property debug_ts associatedClock clock_interface

@@ -31,6 +31,7 @@ module tb_top;
   logic        hit1_extended_0_valid;
   logic [86:0] hit1_extended_1_data;
   logic        hit1_extended_1_valid;
+  logic [47:0] hit1_ts;
   logic [63:0] hit0_sidecar_data;
   logic        hit0_sidecar_valid;
   logic [63:0] hit1_sidecar_data;
@@ -75,6 +76,7 @@ module tb_top;
     .aso_hit_type1_extended_0_valid (hit1_extended_0_valid),
     .aso_hit_type1_extended_1_data  (hit1_extended_1_data),
     .aso_hit_type1_extended_1_valid (hit1_extended_1_valid),
+    .coe_hit_type1_ts              (hit1_ts),
     .asi_ctrl_data               (ctrl_if.data),
     .asi_ctrl_valid              (ctrl_if.valid),
     .aso_debug_ts_valid          (dbg_if.debug_ts_valid),

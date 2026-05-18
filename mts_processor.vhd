@@ -248,7 +248,13 @@ port (
     aso_hit_type1_extended_0_valid   : out std_logic;
     aso_hit_type1_extended_1_data    : out std_logic_vector(86 downto 0);
     aso_hit_type1_extended_1_valid   : out std_logic;
-    
+
+    -- 48-bit true hit timestamp conduit for the V3 histogram delay-mode input
+    -- (mts_processor.hit_type1_ts -> histogram_statistics_v2.type1_{up,down}_ts).
+    -- Drives the same hit_out_debug_timestamp value the extended_0/1 sources
+    -- pack into bits [86:39]. Merged from commit eb67302.
+    coe_hit_type1_ts                 : out std_logic_vector(47 downto 0);
+
 
     -- input stream of control signal (enable)
     -- this signal is time critical and must be synchronzed for all datapath modules
@@ -1955,9 +1961,10 @@ begin
             aso_hit_type1_extended_0_valid <= '0';
             aso_hit_type1_extended_1_data  <= (others => '0');
             aso_hit_type1_extended_1_valid <= '0';
+            coe_hit_type1_ts              <= (others => '0');
             coe_hit_type1_sidecar_data    <= (others => '0');
             coe_hit_type1_sidecar_valid   <= '0';
-        
+
         elsif (rising_edge(i_clk)) then
             aso_hit_type1_data            <= (others => '0');
             aso_hit_type1_valid           <= '0';
@@ -1970,6 +1977,7 @@ begin
             aso_hit_type1_extended_0_valid <= '0';
             aso_hit_type1_extended_1_data  <= (others => '0');
             aso_hit_type1_extended_1_valid <= '0';
+            coe_hit_type1_ts              <= (others => '0');
             coe_hit_type1_sidecar_data    <= (others => '0');
             coe_hit_type1_sidecar_valid   <= '0';
 
@@ -2020,6 +2028,10 @@ begin
                         aso_hit_type1_extended_0_data                            <= extended_data_v;
                         aso_hit_type1_extended_0_valid                           <= '1';
                     end if;
+                    -- hit_type1_ts conduit: same hit_out_debug_timestamp the
+                    -- extended_0/1 sources pack into bits [86:39]. Direct V3
+                    -- histogram delay-mode input. Merged from eb67302.
+                    coe_hit_type1_ts                                             <= hit_out_debug_timestamp;
                     if (DEBUG >= 2) then
                         coe_hit_type1_sidecar_data                               <= debug_sidecar_hit_out;
                         coe_hit_type1_sidecar_valid                              <= debug_sidecar_hit_out_valid;
