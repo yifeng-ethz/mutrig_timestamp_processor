@@ -1283,11 +1283,18 @@ begin
                             -- normal op
                         when others => 
                     end case;
-                    if (csr.go = '1' and run_state_cmd = RUNNING) then -- standard sequence 2 
+                    if (csr.go = '1' and run_state_cmd = RUNNING) then -- standard sequence 2
                         processor_state		<= RUNNING;
                         reset_flow			<= DONE;
-                    elsif (run_state_cmd = SYNC) then -- standard sequence 1 
+                    elsif (run_state_cmd = SYNC) then -- standard sequence 1
                         reset_flow			<= SYNC;
+                    elsif (run_state_cmd = RUN_PREPARE) then
+                        -- A fresh RUN_PREPARE while already in RESET (e.g. host re-arms the
+                        -- run sequence) must re-arm reset_flow to SCLR. Without this branch the
+                        -- state holds at {RESET, reset_flow=SYNC, run_state_cmd=RUN_PREPARE},
+                        -- where ctrl_ready_comb=0 rejects every later SYNC/RUNNING word and the
+                        -- FSM deadlocks (RUNNING never asserts, type1 extended never emits).
+                        reset_flow			<= SCLR;
                     elsif (run_state_cmd = IDLE) then -- abort
                         processor_state		<= IDLE;
                         reset_flow			<= DONE;

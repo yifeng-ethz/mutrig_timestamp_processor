@@ -55,6 +55,41 @@ Historical formal note:
 | [BUG-018-R](#bug-018-r-run-ctrl-sink-still-declared-asi-ctrl-ready-against-the-rc-network-readyless-contract) | R | non-datapath-refactor | `directed-only (Qsys auto-inserts timing_adapter on rc fan-out)` | fixed | FEB v3 integration audit `tb_int_run_emulator_directed` | this commit | The `run_ctrl` sink still declared `asi_ctrl_ready` so Qsys auto-inserted `altera_avalon_st_timing_adapter` on the rc fan-out, carrying the B002 ready-default hazard on silicon. |
 | [BUG-019-R](#bug-019-r-readyless-run_prepare-could-be-ignored-while-local-control-ready-is-low) | R | hard stuck error | `common (fresh run after terminate / live readback loop)` | fixed / FEB retest pending | live FEB histogram zero capture after source-mux and CSR aperture fixes | pending | A readyless `RUN_PREPARE` command could arrive while local control ready was low and be ignored, leaving the next run stuck in stale flushing/idle state. |
 | [BUG-020-H](#bug-020-h-disabled-mts-debug-streams-still-reported-as-unconnected) | H | non-datapath-refactor | `common (FEB v3 Platform Designer open/generate)` | fixed | FEB v3 Qsys GUI/generation cleanup 2026-05-15 | this commit | MTS debug streams remained enabled in packaging metadata even when the production FEB v3 configuration set `DEBUG=0`. |
+| [BUG-021-R](#bug-021-r-reset-state-ignored-run_prepare-and-deadlocked-the-run-control-fsm) | R | hard stuck error | `common (host retries the run-start sequence)` | fixed / sim-validated, FEB retest pending | headless SignalTap on FEB SciFi v4 SOF 67965fee: both MTS instances wedged in RESET | this commit | The RESET state had no `RUN_PREPARE` transition, so a second readyless `RUN_PREPARE` (accepted by BUG-019-R's capture path) left the FSM stuck in `{RESET, reset_flow=SYNC, run_state_cmd=RUN_PREPARE}`, `RUNNING` never asserted, and no `hit_type1` extended hits were emitted. |
+
+## 2026-05-21
+
+### BUG-021-R: RESET state ignored RUN_PREPARE and deadlocked the run-control FSM
+
+- First seen:
+  - headless SignalTap capture on FEB SciFi v4 (SOF md5 67965fee), instance `mts_input_probe`: both MTS instances held `processor_state=RESET` for all 4096 samples, `run_state_cmd=RUN_PREPARE`, `reset_flow=SYNC`, `RUNNING` never asserted, `asi_ctrl_valid` never re-accepted a command.
+  - on-board symptom: Type0 histogram healthy (all 8 ASICs) but Type1 EXT0/EXT1 read zero after settle; the apparent "full/bursty" Type1 reads were stale TYPE0 data bleeding through the histogram ping-pong swap.
+- Symptom:
+  - the timestamp processor never reached `RUNNING`, so `hit_type1_extended_0/1` emitted nothing and the downstream Type1 histogram stayed empty on both banks.
+- Root cause:
+  - BUG-019-R made the run-command capture (`proc_run_control_mgmt_agent`, mts_processor.vhd:1116) accept a readyless `RUN_PREPARE` even when `ctrl_ready_comb=0`, but the RESET-state transition logic (mts_processor.vhd RESET branch) only handled `RUNNING`/`SYNC`/`IDLE` and had NO transition for `run_state_cmd=RUN_PREPARE`.
+  - when the host re-armed the run (a 2nd `RUN_PREPARE` arriving while `processor_state=RESET` and `reset_flow=SYNC`), the FSM held that state; `ctrl_ready_comb` is 0 there (needs `reset_flow=SCLR` for the RUN_PREPARE arm or `run_state_cmd=SYNC` for the SYNC arm), so every later `SYNC`/`RUNNING` word was rejected -> permanent deadlock.
+  - the host run-start sequence is retried multiple times on silicon, so a repeated `RUN_PREPARE` reliably hit the trap; functional sim sent the sequence once and never reproduced it (sim/silicon divergence).
+- Fix status:
+  - state:
+    - fixed in RTL (`mts_processor.vhd` RESET branch) and `mts_processor_hw.tcl` version bump; sim-validated; FEB board retest pending the next integration compile.
+  - mechanism:
+    - add a RESET-state branch `elsif (run_state_cmd = RUN_PREPARE) then reset_flow <= SCLR;` so a fresh `RUN_PREPARE` while already in RESET re-arms `reset_flow` to SCLR; `ctrl_ready_comb` then asserts and the normal SYNC -> RUNNING sequence proceeds.
+    - bump the MTS patch version to `26.3.7` with build/date `521` / `20260521`.
+  - before_fix_outcome:
+    - no-fix copy under the re-arm regression (PREPARE -> SYNC -> 2nd PREPARE in RESET -> SYNC -> RUNNING) wedged: `processor_state` stuck `0x1` (RESET), status `0x40011000` (bit 11 `ctrl_ready_comb`=0), `mts_processor_rearm_tb` FAIL.
+  - after_fix_outcome:
+    - fixed RTL under the same sequence reached `RUNNING` (`processor_state=0x0`, status `0x40030819`) and `aso_hit_type1_extended_0_valid` pulsed; `mts_processor_rearm_tb PASSED`.
+    - static screen on `mts_processor.vhd`: Lint `Error (0)`, CDC `Violations (0)`, RDC `Violation (0)`.
+  - potential_hazard:
+    - low. The new branch only changes the previously-unhandled `{RESET, RUN_PREPARE}` case; the nominal path already held `reset_flow=SCLR`, so no regression. Permanent until a newly compiled FEB SOF shows nonzero Type1 EXT0/EXT1 bins on live capture.
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Runtime / coverage context:
+  - closes the "FEB retest pending" gap left by BUG-019-R: that fix accepted the readyless `RUN_PREPARE`, but this RESET-state gap kept the processor wedged, which is why the prior FEB capture still read zero.
+  - new regression bench `tb/mts_processor_rearm_tb.vhd` drives the re-arm sequence and asserts `RUNNING` is reached.
+- Commit:
+  - this commit
 
 ## 2026-05-15
 
