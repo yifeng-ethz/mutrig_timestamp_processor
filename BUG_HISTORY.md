@@ -87,7 +87,13 @@ Historical formal note:
     - pending / not run in this turn
 - Runtime / coverage context:
   - closes the "FEB retest pending" gap left by BUG-019-R: that fix accepted the readyless `RUN_PREPARE`, but this RESET-state gap kept the processor wedged, which is why the prior FEB capture still read zero.
-  - new regression bench `tb/mts_processor_rearm_tb.vhd` drives the re-arm sequence and asserts `RUNNING` is reached.
+- Directed reproduction sequence (reusable, stored at BOTH test levels):
+  - standalone IP: bench `tb/mts_processor_rearm_tb.vhd`, regression target `make run_rearm` (also in `make run_all`).
+  - integration: a matching `tb_int` (scifi_v4_wrapper) directed re-arm scenario drives the same retried run-control through the real Qsys `run_control_splitter` -> `mts_preprocessor_0/1` and asserts EXT0/EXT1 histogram bins populate (wired after the v4 sim tree is regenerated with MTS 26.3.7).
+  - the run-control stimulus is factored into a reusable `run_arm(clk, ctrl_data, ctrl_valid)` procedure = `RUN_PREPARE` (settle 4 cyc) -> `SYNC` (settle 4 cyc), leaving the FSM in `{RESET, reset_flow=SYNC}`. Reuse it in any MTS run-control test instead of open-coding the word order.
+  - exact sequence the bench drives (the silicon trigger): set `csr.go=1`; `run_arm` (standard start); assert `processor_state=RESET`; `run_arm` AGAIN (the 2nd `RUN_PREPARE` while already in RESET = host start-sequence retry); send `RUNNING`; assert `processor_state=RUNNING`; inject 4 type0 hits; assert `aso_hit_type1_extended_0_valid` pulses.
+  - run-control words (asi_ctrl_data[8:0]): IDLE=0b1, RUN_PREPARE=0b10, SYNC=0b100, RUNNING=0b1000. `processor_state` / `run_state_cmd` are observable on `coe_debug_status_data` bits [15:12] / [19:16] when `DEBUG>=1`.
+  - PASS (fixed RTL): `processor_state=0x0` (RUNNING), status `0x40030819`, extended_0 emits, `mts_processor_rearm_tb PASSED`. FAIL (pre-fix): `processor_state` stuck `0x1` (RESET), status `0x40011000` (bit 11 `ctrl_ready_comb`=0).
 - Commit:
   - this commit
 

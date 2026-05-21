@@ -121,6 +121,24 @@ architecture sim of mts_processor_rearm_tb is
         ctrl_data                   <= (others => '0');
     end procedure send_ctrl;
 
+    -- Reusable run-control arm sequence: RUN_PREPARE -> SYNC, each settling 4
+    -- cycles. Leaves the processor in RESET (reset_flow=SYNC). Call once for the
+    -- standard start; call a SECOND time to model the host retrying the start
+    -- sequence (the silicon pattern that exposed BUG-021-R: a fresh RUN_PREPARE
+    -- arriving while processor_state is already RESET). Reuse this in any MTS
+    -- run-control regression rather than open-coding the word ordering.
+    procedure run_arm(
+        signal clk                  : in  std_logic;
+        signal ctrl_data            : out std_logic_vector(8 downto 0);
+        signal ctrl_valid           : out std_logic
+    ) is
+    begin
+        send_ctrl(clk, ctrl_data, ctrl_valid, CTRL_PREPARE_CONST);
+        for w in 1 to 4 loop wait until rising_edge(clk); end loop;
+        send_ctrl(clk, ctrl_data, ctrl_valid, CTRL_SYNC_CONST);
+        for w in 1 to 4 loop wait until rising_edge(clk); end loop;
+    end procedure run_arm;
+
     procedure send_hit(
         signal clk                  : in  std_logic;
         signal ready                : in  std_logic;
@@ -232,11 +250,8 @@ begin
         csr_write(i_clk, avs_csr_address, avs_csr_write, avs_csr_writedata,
                   CSR_CONTROL_ADDR_CONST, CSR_GO_DERIVE_TOT_CONST);
 
-        report "REARM: driving standard start sequence RUN_PREPARE -> SYNC" severity note;
-        send_ctrl(i_clk, asi_ctrl_data, asi_ctrl_valid, CTRL_PREPARE_CONST);
-        for w in 1 to 4 loop wait until rising_edge(i_clk); end loop;
-        send_ctrl(i_clk, asi_ctrl_data, asi_ctrl_valid, CTRL_SYNC_CONST);
-        for w in 1 to 4 loop wait until rising_edge(i_clk); end loop;
+        report "REARM: run_arm #1 (standard start RUN_PREPARE -> SYNC)" severity note;
+        run_arm(i_clk, asi_ctrl_data, asi_ctrl_valid);
 
         -- Confirm the FSM is parked in RESET (reset_flow=SYNC) before the re-arm.
         -- processor_state/run_state_cmd are exposed on the coe_debug_status_data
@@ -249,12 +264,10 @@ begin
         assert status_v(15 downto 12) = PSTATE_RESET_CONST
             report "REARM: expected processor_state=RESET before re-arm" severity failure;
 
-        -- *** SILICON TRIGGER: a 2nd RUN_PREPARE lands while already in RESET ***
-        report "REARM: injecting 2nd RUN_PREPARE while processor_state=RESET" severity note;
-        send_ctrl(i_clk, asi_ctrl_data, asi_ctrl_valid, CTRL_PREPARE_CONST);
-        for w in 1 to 4 loop wait until rising_edge(i_clk); end loop;
-        send_ctrl(i_clk, asi_ctrl_data, asi_ctrl_valid, CTRL_SYNC_CONST);
-        for w in 1 to 4 loop wait until rising_edge(i_clk); end loop;
+        -- *** SILICON TRIGGER: a 2nd run_arm (RUN_PREPARE) lands while already
+        -- in RESET -- the host retry pattern that exposed BUG-021-R ***
+        report "REARM: run_arm #2 (silicon retry: 2nd RUN_PREPARE while in RESET)" severity note;
+        run_arm(i_clk, asi_ctrl_data, asi_ctrl_valid);
         send_ctrl(i_clk, asi_ctrl_data, asi_ctrl_valid, CTRL_RUNNING_CONST);
         for w in 1 to 8 loop wait until rising_edge(i_clk); end loop;
 
