@@ -115,6 +115,42 @@
 --           move the true 48-bit timestamp onto readyless streaming-debug-plane
 --           sources. BANK=UP drives hit_type1_extended_0, BANK=DW/DOWN drives
 --           hit_type1_extended_1. RUN_PREPARE readyless recovery is preserved.
+-- Version : 26.3.8
+-- Date    : 20260525
+-- Change  : Derive Type1 ASIC[38:35] from the readyless mux slot carried in
+--           asi_hit_type0_channel[5:4] plus BANK, so histogram fixed-filter
+--           mode can distinguish ASIC0..7. Packet-open bookkeeping now uses the
+--           same mux slot instead of the full 6-bit sideband channel.
+-- Version : 26.3.9
+-- Date    : 20260526
+-- Change  : Add preserved SignalTap shadows around the hit_type0 input slot,
+--           derived hit_out ASIC field, and Type1 ASIC pack field so board
+--           captures can localize per-ASIC filter-chain loss without changing
+--           datapath behavior.
+-- Version : 26.3.10
+-- Date    : 20260526
+-- Change  : Inline the Type1 ASIC-ID derivation from asi_hit_type0_channel[5:4]
+--           plus BANK at the accepted hit input stage. This removes the
+--           function-call boundary that the FEB SignalTap capture showed was
+--           not producing the expected mux-slot-derived ASIC field in hardware.
+-- Version : 26.3.11
+-- Date    : 20260526
+-- Change  : Carry source ASIC ID in a dedicated sideband pipeline from the
+--           accepted hit through padding, prediv, totcalc, divider, and hit_out.
+--           Type1 ASIC[38:35] now packs this sideband instead of the hit record
+--           ASIC field, while preserved SignalTap shadows expose both paths.
+-- Version : 26.3.12
+-- Date    : 20260526
+-- Change  : Gate hit_type0 acceptance with the low channel nibble
+--           asi_hit_type0_channel[3:0], not the readyless mux slot in [5:4].
+--           Packet-open tracking now uses the same low-channel index, so slots
+--           1..3 pass when their local channel is enabled and out-of-window
+--           local channels are dropped before the source-ASIC sideband pipeline.
+-- Version : 26.3.13
+-- Date    : 20260526
+-- Change  : Add a preserved MTS-clock free-running SignalTap trigger toggle so
+--           hardware captures can always fire even when no Type0 traffic reaches
+--           the MTS input.
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -189,7 +225,7 @@ generic (
     FRAME_CORRPT_BIT_LOC	: natural := 2; -- error channel descriptor bit locations of sink streaming interface
     CRCERR_BIT_LOC			: natural := 1;
     HITERR_BIT_LOC			: natural := 0;
-    BANK					: string := "UP"; -- not used, output asic id is set by input asic id
+    BANK					: string := "UP"; -- UP emits ASIC IDs 0..3, DW/DOWN emits ASIC IDs 4..7
     ENABLED_CHANNEL_HI		: natural := 3; -- must be within 0-15, used for generate eop for enabled channels
     ENABLED_CHANNEL_LO		: natural := 0;
     PADDING_EOP_WAIT_CYCLE	: natural := 512; -- set the wait grace period to generating eop of each link at end of run. note: backpressure fifo depth (128) x enabled_channel (4)
@@ -421,6 +457,94 @@ architecture rtl of mts_processor is
         hiterr			: std_logic;
     end record;
     signal hit_out		: hit_type1_t;
+    constant SOURCE_ASIC_ACCEPT_STAGE_CONST : natural := 0;
+    constant SOURCE_ASIC_PADDING_STAGE_CONST : natural := 1;
+    constant SOURCE_ASIC_PREDIV_STAGE_CONST  : natural := 2;
+    constant SOURCE_ASIC_TOTCALC_STAGE_CONST : natural := 3;
+    constant SOURCE_ASIC_DIV0_STAGE_CONST    : natural := 4;
+    constant SOURCE_ASIC_DIV1_STAGE_CONST    : natural := 5;
+    constant SOURCE_ASIC_DIV_LAST_STAGE_CONST : natural := SOURCE_ASIC_DIV0_STAGE_CONST + LPM_DIV_PIPELINE;
+    constant SOURCE_ASIC_HIT_OUT_STAGE_CONST  : natural := SOURCE_ASIC_DIV_LAST_STAGE_CONST + 1;
+    type source_asic_pipe_t is array (natural range <>) of std_logic_vector(3 downto 0);
+    signal source_asic_pipe : source_asic_pipe_t(0 to SOURCE_ASIC_HIT_OUT_STAGE_CONST);
+    signal stp_asi_hit_type0_channel_q  : std_logic_vector(5 downto 0);
+    signal stp_asi_hit_type0_accept_q   : std_logic;
+    signal stp_source_asic_stage0_q     : std_logic_vector(3 downto 0);
+    signal stp_source_asic_stage1_q     : std_logic_vector(3 downto 0);
+    signal stp_source_asic_stage2_q     : std_logic_vector(3 downto 0);
+    signal stp_source_asic_stage3_q     : std_logic_vector(3 downto 0);
+    signal stp_source_asic_stage4_q     : std_logic_vector(3 downto 0);
+    signal stp_source_asic_stage_last_q : std_logic_vector(3 downto 0);
+    signal stp_hit_padding_asic_q       : std_logic_vector(3 downto 0);
+    signal stp_hit_prediv_asic_q        : std_logic_vector(3 downto 0);
+    signal stp_hit_totcalc_asic_q       : std_logic_vector(3 downto 0);
+    signal stp_hit_div0_asic_q          : std_logic_vector(3 downto 0);
+    signal stp_hit_div_last_asic_q      : std_logic_vector(3 downto 0);
+    signal stp_hit_out_asic_q           : std_logic_vector(3 downto 0);
+    signal stp_hit_out_valid_q          : std_logic;
+    signal stp_aso_hit_type1_asic_q     : std_logic_vector(3 downto 0);
+    signal stp_aso_hit_type1_valid_q    : std_logic;
+    signal stp_mts_freerun_toggle_q     : std_logic := '0';
+    attribute preserve : boolean;
+    attribute noprune  : boolean;
+    attribute keep     : boolean;
+    attribute preserve of stp_asi_hit_type0_channel_q : signal is true;
+    attribute preserve of stp_asi_hit_type0_accept_q  : signal is true;
+    attribute preserve of source_asic_pipe            : signal is true;
+    attribute preserve of stp_source_asic_stage0_q    : signal is true;
+    attribute preserve of stp_source_asic_stage1_q    : signal is true;
+    attribute preserve of stp_source_asic_stage2_q    : signal is true;
+    attribute preserve of stp_source_asic_stage3_q    : signal is true;
+    attribute preserve of stp_source_asic_stage4_q    : signal is true;
+    attribute preserve of stp_source_asic_stage_last_q : signal is true;
+    attribute preserve of stp_hit_padding_asic_q      : signal is true;
+    attribute preserve of stp_hit_prediv_asic_q       : signal is true;
+    attribute preserve of stp_hit_totcalc_asic_q      : signal is true;
+    attribute preserve of stp_hit_div0_asic_q         : signal is true;
+    attribute preserve of stp_hit_div_last_asic_q     : signal is true;
+    attribute preserve of stp_hit_out_asic_q          : signal is true;
+    attribute preserve of stp_hit_out_valid_q         : signal is true;
+    attribute preserve of stp_aso_hit_type1_asic_q    : signal is true;
+    attribute preserve of stp_aso_hit_type1_valid_q   : signal is true;
+    attribute preserve of stp_mts_freerun_toggle_q    : signal is true;
+    attribute noprune of stp_asi_hit_type0_channel_q  : signal is true;
+    attribute noprune of stp_asi_hit_type0_accept_q   : signal is true;
+    attribute noprune of source_asic_pipe             : signal is true;
+    attribute noprune of stp_source_asic_stage0_q     : signal is true;
+    attribute noprune of stp_source_asic_stage1_q     : signal is true;
+    attribute noprune of stp_source_asic_stage2_q     : signal is true;
+    attribute noprune of stp_source_asic_stage3_q     : signal is true;
+    attribute noprune of stp_source_asic_stage4_q     : signal is true;
+    attribute noprune of stp_source_asic_stage_last_q : signal is true;
+    attribute noprune of stp_hit_padding_asic_q       : signal is true;
+    attribute noprune of stp_hit_prediv_asic_q        : signal is true;
+    attribute noprune of stp_hit_totcalc_asic_q       : signal is true;
+    attribute noprune of stp_hit_div0_asic_q          : signal is true;
+    attribute noprune of stp_hit_div_last_asic_q      : signal is true;
+    attribute noprune of stp_hit_out_asic_q           : signal is true;
+    attribute noprune of stp_hit_out_valid_q          : signal is true;
+    attribute noprune of stp_aso_hit_type1_asic_q     : signal is true;
+    attribute noprune of stp_aso_hit_type1_valid_q    : signal is true;
+    attribute noprune of stp_mts_freerun_toggle_q     : signal is true;
+    attribute keep of stp_asi_hit_type0_channel_q     : signal is true;
+    attribute keep of stp_asi_hit_type0_accept_q      : signal is true;
+    attribute keep of source_asic_pipe                : signal is true;
+    attribute keep of stp_source_asic_stage0_q        : signal is true;
+    attribute keep of stp_source_asic_stage1_q        : signal is true;
+    attribute keep of stp_source_asic_stage2_q        : signal is true;
+    attribute keep of stp_source_asic_stage3_q        : signal is true;
+    attribute keep of stp_source_asic_stage4_q        : signal is true;
+    attribute keep of stp_source_asic_stage_last_q    : signal is true;
+    attribute keep of stp_hit_padding_asic_q          : signal is true;
+    attribute keep of stp_hit_prediv_asic_q           : signal is true;
+    attribute keep of stp_hit_totcalc_asic_q          : signal is true;
+    attribute keep of stp_hit_div0_asic_q             : signal is true;
+    attribute keep of stp_hit_div_last_asic_q         : signal is true;
+    attribute keep of stp_hit_out_asic_q              : signal is true;
+    attribute keep of stp_hit_out_valid_q             : signal is true;
+    attribute keep of stp_aso_hit_type1_asic_q        : signal is true;
+    attribute keep of stp_aso_hit_type1_valid_q       : signal is true;
+    attribute keep of stp_mts_freerun_toggle_q        : signal is true;
 
     -- run state signals
     -- type running_hit_mode_t is (SHORT,LONG,PRBS,UNKNOWN);
@@ -485,6 +609,22 @@ architecture rtl of mts_processor is
         end loop;
         return result_v;
     end function slv_to_hex;
+
+    function mux_slot_to_global_asic(
+        bank_name : string;
+        channel_v : std_logic_vector(5 downto 0)
+    ) return std_logic_vector is
+        variable slot_v : unsigned(3 downto 0);
+        variable asic_v : unsigned(3 downto 0);
+    begin
+        slot_v := resize(unsigned(channel_v(5 downto 4)), slot_v'length);
+        if (bank_name = "DW" or bank_name = "DOWN") then
+            asic_v := slot_v + to_unsigned(4, asic_v'length);
+        else
+            asic_v := slot_v;
+        end if;
+        return std_logic_vector(asic_v);
+    end function mux_slot_to_global_asic;
     
     -- processor
     constant ROUTE_LANE_COUNT_CONST      : natural := 4;
@@ -493,6 +633,7 @@ architecture rtl of mts_processor is
     signal route_startofrun_sent         : std_logic_vector(ROUTE_LANE_COUNT_CONST - 1 downto 0);
     signal route_terminate_sent          : std_logic_vector(ROUTE_LANE_COUNT_CONST - 1 downto 0);
     signal hit_in_ok						: std_logic;
+    signal hit_type0_low_channel_in_window : std_logic;
     signal processor_allow_input			: std_logic;
     signal processor_accept_window          : std_logic;
     signal upstream_endofrun_seen        : std_logic;
@@ -679,6 +820,8 @@ architecture rtl of mts_processor is
     -- Keep the short divider pipeline in FFs; MLAB shift inference hurts the
     -- standalone timing of the signoff bench.
     attribute altera_attribute of hit_div : signal is "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF";
+    attribute altera_attribute of source_asic_pipe : signal is "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF";
+    attribute altera_attribute of stp_mts_freerun_toggle_q : signal is "-name PRESERVE_REGISTER ON";
     
     
     -- debug_ts 
@@ -1471,6 +1614,16 @@ begin
     
     end process;
     
+    proc_hit_type0_channel_gate_comb : process (all)
+        variable low_channel_v : natural;
+    begin
+        low_channel_v := to_integer(unsigned(asi_hit_type0_channel(3 downto 0)));
+        hit_type0_low_channel_in_window <= '0';
+        if (low_channel_v >= ENABLED_CHANNEL_LO and low_channel_v <= ENABLED_CHANNEL_HI) then
+            hit_type0_low_channel_in_window <= '1';
+        end if;
+    end process;
+
     proc_avst2payload_comb : process (all)
     -- input validation from avst to the datapath
         variable allow_input_v : std_logic;
@@ -1504,6 +1657,7 @@ begin
         if (allow_input_v = '1') then
             if (
                 csr.force_stop = '0'
+                and hit_type0_low_channel_in_window = '1'
                 and (asi_hit_type0_error(HITERR_BIT_LOC) = '0' or csr.discard_hiterr = '0')
             ) then -- disable check or no error
                 hit_in_ok      <= '1'; -- in comb with avst valid
@@ -1639,6 +1793,9 @@ begin
                 hit_div(i).valid   <= '0';
                 hit_div(i).hiterr  <= '0';
             end loop;
+            for i in 0 to SOURCE_ASIC_HIT_OUT_STAGE_CONST loop
+                source_asic_pipe(i) <= (others => '0');
+            end loop;
 
             hit_out.asic    <= (others => '0');
             hit_out.channel <= (others => '0');
@@ -1650,8 +1807,23 @@ begin
             hit_out.hiterr  <= '0';
             hit_out_delay_error <= '0';
             hit_out_debug_timestamp <= (others => '0');
+            stp_asi_hit_type0_channel_q <= (others => '0');
+            stp_asi_hit_type0_accept_q  <= '0';
+            stp_source_asic_stage0_q     <= (others => '0');
+            stp_source_asic_stage1_q     <= (others => '0');
+            stp_source_asic_stage2_q     <= (others => '0');
+            stp_source_asic_stage3_q     <= (others => '0');
+            stp_source_asic_stage4_q     <= (others => '0');
+            stp_source_asic_stage_last_q <= (others => '0');
+            stp_hit_padding_asic_q       <= (others => '0');
+            stp_hit_prediv_asic_q        <= (others => '0');
+            stp_hit_totcalc_asic_q       <= (others => '0');
+            stp_hit_div0_asic_q          <= (others => '0');
+            stp_hit_div_last_asic_q      <= (others => '0');
+            stp_mts_freerun_toggle_q     <= '0';
         
         elsif (rising_edge(i_clk)) then
+            stp_mts_freerun_toggle_q <= not stp_mts_freerun_toggle_q;
             -- default 
             hit_in.asic		<= (others => '0');
             hit_in.channel	<= (others => '0');
@@ -1728,6 +1900,14 @@ begin
             for i in 1 to LPM_DIV_PIPELINE loop
                 hit_div(i)             <= hit_div(i - 1);
             end loop;
+            for i in 0 to SOURCE_ASIC_HIT_OUT_STAGE_CONST loop
+                source_asic_pipe(i) <= (others => '0');
+            end loop;
+            if (SOURCE_ASIC_DIV_LAST_STAGE_CONST >= SOURCE_ASIC_DIV1_STAGE_CONST) then
+                for i in SOURCE_ASIC_DIV1_STAGE_CONST to SOURCE_ASIC_DIV_LAST_STAGE_CONST loop
+                    source_asic_pipe(i) <= source_asic_pipe(i - 1);
+                end loop;
+            end if;
             
             hit_out.asic		<= (others => '0');
             hit_out.channel		<= (others => '0');
@@ -1738,6 +1918,19 @@ begin
             hit_out.valid		<= '0';
             hit_out.hiterr		<= '0';
             hit_out_delay_error <= '0';
+            stp_asi_hit_type0_channel_q <= asi_hit_type0_channel;
+            stp_asi_hit_type0_accept_q  <= asi_hit_type0_accept and hit_in_ok;
+            stp_source_asic_stage0_q     <= source_asic_pipe(SOURCE_ASIC_ACCEPT_STAGE_CONST);
+            stp_source_asic_stage1_q     <= source_asic_pipe(SOURCE_ASIC_PADDING_STAGE_CONST);
+            stp_source_asic_stage2_q     <= source_asic_pipe(SOURCE_ASIC_PREDIV_STAGE_CONST);
+            stp_source_asic_stage3_q     <= source_asic_pipe(SOURCE_ASIC_TOTCALC_STAGE_CONST);
+            stp_source_asic_stage4_q     <= source_asic_pipe(SOURCE_ASIC_DIV0_STAGE_CONST);
+            stp_source_asic_stage_last_q <= source_asic_pipe(SOURCE_ASIC_HIT_OUT_STAGE_CONST);
+            stp_hit_padding_asic_q       <= hit_padding.asic;
+            stp_hit_prediv_asic_q        <= hit_prediv.asic;
+            stp_hit_totcalc_asic_q       <= hit_totcalc.asic;
+            stp_hit_div0_asic_q          <= hit_div(0).asic;
+            stp_hit_div_last_asic_q      <= hit_div(LPM_DIV_PIPELINE).asic;
 
             if (csr.soft_reset = '1') then
                 tcc_div_quotient_d       <= (others => '0');
@@ -1745,6 +1938,8 @@ begin
                 tcc_div_remain_d         <= (others => '0');
                 ecc_div_remain_d         <= (others => '0');
                 hit_out_debug_timestamp  <= (others => '0');
+                stp_asi_hit_type0_channel_q <= (others => '0');
+                stp_asi_hit_type0_accept_q  <= '0';
                 for i in 0 to LPM_DIV_PIPELINE loop
                     hit_div(i).asic       <= (others => '0');
                     hit_div(i).channel    <= (others => '0');
@@ -1754,10 +1949,30 @@ begin
                     hit_div(i).valid      <= '0';
                     hit_div(i).hiterr     <= '0';
                 end loop;
+                for i in 0 to SOURCE_ASIC_HIT_OUT_STAGE_CONST loop
+                    source_asic_pipe(i) <= (others => '0');
+                end loop;
+                stp_source_asic_stage0_q     <= (others => '0');
+                stp_source_asic_stage1_q     <= (others => '0');
+                stp_source_asic_stage2_q     <= (others => '0');
+                stp_source_asic_stage3_q     <= (others => '0');
+                stp_source_asic_stage4_q     <= (others => '0');
+                stp_source_asic_stage_last_q <= (others => '0');
+                stp_hit_padding_asic_q       <= (others => '0');
+                stp_hit_prediv_asic_q        <= (others => '0');
+                stp_hit_totcalc_asic_q       <= (others => '0');
+                stp_hit_div0_asic_q          <= (others => '0');
+                stp_hit_div_last_asic_q      <= (others => '0');
             else
                 -- input stage
                 if (asi_hit_type0_accept = '1' and hit_in_ok = '1') then
-                    hit_in.asic		<= asi_hit_type0_data(I_ASIC_HI downto I_ASIC_LO);
+                    if (BANK = "DW" or BANK = "DOWN") then
+                        hit_in.asic <= "01" & asi_hit_type0_channel(5 downto 4);
+                        source_asic_pipe(SOURCE_ASIC_ACCEPT_STAGE_CONST) <= "01" & asi_hit_type0_channel(5 downto 4);
+                    else
+                        hit_in.asic <= "00" & asi_hit_type0_channel(5 downto 4);
+                        source_asic_pipe(SOURCE_ASIC_ACCEPT_STAGE_CONST) <= "00" & asi_hit_type0_channel(5 downto 4);
+                    end if;
                     hit_in.channel	<= asi_hit_type0_data(I_CHANNEL_HI downto I_CHANNEL_LO);
                     hit_in.t_fine	<= asi_hit_type0_data(I_TFINE_HI downto I_TFINE_LO);
                     hit_in.e_flag   <= asi_hit_type0_data(I_EFLAG_BIT_LOC);
@@ -1772,6 +1987,7 @@ begin
 
                 -- pipeline for lut ram
                 if (hit_in.valid = '1') then
+                    source_asic_pipe(SOURCE_ASIC_PADDING_STAGE_CONST) <= source_asic_pipe(SOURCE_ASIC_ACCEPT_STAGE_CONST);
                     hit_padding.asic		<= hit_in.asic;
                     hit_padding.channel		<= hit_in.channel;
                     hit_padding.cc_out		<= cc_out; -- decoded
@@ -1790,6 +2006,7 @@ begin
                 end if;
 
                 if (hit_padding.valid = '1') then
+                    source_asic_pipe(SOURCE_ASIC_PREDIV_STAGE_CONST) <= source_asic_pipe(SOURCE_ASIC_PADDING_STAGE_CONST);
                     hit_prediv.asic         <= hit_padding.asic;
                     hit_prediv.channel      <= hit_padding.channel;
                     hit_prediv.t_fine       <= hit_padding.t_fine;
@@ -1810,6 +2027,7 @@ begin
                 end if;
 
                 if (hit_prediv.valid = '1') then
+                    source_asic_pipe(SOURCE_ASIC_TOTCALC_STAGE_CONST) <= source_asic_pipe(SOURCE_ASIC_PREDIV_STAGE_CONST);
                     if (DEBUG_TRACE_REPORTS and DEBUG /= 0) then
                         report "MTS_STAGE[" & BANK & "] div_launch ch="
                             & integer'image(to_integer(unsigned(hit_prediv.channel)))
@@ -1832,6 +2050,7 @@ begin
                 end if;
 
                 if (hit_totcalc.valid = '1') then
+                    source_asic_pipe(SOURCE_ASIC_DIV0_STAGE_CONST) <= source_asic_pipe(SOURCE_ASIC_TOTCALC_STAGE_CONST);
                     hit_div(0).asic         <= hit_totcalc.asic;
                     hit_div(0).channel      <= hit_totcalc.channel;
                     hit_div(0).t_fine       <= hit_totcalc.t_fine;
@@ -1861,6 +2080,7 @@ begin
 
                 -- lpm div pipeline output reg
                 if (hit_div(LPM_DIV_PIPELINE).valid = '1') then -- assemble the hit_out
+                    source_asic_pipe(SOURCE_ASIC_HIT_OUT_STAGE_CONST) <= source_asic_pipe(SOURCE_ASIC_DIV_LAST_STAGE_CONST);
                     hit_out.asic		<= hit_div(LPM_DIV_PIPELINE).asic;
                     hit_out.channel		<= hit_div(LPM_DIV_PIPELINE).channel;
                     hit_out.tcc_8n		<= tcc_div_quotient_d(hit_out.tcc_8n'high downto 0); -- latch delayed div result (quotient)
@@ -1971,6 +2191,10 @@ begin
             coe_hit_type1_ts              <= (others => '0');
             coe_hit_type1_sidecar_data    <= (others => '0');
             coe_hit_type1_sidecar_valid   <= '0';
+            stp_hit_out_asic_q            <= (others => '0');
+            stp_hit_out_valid_q           <= '0';
+            stp_aso_hit_type1_asic_q      <= (others => '0');
+            stp_aso_hit_type1_valid_q     <= '0';
 
         elsif (rising_edge(i_clk)) then
             aso_hit_type1_data            <= (others => '0');
@@ -1987,6 +2211,10 @@ begin
             coe_hit_type1_ts              <= (others => '0');
             coe_hit_type1_sidecar_data    <= (others => '0');
             coe_hit_type1_sidecar_valid   <= '0';
+            stp_hit_out_asic_q            <= (others => '0');
+            stp_hit_out_valid_q           <= '0';
+            stp_aso_hit_type1_asic_q      <= (others => '0');
+            stp_aso_hit_type1_valid_q     <= '0';
 
             if (processor_state = RESET or processor_state = IDLE or csr.soft_reset = '1') then
                 route_startofrun_sent     <= (others => '0');
@@ -2013,13 +2241,13 @@ begin
                     route_lane_v := to_integer(unsigned(hit_out.tcc_8n(5 downto 4)));
                     extended_data_v                                               := (others => '0');
                     extended_data_v(86 downto 39)                                 := hit_out_debug_timestamp;
-                    extended_data_v(O_ASIC_HI downto O_ASIC_LO)                  := hit_out.asic;
+                    extended_data_v(O_ASIC_HI downto O_ASIC_LO)                  := source_asic_pipe(SOURCE_ASIC_HIT_OUT_STAGE_CONST);
                     extended_data_v(O_CHANNEL_HI downto O_CHANNEL_LO)            := hit_out.channel;
                     extended_data_v(O_TCC8N_HI downto O_TCC8N_LO)                := hit_out.tcc_8n;
                     extended_data_v(O_TCC1N6_HI downto O_TCC1N6_LO)              := hit_out.tcc_1n6;
                     extended_data_v(O_TFINE_HI downto O_TFINE_LO)                := hit_out.tfine;
                     extended_data_v(O_ET1N6_HI downto O_ET1N6_LO)                := hit_out.et_1n6;
-                    aso_hit_type1_data(O_ASIC_HI downto O_ASIC_LO)               <= hit_out.asic;
+                    aso_hit_type1_data(O_ASIC_HI downto O_ASIC_LO)               <= source_asic_pipe(SOURCE_ASIC_HIT_OUT_STAGE_CONST);
                     aso_hit_type1_data(O_CHANNEL_HI downto O_CHANNEL_LO)         <= hit_out.channel;
                     aso_hit_type1_data(O_TCC8N_HI downto O_TCC8N_LO)             <= hit_out.tcc_8n;
                     aso_hit_type1_data(O_TCC1N6_HI downto O_TCC1N6_LO)           <= hit_out.tcc_1n6;
@@ -2028,6 +2256,10 @@ begin
                     aso_hit_type1_valid                                          <= '1';
                     aso_hit_type1_channel                                        <= "00" & hit_out.tcc_8n(5 downto 4);
                     aso_hit_type1_error                                          <= hit_out_delay_error;
+                    stp_hit_out_asic_q                                           <= hit_out.asic;
+                    stp_hit_out_valid_q                                          <= '1';
+                    stp_aso_hit_type1_asic_q                                     <= source_asic_pipe(SOURCE_ASIC_HIT_OUT_STAGE_CONST);
+                    stp_aso_hit_type1_valid_q                                    <= '1';
                     if (BANK = "DW" or BANK = "DOWN") then
                         aso_hit_type1_extended_1_data                            <= extended_data_v;
                         aso_hit_type1_extended_1_valid                           <= '1';
@@ -2066,7 +2298,7 @@ begin
                 and csr.soft_reset = '0'
             ) then
                 if (asi_hit_type0_accept = '1' and hit_in_ok = '1') then
-                    input_lane_v := to_integer(unsigned(asi_hit_type0_channel));
+                    input_lane_v := to_integer(unsigned(asi_hit_type0_channel(3 downto 0)));
                     if (input_lane_v >= ENABLED_CHANNEL_LO and input_lane_v <= ENABLED_CHANNEL_HI) then
                         input_slot_v := input_lane_v - ENABLED_CHANNEL_LO;
                         if (asi_hit_type0_endofpacket = '1') then

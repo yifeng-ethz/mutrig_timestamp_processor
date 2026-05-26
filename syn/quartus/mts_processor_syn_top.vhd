@@ -43,7 +43,8 @@ architecture rtl of mts_processor_syn_top is
     signal aso_hit_type1_extended_0_data  : std_logic_vector(86 downto 0);
     signal aso_hit_type1_extended_0_valid : std_logic;
     signal aso_hit_type1_extended_1_data  : std_logic_vector(86 downto 0);
-    signal coe_hit_type1_ts              : std_logic_vector(47 downto 0);
+    signal aso_hit_type1_extended_1_valid : std_logic;
+    signal coe_hit_type1_ts              : std_logic_vector(47 downto 0);
 
     signal asi_ctrl_data               : std_logic_vector(8 downto 0) := (others => '0');
     signal asi_ctrl_valid              : std_logic := '0';
@@ -95,7 +96,8 @@ begin
             aso_hit_type1_extended_0_data  => aso_hit_type1_extended_0_data,
             aso_hit_type1_extended_0_valid => aso_hit_type1_extended_0_valid,
             aso_hit_type1_extended_1_data  => aso_hit_type1_extended_1_data,
-            coe_hit_type1_ts              => coe_hit_type1_ts,
+            aso_hit_type1_extended_1_valid => aso_hit_type1_extended_1_valid,
+            coe_hit_type1_ts              => coe_hit_type1_ts,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
             aso_debug_ts_valid          => aso_debug_ts_valid,

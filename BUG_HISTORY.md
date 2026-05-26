@@ -56,6 +56,58 @@ Historical formal note:
 | [BUG-019-R](#bug-019-r-readyless-run_prepare-could-be-ignored-while-local-control-ready-is-low) | R | hard stuck error | `common (fresh run after terminate / live readback loop)` | fixed / FEB retest pending | live FEB histogram zero capture after source-mux and CSR aperture fixes | pending | A readyless `RUN_PREPARE` command could arrive while local control ready was low and be ignored, leaving the next run stuck in stale flushing/idle state. |
 | [BUG-020-H](#bug-020-h-disabled-mts-debug-streams-still-reported-as-unconnected) | H | non-datapath-refactor | `common (FEB v3 Platform Designer open/generate)` | fixed | FEB v3 Qsys GUI/generation cleanup 2026-05-15 | this commit | MTS debug streams remained enabled in packaging metadata even when the production FEB v3 configuration set `DEBUG=0`. |
 | [BUG-021-R](#bug-021-r-reset-state-ignored-run_prepare-and-deadlocked-the-run-control-fsm) | R | hard stuck error | `common (host retries the run-start sequence)` | fixed / sim-validated, FEB retest pending | headless SignalTap on FEB SciFi v4 SOF 67965fee: both MTS instances wedged in RESET | this commit | The RESET state had no `RUN_PREPARE` transition, so a second readyless `RUN_PREPARE` (accepted by BUG-019-R's capture path) left the FSM stuck in `{RESET, reset_flow=SYNC, run_state_cmd=RUN_PREPARE}`, `RUNNING` never asserted, and no `hit_type1` extended hits were emitted. |
+| [BUG-022-R](#bug-022-r-type1-asic-id-came-from-stale-payload-bits-instead-of-the-readyless-mux-slot) | R | soft error | `common (histogram per-ASIC Type1 filtering)` | fixed / standalone-verified, FEB compile pending | FEB SciFi v4 histogram filter calibration 2026-05-25 | this commit | Type1 ASIC[38:35] was copied from incoming Type0 payload bits instead of the mux-selected input slot, so the histogram fixed filter saw ASIC ID 0 for every bank hit. |
+
+## 2026-05-25
+
+### BUG-022-R: Type1 ASIC ID came from stale payload bits instead of the readyless mux slot
+
+- First seen:
+  - FEB SciFi v4 histogram filter calibration on 2026-05-25.
+  - `histogram_statistics_v2` fixed-filter mode compares Type1 `data[38:35]`, but all Type1-up hits matched only `KEY_VALUE[19:16]=0`; ASIC1/2/3 filters rejected otherwise active traffic.
+- Symptom:
+  - Type1 histogram filtering could not isolate ASICs by `KEY_VALUE = asic_index << 16`.
+  - Type1-down remained a separate on-board visibility concern, but the ASIC-ID packing bug affects both MTS banks because both use the same payload construction.
+- Root cause:
+  - `mts_processor.vhd` packed output Type1 ASIC[38:35] from `hit_out.asic`, but `hit_in.asic` was loaded from incoming Type0 payload `data[44:41]`.
+  - In the FEB v4 readyless mux topology, the selected input lane is carried in `asi_hit_type0_channel[5:4]`; payload ASIC bits were not a reliable source identity field for the histogram filter contract.
+  - Related packet bookkeeping decoded the full 6-bit `asi_hit_type0_channel` as a local enabled-channel index, so mux slots 1..3 became 16/32/48 and could miss `packet_in_transaction` updates.
+- Fix status:
+  - state:
+    - fixed in RTL and packaging metadata; standalone verified; FEB integration compile pending user approval.
+  - mechanism:
+    - derive Type1 ASIC ID from `asi_hit_type0_channel[5:4]` plus BANK: UP maps mux slots 0..3 to ASIC0..3, DW/DOWN maps mux slots 0..3 to ASIC4..7.
+    - make packet-open tracking use the same mux slot before indexing `packet_in_transaction`.
+    - bump MTS patch version to `26.3.8` with build/date `525` / `20260525`.
+  - before_fix_outcome:
+    - on-board histogram filter accepted ASIC0-like traffic and rejected ASIC1/2/3 traffic even when the Type1-up front-end was active.
+  - after_fix_outcome:
+    - `make run_all` passed: `mts_processor_tb`, `mts_processor_terminating_tb`, `mts_processor_rearm_tb`, and `mts_processor_asic_id_tb` for both `BANK=UP` and `BANK=DW` all reported `PASSED` with simulator `Errors: 0`.
+    - static screen on `mts_processor.vhd` plus the standalone synthesis wrapper: Lint `Error (0)`, CDC `Violations (0)`, RDC `Violation (0)`.
+    - standalone Quartus signoff `mts_processor_syn` at 7.273 ns passed full compile with setup slack >= 1.093 ns and hold slack >= 0.153 ns across reported corners.
+  - follow_up_2026_05_26:
+    - FEB SignalTap on the 26.3.9 debug image showed `mux_mutrig2processor` channel `[5:4]` correctly carrying slots 0..3, but `mts_preprocessor_0.hit_out.asic` and Type1 `data[38:35]` still contained 16 low-channel-like values.
+    - The 26.3.10 follow-up keeps the helper function for auditability but inlines the accepted-hit assignment as `"00" & asi_hit_type0_channel[5:4]` for BANK=UP and `"01" & asi_hit_type0_channel[5:4]` for BANK=DW/DOWN.
+    - The standalone ASIC-ID test now drives payload channel low nibbles that intentionally differ from the mux slot, so low-channel leakage cannot satisfy the checker.
+  - follow_up_2026_05_26_sideband:
+    - FEB SignalTap on the 26.3.10 image still showed silicon/simulation divergence: the mux slot sideband was correct, but `hit_out.asic` and Type1 `data[38:35]` retained low-channel-like values.
+    - Version 26.3.11 carries a dedicated `source_asic_pipe` sideband from accepted hit to hit_out using the same valid gates as padding, prediv, totcalc, and divider pipeline stages.
+    - Type1 ASIC[38:35] now packs the hit_out-aligned source sideband instead of the hit record `asic` field; preserved SignalTap shadows expose each sideband checkpoint and the original record ASIC fields.
+  - follow_up_2026_05_26_accept_gate:
+    - FEB SignalTap on the 26.3.11 image showed the mux output carries slots 0..3, but the MTS accepted-input shadow only saw channel `0x00`; accepted samples preserved by the sideband were correct but came only from slot 0.
+    - `mts_processor.vhd` accepted the datapath beat without checking `asi_hit_type0_channel[3:0]` against `ENABLED_CHANNEL_LO..HI`, and packet-open bookkeeping still treated the mux slot bits as the enabled-channel index around the accepted-input tracker.
+    - Version 26.3.12 gates `hit_in_ok` with the low channel nibble `asi_hit_type0_channel[3:0]`, indexes `packet_in_transaction` from that same low channel, and retags the STP accepted-input shadow to mean ready/valid plus `hit_in_ok`.
+    - The directed ASIC-ID bench now proves `slot=1/2/3` with low channels `1/2/3` are accepted while `slot=1, low_ch=4` is rejected for the default enabled window `0..3`.
+  - potential_hazard:
+    - low. The fix changes only source-ID attribution and local packet sideband indexing; timestamp math and payload timing remain unchanged.
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Directed reproduction sequence:
+  - standalone IP: `tb/mts_processor_asic_id_tb.vhd`, target `make run_asic_id`.
+  - drives all four mux slots with deliberately wrong payload ASIC values and asserts Type1 `data[38:35]` equals the mux slot plus BANK offset.
+  - also opens and closes a packet on mux slot 2 and checks `input_pipeline_busy`, catching the packet-tracking off-by-one.
+- Commit:
+  - this commit
 
 ## 2026-05-21
 

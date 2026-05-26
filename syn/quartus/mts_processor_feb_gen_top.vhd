@@ -43,7 +43,8 @@ architecture rtl of mts_processor_feb_gen_top is
     signal aso_hit_type1_extended_0_data  : std_logic_vector(86 downto 0);
     signal aso_hit_type1_extended_0_valid : std_logic;
     signal aso_hit_type1_extended_1_data  : std_logic_vector(86 downto 0);
-    signal coe_hit_type1_ts              : std_logic_vector(47 downto 0);
+    signal aso_hit_type1_extended_1_valid : std_logic;
+    signal coe_hit_type1_ts              : std_logic_vector(47 downto 0);
 
     signal asi_ctrl_data               : std_logic_vector(8 downto 0) := (others => '0');
     signal asi_ctrl_valid              : std_logic := '0';
@@ -103,7 +104,8 @@ begin
             aso_hit_type1_extended_0_data  => aso_hit_type1_extended_0_data,
             aso_hit_type1_extended_0_valid => aso_hit_type1_extended_0_valid,
             aso_hit_type1_extended_1_data  => aso_hit_type1_extended_1_data,
-            coe_hit_type1_ts              => coe_hit_type1_ts,
+            aso_hit_type1_extended_1_valid => aso_hit_type1_extended_1_valid,
+            coe_hit_type1_ts              => coe_hit_type1_ts,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
             aso_debug_ts_valid          => aso_debug_ts_valid,
@@ -138,9 +140,11 @@ begin
                 asi_hit_type0_channel       <= (others => '0');
                 asi_hit_type0_startofpacket <= '0';
                 asi_hit_type0_endofpacket   <= '0';
+                asi_hit_type0_endofrun      <= '0';
                 asi_hit_type0_error         <= (others => '0');
                 asi_hit_type0_data          <= (others => '0');
                 asi_hit_type0_valid         <= '0';
+                aso_hit_type1_ready         <= '1';
                 coe_hit_type0_sidecar_data  <= (others => '0');
                 asi_ctrl_data               <= (others => '0');
                 asi_ctrl_valid              <= '0';
@@ -169,8 +173,11 @@ begin
                     asi_hit_type0_channel <= std_logic_vector(stim_ctr(5 downto 0));
                     asi_hit_type0_error   <= std_logic_vector(stim_ctr(10 downto 8));
                     asi_hit_type0_data    <= std_logic_vector(stim_ctr(12 downto 0)) & std_logic_vector(stim_ctr);
+                    asi_hit_type0_endofrun <= '0';
                     coe_hit_type0_sidecar_data <= std_logic_vector(stim_ctr) & std_logic_vector(stim_ctr xor x"5a5aa5a5");
                 end if;
+
+                aso_hit_type1_ready <= '1';
 
                 if (asi_ctrl_valid = '0') or (asi_ctrl_ready = '1') then
                     ctrl_state := to_integer(stim_ctr(10 downto 7)) mod 9;

@@ -19,9 +19,9 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
 set VERSION_MINOR_DEFAULT_CONST            3
-set VERSION_PATCH_DEFAULT_CONST            7
-set BUILD_DEFAULT_CONST                    521
-set VERSION_DATE_DEFAULT_CONST             20260521
+set VERSION_PATCH_DEFAULT_CONST            13
+set BUILD_DEFAULT_CONST                    526
+set VERSION_DATE_DEFAULT_CONST             20260526
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -164,6 +164,7 @@ Single synchronous <b>clock_interface</b> domain with <b>reset_interface</b> ass
 9-bit one-hot run command. <b>asi_ctrl_ready</b> is low while RUN_PREPARE / SYNC / TERMINATING work is still outstanding and rises only when the local state has truly completed.<br/><br/>\
 <b>Ingress stream: hit_type0_in</b><br/>\
 45-bit payload = ASIC[44:41], channel[40:36], TCC[35:21], TFine[20:16], ECC[15:1], EFlag[0].\
+The Type1 ASIC field is derived from the readyless mux slot in <b>channel[5:4]</b> plus BANK: UP maps slots 0..3 to ASIC0..3, DW/DOWN maps slots 0..3 to ASIC4..7.\
 SOP/EOP delimit one MuTRiG frame. A dedicated <b>endofrun</b> pulse marks the last packet of the run; under TERMINATING the processor accepts tail packets until that pulse arrives, then drains and closes each downstream lane.<br/><br/>\
 <b>Egress stream: hit_type1_out</b><br/>\
 39-bit Type1 payload = ASIC[38:35], channel[34:30], TCC_8n[29:17], TCC_1n6[16:14], TFine[13:9], ET_1n6[8:0].\
