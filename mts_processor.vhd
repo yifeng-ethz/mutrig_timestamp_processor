@@ -151,6 +151,13 @@
 -- Change  : Add a preserved MTS-clock free-running SignalTap trigger toggle so
 --           hardware captures can always fire even when no Type0 traffic reaches
 --           the MTS input.
+-- Version : 26.3.14
+-- Date    : 20260529
+-- Change  : gts-unify: export coe_hit_arrival_gts_8n, this bank's counter_gts_8n
+--           co-sampled with coe_hit_type1_ts on the hit_out beat, so the V3
+--           histogram delay key subtracts emission ts and arrival gts from ONE
+--           epoch instead of using its own free-running gts_8n. Fixes the random
+--           per-SYNC ~2^20 delay-peak offset (BUG-012).
 -- =========
 -- Description:	[MuTRiG Timestamp Processor] 
     -- Processes the Timestamp TCC (15 bit)(1.6 ns) into TCC_8n (13 bit) and TCC_1n6 (3 bit).:
@@ -290,6 +297,14 @@ port (
     -- Drives the same hit_out_debug_timestamp value the extended_0/1 sources
     -- pack into bits [86:39]. Merged from commit eb67302.
     coe_hit_type1_ts                 : out std_logic_vector(47 downto 0);
+
+    -- 48-bit arrival GTS conduit, co-sampled on the SAME hit_out beat as
+    -- coe_hit_type1_ts. This is this bank's counter_gts_8n at hit emission.
+    -- The V3 histogram delay-mode core MUST subtract THIS arrival GTS from
+    -- coe_hit_type1_ts (both in this MTS counter epoch) instead of using its
+    -- own free-running gts_8n, otherwise the two independent SYNC origins
+    -- leave a random per-SYNC ~2^20 offset on delay (BUG-012). gts-unify.
+    coe_hit_arrival_gts_8n           : out std_logic_vector(47 downto 0);
 
 
     -- input stream of control signal (enable)
@@ -2189,6 +2204,7 @@ begin
             aso_hit_type1_extended_1_data  <= (others => '0');
             aso_hit_type1_extended_1_valid <= '0';
             coe_hit_type1_ts              <= (others => '0');
+            coe_hit_arrival_gts_8n        <= (others => '0');
             coe_hit_type1_sidecar_data    <= (others => '0');
             coe_hit_type1_sidecar_valid   <= '0';
             stp_hit_out_asic_q            <= (others => '0');
@@ -2209,6 +2225,7 @@ begin
             aso_hit_type1_extended_1_data  <= (others => '0');
             aso_hit_type1_extended_1_valid <= '0';
             coe_hit_type1_ts              <= (others => '0');
+            coe_hit_arrival_gts_8n        <= (others => '0');
             coe_hit_type1_sidecar_data    <= (others => '0');
             coe_hit_type1_sidecar_valid   <= '0';
             stp_hit_out_asic_q            <= (others => '0');
@@ -2271,6 +2288,10 @@ begin
                     -- extended_0/1 sources pack into bits [86:39]. Direct V3
                     -- histogram delay-mode input. Merged from eb67302.
                     coe_hit_type1_ts                                             <= hit_out_debug_timestamp;
+                    -- arrival GTS co-sampled with the emission ts on this beat;
+                    -- same counter_gts_8n used for hit_delay_arrival_v / egress_arrival.
+                    -- Downstream histogram delay key = arrival_gts - hit_type1_ts.
+                    coe_hit_arrival_gts_8n                                       <= std_logic_vector(counter_gts_8n);
                     if (DEBUG >= 2) then
                         coe_hit_type1_sidecar_data                               <= debug_sidecar_hit_out;
                         coe_hit_type1_sidecar_valid                              <= debug_sidecar_hit_out_valid;

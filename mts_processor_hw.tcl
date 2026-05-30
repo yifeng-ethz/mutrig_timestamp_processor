@@ -19,9 +19,9 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
 set VERSION_MINOR_DEFAULT_CONST            3
-set VERSION_PATCH_DEFAULT_CONST            13
-set BUILD_DEFAULT_CONST                    526
-set VERSION_DATE_DEFAULT_CONST             20260526
+set VERSION_PATCH_DEFAULT_CONST            14
+set BUILD_DEFAULT_CONST                    529
+set VERSION_DATE_DEFAULT_CONST             20260529
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -621,6 +621,16 @@ set_interface_property hit_type1_ts associatedClock clock_interface
 set_interface_property hit_type1_ts associatedReset reset_interface
 set_interface_property hit_type1_ts ENABLED true
 add_interface_port hit_type1_ts coe_hit_type1_ts export Output 48
+
+# hit_arrival_gts: 48-bit arrival GTS (this bank's counter_gts_8n) co-sampled with
+# hit_type1_ts on the hit_out beat. Feeds histogram_statistics_v2 type1_{up,down}_gts
+# so the delay key subtracts emission ts and arrival gts from ONE counter epoch
+# (gts-unify, BUG-012). Rides the same clock as hit_type1_ts: no new CDC point.
+add_interface hit_arrival_gts conduit start
+set_interface_property hit_arrival_gts associatedClock clock_interface
+set_interface_property hit_arrival_gts associatedReset reset_interface
+set_interface_property hit_arrival_gts ENABLED true
+add_interface_port hit_arrival_gts coe_hit_arrival_gts_8n export Output 48
 
 add_interface debug_ts avalon_streaming start
 set_interface_property debug_ts associatedClock clock_interface
