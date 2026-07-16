@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `1` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STD_MTS_054_bypass_on_uses_gray_timestamp_after_s1.log`](../../uvm/logs/STD_MTS_054_bypass_on_uses_gray_timestamp_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STD_MTS_054_bypass_on_uses_gray_timestamp_s1.ucdb`](../../uvm/cov_after/STD_MTS_054_bypass_on_uses_gray_timestamp_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STD_MTS_054_bypass_on_uses_gray_timestamp_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STD_MTS_054_bypass_on_uses_gray_timestamp_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `1` |
 | ℹ️ | log.csr | `3` |
 | ℹ️ | log.debug_burst | `0` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `1` |
+| ℹ️ | log.latency48_identity | `1` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `1` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 78.90 | 78.90 | 0.00 | 93.03 | 0.00 |
-| branch | 62.99 | 62.99 | 0.00 | 85.43 | 0.00 |
-| cond | 41.37 | 41.37 | 0.00 | 72.41 | 0.00 |
+| stmt | 78.69 | 78.69 | 0.00 | 90.88 | 0.00 |
+| branch | 61.03 | 61.03 | 0.00 | 79.54 | 0.00 |
+| cond | 37.90 | 37.90 | 0.00 | 66.93 | 0.00 |
 | expr | 50.00 | 50.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 75.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 22.22 | 0.00 | 66.66 | 0.00 |
-| toggle | 17.37 | 17.37 | 0.83 | 40.06 | 0.83 |
+| toggle | 14.86 | 14.86 | 0.61 | 30.46 | 0.61 |
 
 ---
 _Back to [bucket](../buckets/BASIC.md) &middot; [dashboard](../../DV_REPORT.md)_

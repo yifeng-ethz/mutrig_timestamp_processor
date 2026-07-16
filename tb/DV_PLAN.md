@@ -5,9 +5,9 @@
 **Packaging baseline:** [mts_processor_hw.tcl](/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/mts_processor_hw.tcl:1)  
 **Legacy smoke bench:** [mts_processor_tb.vhd](/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/mutrig_timestamp_processor/tb/mts_processor_tb.vhd:1)  
 **Run-sequence reference:** [RUN_SEQ_UPGRADE_PLAN.md](/home/yifeng/packages/mu3e_ip_dev/mu3e-ip-cores/RUN_SEQ_UPGRADE_PLAN.md:1)  
-**Date:** 2026-04-15  
-**Methodology:** Phase 0 DV plan package under the Claude DV workflow contract and the local Codex `dv-workflow` skill  
-**Status:** Planning package for review before broad UVM implementation
+**Date:** 2026-07-15
+**Methodology:** Maintained standalone VHDL smoke tests plus explicit-case UVM 1.2, static screening, and standalone synthesis signoff
+**Status:** VERSION `26.5.0.0713` delta verified; the pre-release 521-case dashboard is reference evidence only until the full current-release regression is rerun
 
 ## 1. Scope
 
@@ -16,7 +16,9 @@ This plan covers the standalone MuTRiG timestamp processor IP that:
 - accepts 9-bit run-control words on a second Avalon-ST sink,
 - exposes a small Avalon-MM CSR aperture,
 - converts MuTRiG dark timestamps into `hit_type1` words by LUT decode, overflow-window padding, and divide-by-5,
-- emits three observable output streams: `hit_type1_out`, `debug_ts`, `debug_burst`, and `ts_delta`.
+- emits the `hit_type1_out` payload stream, three diagnostic streams
+  (`debug_ts`, `debug_burst`, and `ts_delta`), and co-valid 48-bit
+  `hit_type1_ts`, `hit_arrival_gts`, and `hit_type1_latency_8n` conduits.
 
 In scope:
 - CSR behavior implemented in `proc_avmm_csr`
@@ -31,7 +33,7 @@ Out of scope for this plan set:
 - full FEB-system integration outside the IP boundary
 - analog front-end behavior
 - PHY/LVDS capture
-- Quartus timing closure itself
+- FEB/system timing closure outside the standalone IP project
 
 ## 2. DUT Contract Summary
 
@@ -49,7 +51,8 @@ The DUT performs the following staged transform:
 
 Current RTL behavior:
 - `asi_ctrl_valid` decodes one-hot command words into `run_state_cmd`
-- `asi_ctrl_ready` is hard-wired high today
+- the packaged run-control sink is readyless (`USE_READY=0`); no entity-level
+  `asi_ctrl_ready` signal may be used to backpressure the broadcast tree
 - `processor_state` transitions between `IDLE`, `RESET`, `RUNNING`, and `FLUSHING`
 - `RUN_PREPARE` drives `RESET/SCLR`
 - `SYNC` drives `RESET/SYNC`
@@ -57,9 +60,10 @@ Current RTL behavior:
 - `TERMINATING` moves the processor into `FLUSHING`
 - `IDLE` returns the processor to quiescent state
 
-Upgrade intent from `RUN_SEQ_UPGRADE_PLAN.md`:
-- `asi_ctrl_ready` should eventually acknowledge true completion of prepare/sync/termination work
-- termination should be treated as a first-class downstream packet-boundary contract instead of a permanently-combinational ready
+Run-sequence obligation from `RUN_SEQ_UPGRADE_PLAN.md`:
+- internal command acceptance must remain deterministic even though the external
+  broadcast tree has no ready handshake
+- termination remains a first-class downstream packet-boundary contract
 
 ### 2.3 Observable quirks that the testbench must model honestly
 
@@ -85,6 +89,29 @@ Important semantic details:
 - `derive_tot` is `op_mode[30]`
 - `delay_ts_field_use_t` is `op_mode[29]`
 - `op_mode[28]` is currently unused
+- bit 6 defaults to `0` and selects the direct emission GTS used for physical
+  hit lifetime; bit 6=`1` selects the divided overflow-base diagnostic
+  coordinate and must never be described as physical lifetime
+
+### 2.5 48-bit timestamp and lifetime contract
+
+On every valid Type1 payload beat the DUT exports three co-sampled values:
+
+- `hit_type1_ts`: the selected true hit timestamp, including all upper epoch
+  carry bits;
+- `hit_arrival_gts`: direct emission GTS by default, or the explicit bit-6
+  diagnostic coordinate;
+- `hit_type1_latency_8n = hit_arrival_gts - hit_type1_ts` modulo 48 bits.
+
+In production mode (CSR bit 6=`0`) the signed interpretation of latency must be
+nonnegative. A negative value is retained and reported as an upstream
+run-SYNC/epoch/PLL fault; the bench must not mask, clamp, or wrap it into an
+apparently valid physical delay. In diagnostic mode (bit 6=`1`) a signed
+negative phase is intentional: `ov_base/5 - hit_ts = -in_frame_phase`. The
+consumer may bin that diagnostic modulo the known 910-cycle frame period, but
+must keep it distinct from hit lifetime. `RUN_PREPARE -> SYNC -> RUNNING`
+restarts the local epoch, and directed DV checks the same diagnostic before and
+after the SYNC edge.
 
 ### 2.5 Legacy smoke coverage already present
 
@@ -99,13 +126,18 @@ The new DV plan keeps that bench as smoke evidence but expands coverage to the f
 
 ## 3. Verification Objectives
 
-1. Prove the current RTL contract exactly as implemented, including its non-backpressurable output and always-ready control sink.
+1. Prove the current RTL contract exactly as implemented, including its non-backpressurable output and readyless control sink.
 2. Prove the timestamp-conversion datapath over accepted, discarded, reset, and overflow-window-sensitive traffic.
 3. Prove `derive_tot`, `delay_ts_field_use_t`, `bypass_lapse`, and `expected_latency` independently and in combination.
 4. Prove packet-marker behavior: first-hit `startofpacket`, delayed termination `endofpacket`, and the currently constant-zero `empty`.
 5. Prove software-visible counters and status fields are coherent through reset, run, flush, and fault cases.
 6. Prove the current termination behavior and isolate the exact cases that should change once the run-sequence upgrade lands.
 7. Create a UVM harness specification that can drive real system-style run control rather than unit-only pulse sequences.
+8. Prove the 48-bit identity `latency = arrival - true_hit_ts` on every valid
+   beat, upper-epoch carry above bit 31, nonnegative production lifetime, and
+   retained signed-negative diagnostics.
+9. Prove the 910-cycle diagnostic wrap and repeatability across the standard
+   run-control SYNC edge.
 
 ## 4. Planned Verification Architecture
 
@@ -177,15 +209,15 @@ Required evidence items:
 
 ## 8. Signoff Gate
 
-Per the DV workflow contract, implementation should stop at plan signoff until the architect approves:
-- the case taxonomy,
-- the UVM harness contract,
-- the explicit split between current-RTL facts and run-sequence upgrade targets,
-- the coverage contract in `DV_CROSS.md`,
-- and the execution-mode plus `DV_COV.md` contract.
+VERSION `26.5.0.0713` is releasable only when all of the following are true:
 
-After signoff, the next steps are:
-1. retain the existing VHDL smoke bench as a fast sanity gate,
-2. build the UVM scaffold described in `DV_HARNESS.md`,
-3. implement the testcase groups in priority order,
-4. then use the coverage results to drive the actual RTL/package upgrade work.
+1. the four standalone VHDL smoke targets pass;
+2. the latency delta cases B020, B099, E035, E071, and X041 pass with zero
+   unexpected UVM errors;
+3. the full 521-case isolated and continuous-frame regression is rerun on the
+   current RTL, or the dashboard states unambiguously that its older evidence
+   is reference-only;
+4. lint, CDC, and RDC report zero violations;
+5. the standalone 137.5 MHz Quartus project passes fit and STA at every final
+   device corner, followed by the maintained gate-level check;
+6. no production-mode negative lifetime is waived or hidden.

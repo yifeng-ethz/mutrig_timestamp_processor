@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `128` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs_after_s1.log`](../../uvm/logs/STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs_s1.ucdb`](../../uvm/cov_after/STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STRESS_MTS_110_smoke_vectors_with_soft_reset_between_runs_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `128` |
 | ℹ️ | log.csr | `259` |
 | ℹ️ | log.debug_burst | `128` |
@@ -35,9 +35,11 @@
 | ℹ️ | log.dual_path_pairs | `128` |
 | ℹ️ | log.empty_eops | `0` |
 | ℹ️ | log.eops | `0` |
-| ℹ️ | log.hit_error_traces | `32` |
+| ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `128` |
-| ℹ️ | log.math_error_traces | `32` |
+| ℹ️ | log.latency48_identity | `128` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
+| ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `128` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 82.48 | 0.64 | 0.00 | 95.29 | 0.00 |
-| branch | 61.41 | 0.48 | 0.00 | 87.45 | 0.00 |
-| cond | 38.79 | 0.30 | 0.00 | 79.31 | 0.00 |
-| expr | 50.00 | 0.39 | 0.00 | 50.00 | 0.00 |
+| stmt | 83.31 | 0.65 | 0.00 | 93.70 | 0.00 |
+| branch | 58.76 | 0.46 | 0.00 | 82.46 | 0.00 |
+| cond | 37.09 | 0.29 | 0.00 | 79.03 | 0.00 |
+| expr | 50.00 | 0.39 | 0.00 | 83.33 | 0.00 |
 | fsm_state | 50.00 | 0.39 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 11.11 | 0.09 | 0.00 | 66.66 | 0.00 |
-| toggle | 21.68 | 0.17 | 0.00 | 53.45 | 0.00 |
+| toggle | 17.77 | 0.14 | 0.00 | 50.91 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/PROF.md) &middot; [dashboard](../../DV_REPORT.md)_

@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `3` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/CORNER_MTS_064_interleaved_channels_no_repeat_sop_after_s1.log`](../../uvm/logs/CORNER_MTS_064_interleaved_channels_no_repeat_sop_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/CORNER_MTS_064_interleaved_channels_no_repeat_sop_s1.ucdb`](../../uvm/cov_after/CORNER_MTS_064_interleaved_channels_no_repeat_sop_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/CORNER_MTS_064_interleaved_channels_no_repeat_sop_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/CORNER_MTS_064_interleaved_channels_no_repeat_sop_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `3` |
 | ℹ️ | log.csr | `3` |
 | ℹ️ | log.debug_burst | `2` |
@@ -35,9 +35,11 @@
 | ℹ️ | log.dual_path_pairs | `3` |
 | ℹ️ | log.empty_eops | `0` |
 | ℹ️ | log.eops | `0` |
-| ℹ️ | log.hit_error_traces | `2` |
+| ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `3` |
-| ℹ️ | log.math_error_traces | `2` |
+| ℹ️ | log.latency48_identity | `3` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
+| ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `3` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 80.03 | 26.68 | 0.56 | 94.39 | 0.19 |
-| branch | 63.77 | 21.26 | 0.39 | 88.67 | 0.13 |
-| cond | 38.79 | 12.93 | 0.00 | 76.72 | 0.00 |
+| stmt | 79.33 | 26.44 | 0.00 | 91.95 | 0.00 |
+| branch | 61.36 | 20.45 | 0.00 | 82.90 | 0.00 |
+| cond | 37.90 | 12.63 | 0.00 | 76.61 | 0.00 |
 | expr | 50.00 | 16.67 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 7.41 | 0.00 | 66.66 | 0.00 |
-| toggle | 16.72 | 5.57 | 0.15 | 52.11 | 0.05 |
+| toggle | 13.54 | 4.51 | 0.01 | 45.76 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/EDGE.md) &middot; [dashboard](../../DV_REPORT.md)_

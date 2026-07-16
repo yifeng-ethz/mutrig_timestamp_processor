@@ -11,3 +11,4 @@ Primary reviewer entry points:
 - [`DV_COV.md`](DV_COV.md) - generated coverage dashboard
 - [`REPORT/README.md`](REPORT/README.md) - generated per-case evidence index
 - [`BUG_HISTORY.md`](BUG_HISTORY.md) - shared bug ledger link
+- [`gate/README.md`](gate/README.md) - external-port RTL/post-fit functional signature smoke

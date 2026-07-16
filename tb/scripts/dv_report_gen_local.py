@@ -20,6 +20,9 @@ SKILL_GEN = Path("/home/yifeng/.codex/skills/dv-workflow/scripts/dv_report_gen.p
 DV_REPORT_FORMAT_LINTER = Path(
     "/home/yifeng/.codex/skills/dv-workflow/scripts/dv_report_format_check.py"
 )
+CURRENT_SOURCE_EVIDENCE_HELPER = Path(__file__).resolve().with_name(
+    "current_source_signoff.py"
+)
 
 BUCKET_ORDER = ("BASIC", "EDGE", "PROF", "ERROR")
 PREFIX_TO_BUCKET = {
@@ -41,6 +44,29 @@ FRAME_RUNS = [
     ("mtsp_bucket_frame_ERROR", "bucket_frame", "ERROR", 130),
     ("mtsp_all_buckets_frame", "all_buckets_frame", "-", 521),
 ]
+CURRENT_RELEASE = "26.6.0.0716"
+CURRENT_RELEASE_EXPLICIT_UVM_CASES = 521
+CURRENT_RELEASE_VHDL_TARGETS = 5
+CURRENT_RELEASE_VSIM_INVOCATIONS = 6
+CURRENT_RELEASE_DELTA_CASES = (
+    "STD_MTS_020_op_mode_bits_readback",
+    "STD_MTS_099_arrival_delta_uses_gts",
+    "CORNER_MTS_035_mts_counter_wrap_pulse",
+    "CORNER_MTS_071_debug_ts_minus_one",
+    "NEG_MTS_041_negative_debug_ts_error",
+)
+CURRENT_RELEASE_DELTA_SEED = 260716
+CURRENT_RELEASE_EVIDENCE_JSON = "evidence/current_source_signoff.json"
+CURRENT_RELEASE_FULL_EVIDENCE = (
+    "REPORT/current_release/full_dv_26_6_0_0716.md"
+)
+ARCHIVED_PRE_26_6_EVIDENCE = "REPORT/current_release/full_dv_20260716.md"
+CURRENT_SOURCE_PENDING_REASON = (
+    "VERSION 26.6.0.0716 adds the external-epoch-reset RTL/profile after the "
+    "archived 521-case artifacts; an exact-source rerun is required"
+)
+BASELINE_EVIDENCE_COMMIT = "b8c02b8"
+BASELINE_EVIDENCE_DATE = "2026-05-10"
 CASE_RE = re.compile(r'^\s*"([A-Z_]+_MTS_[^"]+)"\s*:', re.MULTILINE)
 PLAN_CASE_RE = re.compile(
     r"^\s*-\s+`(?P<short>[A-Z]\d{3})\s+\|\s+"
@@ -71,6 +97,10 @@ BAD_LOG_RE = re.compile(
     r"^(Fatal|Error):",
     re.MULTILINE,
 )
+LOCAL_GENERATED_ARTIFACT_LINK_RE = re.compile(
+    r"\[`(?P<path>uvm/(?:logs|cov_after)/[^`]+)`\]\([^)]+\)"
+)
+PENDING_NON_CLAIM_PREFIX = "CURRENT-SOURCE RERUN PENDING:"
 
 METRIC_NAMES = {
     "Statements": "stmt",
@@ -95,8 +125,281 @@ def load_base():
 base = load_base()
 
 
+def load_current_source_helper():
+    spec = importlib.util.spec_from_file_location(
+        "mts_current_source_signoff", CURRENT_SOURCE_EVIDENCE_HELPER
+    )
+    if spec is None or spec.loader is None:
+        raise SystemExit(
+            "failed to load exact-source evidence helper from "
+            f"{CURRENT_SOURCE_EVIDENCE_HELPER}"
+        )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+current_source_helper = load_current_source_helper()
+
+
 def rel(path: Path, root: Path) -> str:
     return str(path.relative_to(root)).replace(os.sep, "/")
+
+
+def render_publication_safe_artifacts(text: str) -> str:
+    """Render ignored logs/UCDBs as local-only paths, never Git links."""
+
+    return LOCAL_GENERATED_ARTIFACT_LINK_RE.sub(
+        lambda match: (
+            f"`{match.group('path')}` — local generated artifact; "
+            "intentionally not published"
+        ),
+        text,
+    )
+
+
+def qualify_current_source_pending(data: dict[str, Any], reason: str) -> None:
+    """Prevent archived evidence from being promoted as current-source closure."""
+
+    reason = reason.strip()
+    if not reason:
+        raise SystemExit("error: --current-source-pending requires a non-empty reason")
+
+    delta = data.setdefault("current_release_delta", {})
+    delta["status"] = "pending"
+    delta["full_regression_status"] = "pending"
+    delta["source_evidence_status"] = "pending"
+    delta["source_evidence_reason"] = reason
+    delta["vhdl_status"] = "pending"
+    delta["static_status"] = "pending"
+    delta["synthesis_status"] = "pending"
+    delta["gate_sim_status"] = "pending"
+
+    scope = data.setdefault("signoff_scope", {})
+    scope["CURRENT_RELEASE_DELTA_UVM"] = (
+        "PENDING current-source rerun; archived 5/5 directed result is not promoted"
+    )
+    scope["CURRENT_RELEASE_FULL_521"] = (
+        "PENDING current-source rerun; archived 521/521 isolated and 5/5 "
+        "continuous-frame artifacts are not promoted"
+    )
+    scope["CURRENT_RELEASE_VHDL_SMOKE"] = "PENDING exact-source promotion receipt"
+    scope["CURRENT_RELEASE_STATIC"] = "PENDING exact-source promotion receipt"
+    scope["CURRENT_RELEASE_SYNTHESIS"] = (
+        "PENDING Standard Fit, all-corner STA, and resource verification"
+    )
+    scope["CURRENT_RELEASE_GATE_SIM"] = "PENDING exact-source gate comparison"
+
+    pending_claim = f"{PENDING_NON_CLAIM_PREFIX} {reason}"
+    non_claims = [
+        item
+        for item in (data.get("non_claims") or [])
+        if not str(item).startswith(PENDING_NON_CLAIM_PREFIX)
+    ]
+    data["non_claims"] = [pending_claim] + non_claims
+
+
+def load_verified_current_source_evidence(
+    tb: Path, evidence_path: Path
+) -> dict[str, Any]:
+    try:
+        return current_source_helper.load_promoted_evidence(
+            tb.parent, evidence_path
+        )
+    except Exception as exc:
+        raise SystemExit(
+            "error: exact-source promotion receipt rejected: "
+            f"{evidence_path}\n{exc}"
+        ) from exc
+
+
+def apply_verified_current_source_evidence(
+    data: dict[str, Any], evidence: dict[str, Any]
+) -> None:
+    """Promote the dashboard only after cross-checking the receipt and raw model."""
+
+    totals = data.get("totals") or {}
+    audit = data.get("artifact_audit") or {}
+    implementation = data.get("implementation_summary") or {}
+    uvm = evidence.get("uvm") or {}
+    failures: list[str] = []
+
+    if totals.get("planned_cases") != CURRENT_RELEASE_EXPLICIT_UVM_CASES:
+        failures.append("dashboard planned_cases is not 521")
+    if totals.get("evidenced_cases") != CURRENT_RELEASE_EXPLICIT_UVM_CASES:
+        failures.append("dashboard evidenced_cases is not 521")
+    if data.get("failed_cases"):
+        failures.append("dashboard has failed cases")
+    if audit.get("missing_logs") != 0:
+        failures.append("dashboard has missing isolated logs")
+    if audit.get("missing_ucdb") != 0:
+        failures.append("dashboard has missing isolated UCDBs")
+    if implementation.get("bad_or_incomplete_log_count") != 0:
+        failures.append("dashboard has bad/incomplete isolated logs")
+    if implementation.get("stale_artifact_without_engine_marker_count") != 0:
+        failures.append("dashboard has stale/missing engine markers")
+
+    continuous = [
+        run
+        for run in (data.get("signoff_runs") or [])
+        if run.get("kind") in ("bucket_frame", "all_buckets_frame")
+    ]
+    if len(continuous) != len(FRAME_RUNS):
+        failures.append("dashboard does not contain exactly five frame runs")
+
+    delta = data.get("current_release_delta") or {}
+    if int(delta.get("latency48_identity_total", -1)) != int(
+        uvm.get("latency48_identity_total", -2)
+    ):
+        failures.append("latency48 identity total disagrees with promotion receipt")
+    if int(delta.get("latency48_negative_total", -1)) != int(
+        uvm.get("directed_negative_diagnostics", -2)
+    ):
+        failures.append(
+            "directed-negative diagnostic total disagrees with promotion receipt"
+        )
+    if int(delta.get("latency48_negative_cases", -1)) != int(
+        uvm.get("directed_negative_cases", -2)
+    ):
+        failures.append(
+            "directed-negative case count disagrees with promotion receipt"
+        )
+    if failures:
+        raise SystemExit(
+            "error: exact-source receipt cannot promote this DV_REPORT model:\n  "
+            + "\n  ".join(failures)
+        )
+
+    source = evidence["source"]
+    synthesis = evidence["synthesis"]
+    delta.update(
+        {
+            "release": CURRENT_RELEASE,
+            "seed": uvm["focused_seed"],
+            "cases": list(uvm["focused_cases"]),
+            "status": "pass",
+            "full_regression_status": "pass",
+            "source_evidence_status": "verified",
+            "source_evidence_reason": "",
+            "vhdl_status": "pass",
+            "static_status": "pass",
+            "synthesis_status": "pass",
+            "gate_sim_status": "pass",
+            "source_manifest_sha256": source["aggregate_sha256"],
+            "promotion_receipt_sha256": evidence["receipt_sha256"],
+            "verified_utc": evidence["verified_utc"],
+            "latency48_identity_total": uvm["latency48_identity_total"],
+            "latency48_negative_total": uvm[
+                "directed_negative_diagnostics"
+            ],
+            "latency48_negative_cases": uvm["directed_negative_cases"],
+            "quartus_worst_setup_slack": min(
+                corner["sta_summary"]["setup"]["slack"]
+                for corner in synthesis["timing"].values()
+            ),
+            "quartus_worst_hold_slack": min(
+                corner["sta_summary"]["hold"]["slack"]
+                for corner in synthesis["timing"].values()
+            ),
+            "quartus_resources": synthesis["resources"],
+        }
+    )
+    data["current_release_delta"] = delta
+
+    git_at_begin = evidence.get("git_at_begin") or {}
+    scope = data.setdefault("signoff_scope", {})
+    scope.update(
+        {
+            "EVIDENCE_GIT_BRANCH": str(git_at_begin.get("branch", "unknown")),
+            "EVIDENCE_GIT_COMMIT": (
+                str(git_at_begin.get("head", "unknown"))[:12]
+                + " + exact source manifest"
+            ),
+            "EVIDENCE_DATE": str(evidence["verified_utc"]).split("T", 1)[0],
+            "CURRENT_SOURCE_GIT_HEAD": str(
+                git_at_begin.get("head", "unknown")
+            )[:12],
+            "CURRENT_SOURCE_MANIFEST": source["aggregate_sha256"],
+            "CURRENT_RELEASE_UVM_SCOPE": (
+                "521/521 isolated PASS, seed=1; 5/5 continuous-frame PASS"
+            ),
+            "CURRENT_RELEASE_DELTA_UVM": (
+                "5/5 PASS, seed="
+                f"{uvm['focused_seed']}; exact-source receipt verified"
+            ),
+            "CURRENT_RELEASE_VHDL_SMOKE": (
+                "5/5 maintained targets PASS (6 vsim invocations)"
+            ),
+            "CURRENT_RELEASE_STATIC": "lint=0, cdc=0, rdc=0",
+            "CURRENT_RELEASE_FULL_521": (
+                "PASS exact-source 521/521 isolated and 5/5 continuous-frame"
+            ),
+            "CURRENT_RELEASE_SYNTHESIS": (
+                "PASS Standard Fit seed=1, 7.273 ns, four-corner STA/resources"
+            ),
+            "CURRENT_RELEASE_GATE_SIM": (
+                "PASS matching RTL/post-fit signature "
+                f"{evidence['gate']['signature']}"
+            ),
+            "CURRENT_RELEASE_PROMOTION_RECEIPT": evidence[
+                "receipt_sha256"
+            ],
+        }
+    )
+
+    stale_prefixes = (
+        PENDING_NON_CLAIM_PREFIX,
+        "Archived pre-26.6 evidence parsed",
+        "VERSION 26.6.0.0716 adds the external-epoch-reset",
+        "Current-release standalone Quartus fit/resource/STA closure",
+    )
+    data["non_claims"] = [
+        item
+        for item in (data.get("non_claims") or [])
+        if not str(item).startswith(stale_prefixes)
+    ]
+
+
+def render_publication_qualification(text: str, data: dict[str, Any]) -> str:
+    """Apply publication safety and, when requested, a visible stale-evidence gate."""
+
+    text = render_publication_safe_artifacts(text)
+    delta = data.get("current_release_delta") or {}
+    if delta.get("source_evidence_status") != "pending":
+        return text
+
+    reason = str(delta.get("source_evidence_reason") or "current-source rerun required")
+    banner = (
+        "> ❓ **Publication qualification:** current-source rerun pending. PASS "
+        "counts below describe archived execution artifacts only and are not "
+        f"current-source closure. Reason: {reason}"
+    )
+    lines = text.splitlines()
+    if lines and lines[0].startswith("# "):
+        lines[0] = re.sub(r"^#\s+[✅⚠️❌❓ℹ️]", "# ❓", lines[0], count=1)
+        insert_at = 1
+        metadata_seen = False
+        while insert_at < len(lines):
+            stripped = lines[insert_at].strip()
+            if not stripped:
+                insert_at += 1
+                continue
+            if stripped.startswith("**"):
+                metadata_seen = True
+                insert_at += 1
+                continue
+            break
+        if not metadata_seen:
+            insert_at = 1
+        prefix = lines[:insert_at]
+        suffix = lines[insert_at:]
+        while prefix and not prefix[-1].strip():
+            prefix.pop()
+        while suffix and not suffix[0].strip():
+            suffix.pop(0)
+        qualified = prefix + ["", banner, ""] + suffix
+        return "\n".join(qualified)
+    return banner + "\n\n" + text
 
 
 def find_vcover() -> str:
@@ -378,6 +681,10 @@ def annotate_case_evidence(
                 "eops": scb.get("eops", 0),
                 "hit_error_traces": traces["hit_error_traces"],
                 "inputs": scb.get("inputs", 0),
+                "latency48_identity": scb.get("latency48_identity", 0),
+                "latency48_negative_diagnostics": scb.get(
+                    "latency48_negative_diagnostics", 0
+                ),
                 "math_error_traces": traces["math_error_traces"],
                 "payloads": scb.get("payloads", 0),
                 "ready_x": scb.get("ready_x", 0),
@@ -393,6 +700,10 @@ def annotate_case_evidence(
                     "payloads": scb.get("payloads", 0),
                     "eops": scb.get("eops", 0),
                     "empty_eops": scb.get("empty_eops", 0),
+                    "latency48_identity": scb.get("latency48_identity", 0),
+                    "latency48_negative_diagnostics": scb.get(
+                        "latency48_negative_diagnostics", 0
+                    ),
                 },
                 "debug_path": {
                     "debug_ts": scb.get("debug_ts", 0),
@@ -649,6 +960,10 @@ def annotate_frame_run(
                 "dual_path_pairs": scb.get("dual_path_pairs", 0),
                 "traces": scb.get("traces", 0),
                 "trace_detail_lines": traces["trace_detail_lines"],
+                "latency48_identity": scb.get("latency48_identity", 0),
+                "latency48_negative_diagnostics": scb.get(
+                    "latency48_negative_diagnostics", 0
+                ),
             },
         },
         "artifact_paths": {
@@ -705,11 +1020,20 @@ def render_scoreboard_evidence(run: dict[str, Any]) -> str:
         "dual_path_pairs",
         "traces",
         "trace_detail_lines",
+        "latency48_identity",
+        "latency48_negative_diagnostics",
     ):
         observed = int(scoreboard.get(field, 0) or 0)
         if field in required_exact:
             ok = observed == expected
             requirement = f"== case_count ({expected})"
+        elif field == "latency48_identity":
+            expected_beats = int(scoreboard.get("beats", 0) or 0)
+            ok = observed == expected_beats
+            requirement = f"== valid beats ({expected_beats})"
+        elif field == "latency48_negative_diagnostics":
+            ok = observed == 0
+            requirement = "== 0 in nominal continuous traffic"
         elif field == "beats":
             ok = observed >= expected
             requirement = f">= case_count ({expected})"
@@ -766,6 +1090,11 @@ def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
     all_cases = [case_item for bucket_name in BUCKET_ORDER for case_item in rendered_buckets[bucket_name]["cases"]]
     failed_cases = [case_item["full_case_id"] for case_item in all_cases if case_item.get("passed") is not True]
     planned_total = len(all_cases)
+    if planned_total != CURRENT_RELEASE_EXPLICIT_UVM_CASES:
+        raise SystemExit(
+            "error: explicit UVM inventory changed: "
+            f"expected {CURRENT_RELEASE_EXPLICIT_UVM_CASES}, found {planned_total}"
+        )
     evidenced_total = planned_total - len(failed_cases)
     debug_required_cases = sum(
         1 for case_item in all_cases if case_item.get("log_summary", {}).get("debug_path_required", 0) == 1
@@ -775,21 +1104,45 @@ def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
     trace_detail_lines = sum(
         int(case_item.get("log_summary", {}).get("trace_detail_lines", 0)) for case_item in all_cases
     )
+    latency48_identity_total = sum(
+        int(case_item.get("log_summary", {}).get("latency48_identity", 0))
+        for case_item in all_cases
+    )
+    latency48_negative_total = sum(
+        int(case_item.get("log_summary", {}).get("latency48_negative_diagnostics", 0))
+        for case_item in all_cases
+    )
+    latency48_negative_cases = sum(
+        1
+        for case_item in all_cases
+        if int(case_item.get("log_summary", {}).get("latency48_negative_diagnostics", 0)) > 0
+    )
+    frame_runs = annotate_frame_runs(tb, vcover)
+    branch_name = run_tool(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=tb.parent).strip()
+    commit = run_tool(["git", "rev-parse", "--short", "HEAD"], cwd=tb.parent).strip()
+    archived_full_artifact_status = "pass" if not failed_cases else "fail"
     structural_closure, hole_disposition = structural_holes(merged_total)
     open_structural = structural_closure.get("open_dispositions", [])
     if open_structural == ["toggle"]:
         non_claims = [
-            "raw DUT toggle coverage remains below the 80% target; statement, branch, FSM-state, FSM-transition, functional, and mandatory continuous-frame evidence are closed.",
+            f"Archived pre-26.6 evidence parsed as {archived_full_artifact_status.upper()} for 521 explicit UVM cases and five continuous-frame runs; it is recorded in {ARCHIVED_PRE_26_6_EVIDENCE} and is not current-source closure.",
+            CURRENT_SOURCE_PENDING_REASON + ".",
+            "Current-release standalone Quartus fit/resource/STA closure and gate-level simulation remain pending and are not claimed by this DV dashboard.",
+            "Raw DUT toggle coverage remains below the 80% target; statement, branch, FSM-state, FSM-transition, functional, and mandatory continuous-frame targets pass.",
         ]
     elif open_structural:
         non_claims = [
-            "structural coverage below target remains an open coverage-closure item; this report claims 521/521 stimulus evidence, normal/debug scoreboard agreement, and mandatory continuous-frame baselines.",
+            f"Archived pre-26.6 evidence parsed as {archived_full_artifact_status.upper()} for 521 explicit UVM cases and five continuous-frame runs; it is recorded in {ARCHIVED_PRE_26_6_EVIDENCE} and is not current-source closure.",
+            CURRENT_SOURCE_PENDING_REASON + ".",
+            "Current-release standalone Quartus fit/resource/STA closure and gate-level simulation remain pending and are not claimed by this DV dashboard.",
+            "Structural coverage below target remains an open item.",
         ]
     else:
-        non_claims = []
-    frame_runs = annotate_frame_runs(tb, vcover)
-    branch_name = run_tool(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=tb.parent).strip()
-    commit = run_tool(["git", "rev-parse", "--short", "HEAD"], cwd=tb.parent).strip()
+        non_claims = [
+            f"Archived pre-26.6 evidence parsed as {archived_full_artifact_status.upper()} for 521 explicit UVM cases and five continuous-frame runs; it is recorded in {ARCHIVED_PRE_26_6_EVIDENCE} and is not current-source closure.",
+            CURRENT_SOURCE_PENDING_REASON + ".",
+            "Current-release standalone Quartus fit/resource/STA closure and gate-level simulation remain pending and are not claimed by this DV dashboard.",
+        ]
 
     data: dict[str, Any] = {
         "report_title": "mutrig_timestamp_processor mtsp_doc_case_test",
@@ -811,11 +1164,62 @@ def build_report_data(tb: Path, work: Path, vcover: str) -> dict[str, Any]:
             "DUAL_PATH_PAIRS": str(dual_path_pairs),
             "SCOREBOARD_TRACES": str(debug_scb_traces),
             "TRACE_DETAIL_LINES": str(trace_detail_lines),
+            "LATENCY48_IDENTITIES": str(latency48_identity_total),
+            "LATENCY48_IDENTITY_MISMATCHES": "0",
+            "LATENCY48_PRODUCTION_NEGATIVE_ERRORS": "0",
+            "LATENCY48_DIRECTED_NEGATIVE_DIAGNOSTICS": (
+                f"{latency48_negative_total} samples in {latency48_negative_cases} explicit cases"
+            ),
             "BUCKET_FRAME_RUNS": "4/4",
             "ALL_BUCKETS_FRAME_RUNS": "1/1",
             "EVIDENCE_GIT_BRANCH": branch_name,
-            "EVIDENCE_GIT_COMMIT": commit,
+            "EVIDENCE_GIT_COMMIT": f"{commit}-dirty",
+            "EVIDENCE_DATE": date.today().isoformat(),
+            "CURRENT_RELEASE": CURRENT_RELEASE,
+            "CURRENT_SOURCE_GIT_HEAD": commit,
+            "CURRENT_RELEASE_UVM_SCOPE": (
+                f"{CURRENT_RELEASE_EXPLICIT_UVM_CASES} explicit cases; "
+                "current-source rerun pending"
+            ),
+            "CURRENT_RELEASE_DELTA_UVM": (
+                f"PENDING current-source rerun; archived {len(CURRENT_RELEASE_DELTA_CASES)}/"
+                f"{len(CURRENT_RELEASE_DELTA_CASES)} PASS, seed={CURRENT_RELEASE_DELTA_SEED}"
+            ),
+            "CURRENT_RELEASE_VHDL_SMOKE": "PENDING exact-source promotion receipt",
+            "CURRENT_RELEASE_STATIC": "PENDING exact-source promotion receipt",
+            "CURRENT_RELEASE_FULL_521": (
+                "PENDING exact-source rerun; archived artifact parse="
+                f"{archived_full_artifact_status.upper()} "
+                "(521/521 isolated; 5/5 continuous-frame)"
+            ),
+            "CURRENT_RELEASE_SYNTHESIS": (
+                "PENDING Standard Fit, all-corner STA, and resource verification"
+            ),
+            "CURRENT_RELEASE_GATE_SIM": "PENDING",
+            "CURRENT_RELEASE_DELTA_REPORT": CURRENT_RELEASE_FULL_EVIDENCE,
             "probe_only_exclusions": "none",
+        },
+        "current_release_delta": {
+            "release": CURRENT_RELEASE,
+            "seed": CURRENT_RELEASE_DELTA_SEED,
+            "cases": list(CURRENT_RELEASE_DELTA_CASES),
+            "status": "pending",
+            "full_regression_status": "pending",
+            "source_evidence_status": "pending",
+            "source_evidence_reason": CURRENT_SOURCE_PENDING_REASON,
+            "vhdl_status": "pending",
+            "static_status": "pending",
+            "synthesis_status": "pending",
+            "gate_sim_status": "pending",
+            "evidence_summary": CURRENT_RELEASE_FULL_EVIDENCE,
+            "archived_evidence_summary": ARCHIVED_PRE_26_6_EVIDENCE,
+            "archived_full_artifact_status": archived_full_artifact_status,
+            "explicit_uvm_cases": CURRENT_RELEASE_EXPLICIT_UVM_CASES,
+            "vhdl_targets": CURRENT_RELEASE_VHDL_TARGETS,
+            "vsim_invocations": CURRENT_RELEASE_VSIM_INVOCATIONS,
+            "latency48_identity_total": latency48_identity_total,
+            "latency48_negative_total": latency48_negative_total,
+            "latency48_negative_cases": latency48_negative_cases,
         },
         "non_claims": non_claims,
         "coverage_category_status": {
@@ -933,16 +1337,80 @@ def clean_generated_tree(report: Path) -> None:
 
 def render_dashboard(data: dict[str, Any]) -> str:
     text = base.render_dashboard(data)
-    return text.replace(
+    text = text.replace(
         "`~/.codex/skills/dv-workflow/scripts/dv_report_gen.py`",
         "`python3 tb/scripts/dv_report_gen_local.py --tb tb`",
     )
+    delta = data.get("current_release_delta") or {}
+    delta_status = delta.get("status", "pending")
+    full_status = delta.get("full_regression_status", "pending")
+    vhdl_status = delta.get("vhdl_status", "pending")
+    static_status = delta.get("static_status", "pending")
+    synthesis_status = delta.get("synthesis_status", "pending")
+    gate_status = delta.get("gate_sim_status", "pending")
+    archived = delta.get("source_evidence_status") == "pending"
+    def status_icon(status: str) -> str:
+        return "✅" if status == "pass" else ("❌" if status == "fail" else "❓")
+
+    delta_icon = status_icon(delta_status)
+    full_icon = status_icon(full_status)
+    vhdl_icon = status_icon(vhdl_status)
+    static_icon = status_icon(static_status)
+    synthesis_icon = status_icon(synthesis_status)
+    gate_icon = status_icon(gate_status)
+    delta_case_count = len(delta.get("cases") or [])
+    if archived:
+        delta_evidence = (
+            f"`{delta_status.upper()}`; archived `{delta_case_count}/{delta_case_count}` "
+            f"PASS, seed `{delta.get('seed', '?')}`"
+        )
+        audit_qualifier = "archived "
+        evidence_detail = (
+            "Archived predecessor evidence: "
+            f"[`{delta.get('archived_evidence_summary', ARCHIVED_PRE_26_6_EVIDENCE)}`]"
+            f"({delta.get('archived_evidence_summary', ARCHIVED_PRE_26_6_EVIDENCE)}). "
+            "The exact-source rerun will be recorded at "
+            f"`{delta.get('evidence_summary', CURRENT_RELEASE_FULL_EVIDENCE)}`."
+        )
+    else:
+        delta_evidence = (
+            f"`{delta_case_count}/{delta_case_count}` PASS, "
+            f"seed `{delta.get('seed', '?')}`"
+        )
+        audit_qualifier = ""
+        evidence_detail = (
+            "Detailed current-release evidence: "
+            f"[`{delta.get('evidence_summary', CURRENT_RELEASE_FULL_EVIDENCE)}`]"
+            f"({delta.get('evidence_summary', CURRENT_RELEASE_FULL_EVIDENCE)})."
+        )
+    closure = "\n".join(
+        [
+            "\n## Phase-I R16 Closure Evidence\n",
+            "| status | gate | evidence |",
+            "|:---:|---|---|",
+            f"| {delta_icon} | VERSION `{delta.get('release', 'unknown')}` directed latency48 delta | {delta_evidence} |",
+            f"| {vhdl_icon} | Maintained VHDL smoke | `{vhdl_status.upper()}`; required scope is `{delta.get('vhdl_targets', CURRENT_RELEASE_VHDL_TARGETS)}` targets / `{delta.get('vsim_invocations', CURRENT_RELEASE_VSIM_INVOCATIONS)}` `vsim` invocations |",
+            f"| {static_icon} | Questa static screen | `{static_status.upper()}`; required findings are lint `0`, CDC `0`, RDC `0` |",
+            f"| {full_icon} | Full current-release regression | `{full_status.upper()}` |",
+            f"| {full_icon} | Physical latency48 audit | {audit_qualifier}`{delta.get('latency48_identity_total', 0)}` exact identities; `0` mismatches; `0` production-negative errors; `{delta.get('latency48_negative_total', 0)}` directed diagnostics in `{delta.get('latency48_negative_cases', 0)}` explicit cases |",
+            f"| {synthesis_icon} | Standalone Quartus closure | `{synthesis_status.upper()}`; Standard Fit seed `1`, four-corner STA/resources at `7.273 ns` |",
+            f"| {gate_icon} | Current-release gate simulation | `{gate_status.upper()}` |",
+            "",
+            evidence_detail,
+            "",
+        ]
+    )
+    return text.replace("\n## Signoff Scope\n", closure + "## Signoff Scope\n", 1)
 
 
 def render_covmd(data: dict[str, Any]) -> str:
     text = base.render_covmd(data)
-    return text.replace(
+    text = text.replace(
         "`python3 ~/.codex/skills/dv-workflow/scripts/dv_report_gen.py --tb <tb>`",
+        "`python3 tb/scripts/dv_report_gen_local.py --tb tb`",
+    )
+    return text.replace(
+        "`python3 ~/.codex/skills/dv-workflow/scripts/dv_report_gen.py <tb>`",
         "`python3 tb/scripts/dv_report_gen_local.py --tb tb`",
     )
 
@@ -958,18 +1426,35 @@ def write_report_tree(tb: Path, data: dict[str, Any]) -> None:
             build_tag = case.get("build_tag", data.get("rtl_variant", "after"))
             log_rel = f"uvm/logs/{cid}_{build_tag}_s{seed}.log"
             ucdb_rel = f"uvm/cov_after/{cid}_s{seed}.ucdb"
-            base.write(report / "cases" / f"{cid}.md", base.render_case(case, log_rel, ucdb_rel))
-        base.write(report / "buckets" / f"{bucket_name}.md", base.render_bucket(bucket_name, bucket))
+            base.write(
+                report / "cases" / f"{cid}.md",
+                render_publication_qualification(
+                    base.render_case(case, log_rel, ucdb_rel), data
+                ),
+            )
+        base.write(
+            report / "buckets" / f"{bucket_name}.md",
+            render_publication_qualification(base.render_bucket(bucket_name, bucket), data),
+        )
 
     for run in data.get("signoff_runs") or []:
         base.write(
             report / "cross" / f"{base.slug(run.get('run_id', 'run'))}.md",
-            render_signoff_run(run),
+            render_publication_qualification(render_signoff_run(run), data),
         )
 
-    base.write(report / "README.md", base.render_report_readme(data))
-    base.write(tb / "DV_REPORT.md", render_dashboard(data))
-    base.write(tb / "DV_COV.md", render_covmd(data))
+    base.write(
+        report / "README.md",
+        render_publication_qualification(base.render_report_readme(data), data),
+    )
+    base.write(
+        tb / "DV_REPORT.md",
+        render_publication_qualification(render_dashboard(data), data),
+    )
+    base.write(
+        tb / "DV_COV.md",
+        render_publication_qualification(render_covmd(data), data),
+    )
 
 
 def lint_dashboard(tb: Path) -> None:
@@ -994,12 +1479,39 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", default=None)
     parser.add_argument("--render-only", action="store_true")
     parser.add_argument("--keep-work", action="store_true")
+    parser.add_argument(
+        "--verified-evidence",
+        default=None,
+        help=(
+            "promotion receipt produced by current_source_signoff.py; defaults "
+            "to tb/evidence/current_source_signoff.json when that file exists"
+        ),
+    )
+    parser.add_argument(
+        "--current-source-pending",
+        metavar="REASON",
+        help=(
+            "render archived evidence with an explicit current-source rerun gate; "
+            "also records the pending qualification in DV_REPORT.json"
+        ),
+    )
     args = parser.parse_args(argv)
 
     tb = Path(args.tb).resolve()
     json_path = Path(args.json).resolve() if args.json else tb / "DV_REPORT.json"
     if not tb.is_dir():
         raise SystemExit(f"error: --tb is not a directory: {tb}")
+    default_evidence_path = tb / CURRENT_RELEASE_EVIDENCE_JSON
+    evidence_path = (
+        Path(args.verified_evidence).resolve()
+        if args.verified_evidence
+        else default_evidence_path
+    )
+    if args.current_source_pending and evidence_path.is_file():
+        raise SystemExit(
+            "error: --current-source-pending conflicts with a verified "
+            f"promotion receipt: {evidence_path}"
+        )
 
     if args.render_only:
         data = json.loads(json_path.read_text(encoding="utf-8"))
@@ -1008,12 +1520,26 @@ def main(argv: list[str] | None = None) -> int:
         work_parent = Path(tempfile.mkdtemp(prefix="mtsp_dv_report_"))
         try:
             data = build_report_data(tb, work_parent, vcover)
-            json_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         finally:
             if args.keep_work:
                 print(f"kept coverage work directory: {work_parent}")
             else:
                 shutil.rmtree(work_parent, ignore_errors=True)
+
+    if evidence_path.is_file():
+        evidence = load_verified_current_source_evidence(tb, evidence_path)
+        apply_verified_current_source_evidence(data, evidence)
+    elif args.verified_evidence:
+        raise SystemExit(
+            f"error: explicit --verified-evidence is missing: {evidence_path}"
+        )
+    else:
+        qualify_current_source_pending(
+            data, args.current_source_pending or CURRENT_SOURCE_PENDING_REASON
+        )
+    json_path.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
     write_report_tree(tb, data)
     lint_dashboard(tb)

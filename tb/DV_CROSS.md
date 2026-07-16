@@ -2,7 +2,7 @@
 
 **Companion docs:** [`DV_PLAN.md`](DV_PLAN.md), [`DV_HARNESS.md`](DV_HARNESS.md), [`DV_COV.md`](DV_COV.md), [`DV_REPORT.md`](DV_REPORT.md)
 **Purpose:** functional cross-coverage contract for `mts_processor`  
-**Date:** 2026-04-15
+**Date:** 2026-07-15
 
 ## 1. Core Coverpoints
 
@@ -28,6 +28,7 @@
 | `cp_delay_ts_field` | `use_t`, `use_e` |
 | `cp_expected_latency_cfg` | `zero`, `small`, `default_2000`, `large`, `max_word` |
 | `cp_lpm_div_pipeline_cfg` | `rtl_default_4`, `hw_tcl_default_2`, `other_override` |
+| `cp_arrival_coordinate` | `physical_emission_gts`, `overflow_base_debug` |
 
 ### 1.3 Input Acceptance
 
@@ -48,6 +49,11 @@
 | `cp_route_channel` | `lane0`, `lane1`, `lane2`, `lane3` |
 | `cp_et_kind` | `masked_eflag0`, `positive`, `zero_negative_clamp`, `saturated_511` |
 | `cp_debug_ts_window` | `negative`, `zero`, `in_range`, `above_expected` |
+| `cp_latency48_identity` | `match`, `mismatch_error` |
+| `cp_latency48_sign` | `production_nonnegative`, `production_negative_fault`, `diagnostic_negative` |
+| `cp_latency48_epoch_carry` | `low32_only`, `upper16_nonzero` |
+| `cp_diag_frame_bin_910` | `bin0`, `bin10`, `other` |
+| `cp_run_sync_epoch` | `before_sync`, `after_sync` |
 
 ### 1.5 Output Markers And Debug
 
@@ -92,6 +98,9 @@
 | `XC18` | `cp_term_path x cp_term_eop_seen x cp_term_boundary_kind` | Termination paths and boundary observation covered |
 | `XC19` | `cp_term_path x cp_upgrade_result` | Current expected-fail upgrade bins remain explicit until RTL changes |
 | `XC20` | `cp_run_cmd x cp_term_boundary_kind x cp_output_kind` | Terminal marker behavior tied back to the control phase |
+| `XC21` | `cp_arrival_coordinate x cp_latency48_sign` | Physical mode is nonnegative except explicit fault injection; debug mode retains signed phase |
+| `XC22` | `cp_latency48_identity x cp_latency48_epoch_carry` | The modulo identity holds both below and above bit 31 |
+| `XC23` | `cp_arrival_coordinate x cp_diag_frame_bin_910 x cp_run_sync_epoch` | Diagnostic phase bin 10 repeats one 910-cycle frame later and after SYNC |
 
 ## 3. Error-Bin Expectations
 
@@ -104,13 +113,15 @@ These bins must be empty in clean regressions and intentionally hit only by `DV_
 | `cp_input_accept.discard_state` during legal running | State machine dropped an otherwise legal running hit |
 | `cp_debug_ts_window.negative` in clean nominal traffic | Selected timestamp path went past the global timestamp |
 | `cp_debug_ts_window.above_expected` in clean nominal traffic | Error window tripped unexpectedly |
+| `cp_latency48_identity.mismatch_error` | Arrival, true timestamp, and exported latency were not co-sampled |
+| `cp_latency48_sign.production_negative_fault` outside directed fault cases | Upstream PLL/run-SYNC/epoch configuration is inconsistent; raw value must remain visible |
 | `cp_term_boundary_kind.missing_boundary` in post-patch clean runs | Terminal boundary was lost |
 | `cp_upgrade_result.post_patch_pass` before RTL upgrade | Upgrade-only bins accidentally appear green too early |
 
 ## 4. Closure Rules
 
 1. Every non-error bin in Sections 1.1 through 1.5 must be hit by passing tests.
-2. Every legal bin in `XC01` through `XC18` must be hit by passing tests.
+2. Every legal bin in `XC01` through `XC18` and `XC21` through `XC23` must be hit by passing tests.
 3. `XC19` and `XC20` must show both current-RTL evidence and reserved post-patch evidence.
 4. Coverage is not closed until both `LPM_DIV_PIPELINE=4` and packaged `LPM_DIV_PIPELINE=2` builds have been sampled.
 5. Current-RTL quirks such as ignored output `ready` and constant-zero `empty` must be treated as covered facts, not silently abstracted away.
@@ -119,6 +130,9 @@ These bins must be empty in clean regressions and intentionally hit only by `DV_
    - the all-buckets-frame run executes buckets in bucket order and cases in case-id order without restarting the DUT between cases
    - directed cases contribute one transaction per case in these continuous frames
    - random cases contribute several transactions per case in these continuous frames
+7. No scoreboard or plotting layer may clamp, absolute-value, or silently wrap a
+   negative production lifetime. Modulo 910 is permitted only for the explicit
+   overflow-base diagnostic coordinate.
 
 ## 5. Evidence Artifacts
 
@@ -131,3 +145,5 @@ The regression flow should archive:
 - a route-channel histogram,
 - a remainder histogram,
 - termination-boundary waveforms for current and upgrade-gating cases.
+- per-hit 48-bit `(arrival, true_ts, latency)` traces, including an upper-epoch
+  carry sample and the X041 910-cycle/SYNC diagnostic sequence.

@@ -18,10 +18,10 @@ set DEFAULT_PADDING_EOP_WAIT_CYCLE_CONST   512
 
 set IP_UID_DEFAULT_CONST                   1297376080 ;# ASCII "MTSP" = 0x4D545350
 set VERSION_MAJOR_DEFAULT_CONST            26
-set VERSION_MINOR_DEFAULT_CONST            3
-set VERSION_PATCH_DEFAULT_CONST            14
-set BUILD_DEFAULT_CONST                    529
-set VERSION_DATE_DEFAULT_CONST             20260529
+set VERSION_MINOR_DEFAULT_CONST            6
+set VERSION_PATCH_DEFAULT_CONST            0
+set BUILD_DEFAULT_CONST                    716
+set VERSION_DATE_DEFAULT_CONST             20260716
 set VERSION_GIT_DEFAULT_CONST              0
 set VERSION_GIT_SHORT_DEFAULT_CONST        "unknown"
 set VERSION_GIT_DESCRIBE_DEFAULT_CONST     "unknown"
@@ -95,6 +95,7 @@ emits <b>hit_type1</b> words for downstream hit stacking.<br/><br/>\
 <b>hit_type0_in</b> &rarr; gray decoder ROM &rarr; lapse / overflow correction &rarr; divider pipeline &rarr; <b>hit_type1_out</b><br/><br/>\
 <b>Run-state contract</b><br/>\
 <b>RUN_PREPARE</b> and <b>SYNC</b> are acknowledged only after the local reset/arm path reaches the requested state.<br/>\
+By default the timestamp epoch remains reset throughout local RESET/SYNC. Set <b>USE_EXTERNAL_EPOCH_RESET</b> only when a synchronous integration-level epoch release must control the timestamp counters instead.<br/>\
 <b>RUNNING</b> accepts new hits.<br/>\
 <b>TERMINATING</b> drains the accepted packet tail, waits for the dedicated upstream <b>hit_type0_endofrun</b>\
 pulse, and acknowledges only after one empty <b>hit_type1</b> close marker has been emitted per downstream lane.<br/><br/>\
@@ -116,7 +117,8 @@ Bank <b>%s</b>, enabled channel window <b>%d..%d</b> (%d channels), divider pipe
 <b>LPM_DIV_PIPELINE</b> is packaged at the RTL default of <b>4</b> stages in this revision, matching the delivered source.<br/>\
 <b>PADDING_EOP_WAIT_CYCLE</b> defines the end-of-run grace window used by the terminating drain logic.<br/>\
 <b>MUTRIG_BUFFER_EXPECTED_LATENCY_8N</b> seeds the standalone timestamp-lapse window and the associated error reporting.<br/>\
-<b>MUTRIG_OVERFLOW_LOOKBACK_8N</b> is a separate post-wrap disambiguation window used only to decide when a high MuTRiG timestamp belongs to the previous epoch.</html>}
+<b>MUTRIG_OVERFLOW_LOOKBACK_8N</b> is a separate post-wrap disambiguation window used only to decide when a high MuTRiG timestamp belongs to the previous epoch.<br/>\
+<b>USE_EXTERNAL_EPOCH_RESET</b> materializes a synchronous <b>epoch_reset</b> conduit and makes it the exclusive run-epoch reset source for both MTS and GTS counters. CSR soft reset remains effective in either mode.</html>}
     }
     catch {
         set_display_item_property debug_html TEXT {<html>\
@@ -135,6 +137,7 @@ This image aligns the standalone timestamp processor with the run-sequence upgra
 the upstream <b>endofrun</b> sideband drives the terminate-close path, the packaged divider depth matches the RTL default, and\
 CONTROL_STATUS bit 5 can optionally trim timestamp-delay-error payload beats while the default still forwards them with the error sideband asserted. \
 The DEBUG contract now adds optional synthesizable status and one-to-one hit metadata sidecar conduits without changing DEBUG=0 nominal payload behavior.<br/><br/>\
+The optional external epoch-reset profile preserves the legacy RESET/SYNC behavior when disabled and exposes a synchronous conduit only when explicitly enabled.<br/><br/>\
 <b>Packaging provenance</b><br/>\
 Default git stamp <b>%s</b> (%s). Git describe: <b>%s</b>.</html>} \
             $version_string \
@@ -159,7 +162,7 @@ Enable <b>Override Git Stamp</b> to enter a custom value.<br/><br/>\
     catch {
         set_display_item_property interfaces_html TEXT [format {<html>\
 <b>Clocks and resets</b><br/>\
-Single synchronous <b>clock_interface</b> domain with <b>reset_interface</b> associated to that clock.<br/><br/>\
+Single synchronous <b>clock_interface</b> domain with <b>reset_interface</b> associated to that clock. When <b>USE_EXTERNAL_EPOCH_RESET</b> is enabled, the input-only <b>epoch_reset</b> conduit is sampled synchronously in this same domain; it resets timestamp epoch state but does not reset the run-control FSM or CSR block.<br/><br/>\
 <b>Control stream: run_ctrl</b><br/>\
 9-bit one-hot run command. <b>asi_ctrl_ready</b> is low while RUN_PREPARE / SYNC / TERMINATING work is still outstanding and rises only when the local state has truly completed.<br/><br/>\
 <b>Ingress stream: hit_type0_in</b><br/>\
@@ -200,9 +203,10 @@ Enabled channel range <b>%d..%d</b> (%d channels).</html>} \
 <tr><td>0x00</td><td>[3]</td><td>bypass_lapse</td><td>RW</td><td>Bypass the MTS to GTS lapse correction path.</td></tr>\
 <tr><td>0x00</td><td>[4]</td><td>discard_hiterr</td><td>RW</td><td>Reject hit_type0 beats with the configured hiterr bit set.</td></tr>\
 <tr><td>0x00</td><td>[5]</td><td>drop_delay_error</td><td>RW</td><td>Drop hit_type1 payload beats whose timestamp-delay error sideband is asserted. Leave clear to forward error-marked hits to downstream filters and monitors.</td></tr>\
+<tr><td>0x00</td><td>[6]</td><td>debug_overflow_base_arrival</td><td>RW</td><td>Debug only: replace direct emission GTS with the divided overflow base. The resulting subtraction is a phase coordinate, not physical hit lifetime. Keep clear in production.</td></tr>\
 <tr><td>0x00</td><td>[29]</td><td>delay_ts_field_use_t</td><td>RW</td><td>Select T timestamp for delay calculation when set.</td></tr>\
 <tr><td>0x00</td><td>[30]</td><td>derive_tot</td><td>RW</td><td>Enable long-hit E-T derivation.</td></tr>\
-<tr><td>0x00</td><td>[31,28,27:6]</td><td>reserved</td><td>RW/RO</td><td>Reserved.</td></tr>\
+<tr><td>0x00</td><td>[31,28,27:7]</td><td>reserved</td><td>RW/RO</td><td>Reserved.</td></tr>\
 </table></html>}
     }
 }
@@ -337,6 +341,7 @@ proc elaborate {} {
     catch {set_parameter_property VERSION_GIT ENABLED [get_parameter_value GIT_STAMP_OVERRIDE]}
 
     set_debug_interface_enable $debug_level
+    set_interface_property epoch_reset ENABLED [get_parameter_value USE_EXTERNAL_EPOCH_RESET]
     set_interface_property hit_type1_extended_0 ENABLED [expr {$bank_name eq "UP"}]
     set_interface_property hit_type1_extended_1 ENABLED [expr {$bank_name ne "UP"}]
     set_interface_property debug_ts ENABLED [expr {$debug_level >= 1}]
@@ -430,6 +435,12 @@ set_parameter_property DV_COUNTER_SEED_ENABLE HDL_PARAMETER true
 set_parameter_property DV_COUNTER_SEED_ENABLE VISIBLE false
 set_parameter_property DV_COUNTER_SEED_ENABLE DESCRIPTION "DV-only rollover accelerator. Leave at 0 for synthesis and normal packaged systems."
 
+add_parameter USE_EXTERNAL_EPOCH_RESET BOOLEAN false
+set_parameter_property USE_EXTERNAL_EPOCH_RESET DISPLAY_NAME "Use External Epoch Reset"
+set_parameter_property USE_EXTERNAL_EPOCH_RESET HDL_PARAMETER true
+set_parameter_property USE_EXTERNAL_EPOCH_RESET AFFECTS_ELABORATION true
+set_parameter_property USE_EXTERNAL_EPOCH_RESET DESCRIPTION "Expose a synchronous epoch_reset conduit and use it, instead of local RESET/SYNC state, to reset the MTS/GTS timestamp epoch. CSR soft reset remains active."
+
 add_parameter IP_UID INTEGER $IP_UID_DEFAULT_CONST
 set_parameter_property IP_UID DISPLAY_NAME "IP UID"
 
@@ -471,6 +482,7 @@ add_display_item "timing_group" PADDING_EOP_WAIT_CYCLE PARAMETER
 add_display_item "timing_group" LPM_DIV_PIPELINE PARAMETER
 add_display_item "timing_group" MUTRIG_BUFFER_EXPECTED_LATENCY_8N PARAMETER
 add_display_item "timing_group" MUTRIG_OVERFLOW_LOOKBACK_8N PARAMETER
+add_display_item "timing_group" USE_EXTERNAL_EPOCH_RESET PARAMETER
 add_html_text "Configuration" timing_html ""
 add_display_item "Configuration" debug_group GROUP "Debug"
 add_display_item "debug_group" DEBUG PARAMETER
@@ -539,6 +551,14 @@ set_interface_property reset_interface associatedClock clock_interface
 set_interface_property reset_interface synchronousEdges DEASSERT
 set_interface_property reset_interface ENABLED true
 add_interface_port reset_interface i_rst reset Input 1
+
+# Optional synchronous functional reset for timestamp epoch state only. This is
+# a conduit, not a reset interface: it does not fan out to the FSM or CSR block.
+add_interface epoch_reset conduit end
+set_interface_property epoch_reset associatedClock clock_interface
+set_interface_property epoch_reset associatedReset reset_interface
+set_interface_property epoch_reset ENABLED false
+add_interface_port epoch_reset coe_epoch_reset epoch_reset Input 1
 
 add_interface run_ctrl avalon_streaming end
 set_interface_property run_ctrl associatedClock clock_interface
@@ -614,23 +634,33 @@ add_interface_port hit_type1_extended_1 aso_hit_type1_extended_1_valid valid Out
 # hit_type1_ts: 48-bit true hit timestamp on a separate conduit, fed directly to
 # the V3 histogram_statistics_v2 type1_{up,down}_ts inputs (delay-mode entry).
 # Coexists with hit_type1_extended_{0,1}; the two paths carry the same
-# timestamp but in different framings. Merged from commit eb67302 on
-# backup/codex/stream-debug-plane-feb-v3-20260515.
+# timestamp but in different framings. Merged from commit eb67302 on an
+# upstream debug-plane backup branch.
 add_interface hit_type1_ts conduit start
 set_interface_property hit_type1_ts associatedClock clock_interface
 set_interface_property hit_type1_ts associatedReset reset_interface
 set_interface_property hit_type1_ts ENABLED true
 add_interface_port hit_type1_ts coe_hit_type1_ts export Output 48
 
-# hit_arrival_gts: 48-bit arrival GTS (this bank's counter_gts_8n) co-sampled with
-# hit_type1_ts on the hit_out beat. Feeds histogram_statistics_v2 type1_{up,down}_gts
-# so the delay key subtracts emission ts and arrival gts from ONE counter epoch
-# (gts-unify, BUG-012). Rides the same clock as hit_type1_ts: no new CDC point.
+# hit_arrival_gts: selected 48-bit arrival co-sampled with hit_type1_ts on the
+# hit_out beat. CONTROL_STATUS[6]=0 exports direct emission counter_gts_8n and
+# therefore physical lifetime. Bit 6 selects an overflow-base debug coordinate
+# only. This conduit rides the same clock as hit_type1_ts: no new CDC point.
 add_interface hit_arrival_gts conduit start
 set_interface_property hit_arrival_gts associatedClock clock_interface
 set_interface_property hit_arrival_gts associatedReset reset_interface
 set_interface_property hit_arrival_gts ENABLED true
 add_interface_port hit_arrival_gts coe_hit_arrival_gts_8n export Output 48
+
+# hit_type1_latency_8n: 48-bit modulo subtraction computed in MTS from selected
+# arrival and the true hit timestamp on the same emitted beat. With the default
+# direct-arrival selection it is positive physical hit lifetime. Downstream
+# consumers trim/bin this value directly; no independent epoch is introduced.
+add_interface hit_type1_latency_8n conduit start
+set_interface_property hit_type1_latency_8n associatedClock clock_interface
+set_interface_property hit_type1_latency_8n associatedReset reset_interface
+set_interface_property hit_type1_latency_8n ENABLED true
+add_interface_port hit_type1_latency_8n coe_hit_type1_latency_8n export Output 48
 
 add_interface debug_ts avalon_streaming start
 set_interface_property debug_ts associatedClock clock_interface

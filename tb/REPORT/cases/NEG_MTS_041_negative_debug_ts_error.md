@@ -4,7 +4,7 @@
 
 ## Intent
 
-- **Scenario:** Craft a hit that produces negative `debug_ts`; require `aso_hit_type1_error=1`. Covers the early-hit fault window.
+- **Scenario:** First prove the retained production fault at `-1`; then select CSR bit 6 and emit phase 900 twice, separated by 910 cycles, followed by a standard `IDLE -> RUN_PREPARE -> SYNC -> RUNNING` restart. Pass criteria: Production `-1` remains an error diagnostic. Debug-coordinate latency is exactly `-900`, maps to diagnostic bin 10 modulo 910, repeats one frame later and after SYNC, and is never classified as physical lifetime.
 - **Primary checks:** UVM reference model checks normal payload, debug sideband, CSR/readout, and bounded protocol invariants for this documented case.
 - **Contract anchor:** DV_ERROR.md:X041
 
@@ -23,27 +23,29 @@
 
 | status | field | value |
 |:---:|---|---|
-| ✅ | observed_txn | `3` |
+| ✅ | observed_txn | `6` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/NEG_MTS_041_negative_debug_ts_error_after_s1.log`](../../uvm/logs/NEG_MTS_041_negative_debug_ts_error_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/NEG_MTS_041_negative_debug_ts_error_s1.ucdb`](../../uvm/cov_after/NEG_MTS_041_negative_debug_ts_error_s1.ucdb) |
-| ℹ️ | log.beats | `3` |
-| ℹ️ | log.csr | `4` |
-| ℹ️ | log.debug_burst | `2` |
+| ℹ️ | log | `uvm/logs/NEG_MTS_041_negative_debug_ts_error_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/NEG_MTS_041_negative_debug_ts_error_s1.ucdb` — local generated artifact; intentionally not published |
+| ℹ️ | log.beats | `6` |
+| ℹ️ | log.csr | `9` |
+| ℹ️ | log.debug_burst | `5` |
 | ℹ️ | log.debug_path_required | `1` |
-| ℹ️ | log.debug_ts | `3` |
-| ℹ️ | log.dual_path_pairs | `3` |
+| ℹ️ | log.debug_ts | `6` |
+| ℹ️ | log.dual_path_pairs | `6` |
 | ℹ️ | log.empty_eops | `0` |
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `3` |
-| ℹ️ | log.inputs | `3` |
+| ℹ️ | log.inputs | `6` |
+| ℹ️ | log.latency48_identity | `6` |
+| ℹ️ | log.latency48_negative_diagnostics | `3` |
 | ℹ️ | log.math_error_traces | `3` |
-| ℹ️ | log.payloads | `3` |
+| ℹ️ | log.payloads | `6` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
 | ℹ️ | log.trace_detail_lines | `5` |
-| ℹ️ | log.traces | `3` |
-| ℹ️ | log.ts_delta | `2` |
+| ℹ️ | log.traces | `6` |
+| ℹ️ | log.ts_delta | `5` |
 
 ## Coverage
 
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 80.22 | 26.74 | 0.56 | 92.46 | 0.19 |
-| branch | 63.77 | 21.26 | 1.18 | 84.25 | 0.39 |
-| cond | 38.79 | 12.93 | 0.00 | 75.00 | 0.00 |
-| expr | 50.00 | 16.67 | 0.00 | 100.00 | 0.00 |
-| fsm_state | 75.00 | 25.00 | 0.00 | 100.00 | 0.00 |
-| fsm_trans | 22.22 | 7.41 | 0.00 | 77.77 | 0.00 |
-| toggle | 16.80 | 5.60 | 3.31 | 34.02 | 1.10 |
+| stmt | 79.97 | 13.33 | 0.77 | 90.62 | 0.13 |
+| branch | 62.66 | 10.44 | 1.62 | 78.89 | 0.27 |
+| cond | 37.90 | 6.32 | 0.80 | 73.38 | 0.13 |
+| expr | 50.00 | 8.33 | 0.00 | 100.00 | 0.00 |
+| fsm_state | 75.00 | 12.50 | 0.00 | 100.00 | 0.00 |
+| fsm_trans | 33.33 | 5.55 | 0.00 | 77.77 | 0.00 |
+| toggle | 22.31 | 3.72 | 6.69 | 30.33 | 1.11 |
 
 ---
 _Back to [bucket](../buckets/ERROR.md) &middot; [dashboard](../../DV_REPORT.md)_

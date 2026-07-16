@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `1` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/CORNER_MTS_105_output_ready_unknown_monitor_trap_after_s1.log`](../../uvm/logs/CORNER_MTS_105_output_ready_unknown_monitor_trap_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/CORNER_MTS_105_output_ready_unknown_monitor_trap_s1.ucdb`](../../uvm/cov_after/CORNER_MTS_105_output_ready_unknown_monitor_trap_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/CORNER_MTS_105_output_ready_unknown_monitor_trap_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/CORNER_MTS_105_output_ready_unknown_monitor_trap_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `1` |
 | ℹ️ | log.csr | `2` |
 | ℹ️ | log.debug_burst | `1` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `1` |
+| ℹ️ | log.latency48_identity | `1` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `1` |
 | ℹ️ | log.ready_x | `12` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 77.58 | 77.58 | 0.00 | 95.14 | 0.00 |
-| branch | 61.81 | 61.81 | 0.00 | 90.23 | 0.00 |
-| cond | 38.79 | 38.79 | 0.00 | 80.17 | 0.00 |
+| stmt | 77.66 | 77.66 | 0.00 | 92.33 | 0.00 |
+| branch | 60.06 | 60.06 | 0.00 | 83.54 | 0.00 |
+| cond | 35.48 | 35.48 | 0.00 | 79.03 | 0.00 |
 | expr | 50.00 | 50.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 75.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 22.22 | 0.00 | 77.77 | 0.00 |
-| toggle | 7.97 | 7.97 | 0.00 | 53.51 | 0.00 |
+| toggle | 7.20 | 7.20 | 0.00 | 46.54 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/EDGE.md) &middot; [dashboard](../../DV_REPORT.md)_

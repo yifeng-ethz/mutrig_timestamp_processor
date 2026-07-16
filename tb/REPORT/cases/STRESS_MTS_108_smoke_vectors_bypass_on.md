@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `4` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STRESS_MTS_108_smoke_vectors_bypass_on_after_s1.log`](../../uvm/logs/STRESS_MTS_108_smoke_vectors_bypass_on_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STRESS_MTS_108_smoke_vectors_bypass_on_s1.ucdb`](../../uvm/cov_after/STRESS_MTS_108_smoke_vectors_bypass_on_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STRESS_MTS_108_smoke_vectors_bypass_on_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STRESS_MTS_108_smoke_vectors_bypass_on_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `4` |
 | ℹ️ | log.csr | `6` |
 | ℹ️ | log.debug_burst | `4` |
@@ -35,9 +35,11 @@
 | ℹ️ | log.dual_path_pairs | `4` |
 | ℹ️ | log.empty_eops | `0` |
 | ℹ️ | log.eops | `0` |
-| ℹ️ | log.hit_error_traces | `3` |
+| ℹ️ | log.hit_error_traces | `4` |
 | ℹ️ | log.inputs | `4` |
-| ℹ️ | log.math_error_traces | `3` |
+| ℹ️ | log.latency48_identity | `4` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
+| ℹ️ | log.math_error_traces | `4` |
 | ℹ️ | log.payloads | `4` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 78.71 | 19.68 | 0.00 | 95.29 | 0.00 |
-| branch | 61.02 | 15.26 | 0.00 | 87.45 | 0.00 |
-| cond | 31.03 | 7.76 | 0.00 | 79.31 | 0.00 |
-| expr | 50.00 | 12.50 | 0.00 | 50.00 | 0.00 |
+| stmt | 78.04 | 19.51 | 0.00 | 93.70 | 0.00 |
+| branch | 58.11 | 14.53 | 0.00 | 82.46 | 0.00 |
+| cond | 29.83 | 7.46 | 0.00 | 79.03 | 0.00 |
+| expr | 50.00 | 12.50 | 0.00 | 83.33 | 0.00 |
 | fsm_state | 50.00 | 12.50 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 11.11 | 2.78 | 0.00 | 66.66 | 0.00 |
-| toggle | 24.98 | 6.25 | 0.00 | 53.45 | 0.00 |
+| toggle | 20.19 | 5.05 | 0.00 | 50.91 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/PROF.md) &middot; [dashboard](../../DV_REPORT.md)_

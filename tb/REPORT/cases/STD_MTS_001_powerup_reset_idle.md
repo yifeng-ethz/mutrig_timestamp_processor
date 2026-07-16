@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `1` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STD_MTS_001_powerup_reset_idle_after_s1.log`](../../uvm/logs/STD_MTS_001_powerup_reset_idle_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STD_MTS_001_powerup_reset_idle_s1.ucdb`](../../uvm/cov_after/STD_MTS_001_powerup_reset_idle_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STD_MTS_001_powerup_reset_idle_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STD_MTS_001_powerup_reset_idle_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `0` |
 | ℹ️ | log.csr | `0` |
 | ℹ️ | log.debug_burst | `0` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `0` |
+| ℹ️ | log.latency48_identity | `0` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `0` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 48.39 | 48.39 | 48.39 | 48.39 | 48.39 |
-| branch | 30.31 | 30.31 | 30.31 | 30.31 | 30.31 |
-| cond | 4.31 | 4.31 | 4.31 | 4.31 | 4.31 |
+| stmt | 51.86 | 51.86 | 51.86 | 51.86 | 51.86 |
+| branch | 29.54 | 29.54 | 29.54 | 29.54 | 29.54 |
+| cond | 3.22 | 3.22 | 3.22 | 3.22 | 3.22 |
 | expr | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
 | fsm_state | 25.00 | 25.00 | 25.00 | 25.00 | 25.00 |
 | fsm_trans | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
-| toggle | 0.69 | 0.69 | 0.69 | 0.69 | 0.69 |
+| toggle | 0.57 | 0.57 | 0.57 | 0.57 | 0.57 |
 
 ---
 _Back to [bucket](../buckets/BASIC.md) &middot; [dashboard](../../DV_REPORT.md)_

@@ -1,0 +1,6 @@
+logs/
+work_gate/
+work_rtl/
+modelsim.ini
+transcript
+vsim.wlf

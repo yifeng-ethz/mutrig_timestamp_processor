@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `4` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/NEG_MTS_076_force_stop_stuck_high_after_s1.log`](../../uvm/logs/NEG_MTS_076_force_stop_stuck_high_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/NEG_MTS_076_force_stop_stuck_high_s1.ucdb`](../../uvm/cov_after/NEG_MTS_076_force_stop_stuck_high_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/NEG_MTS_076_force_stop_stuck_high_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/NEG_MTS_076_force_stop_stuck_high_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `0` |
 | ℹ️ | log.csr | `8` |
 | ℹ️ | log.debug_burst | `0` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `4` |
+| ℹ️ | log.latency48_identity | `0` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `0` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 59.13 | 14.78 | 0.00 | 95.29 | 0.00 |
-| branch | 51.96 | 12.99 | 0.00 | 89.37 | 0.00 |
-| cond | 26.72 | 6.68 | 0.00 | 83.62 | 0.00 |
-| expr | 50.00 | 12.50 | 0.00 | 100.00 | 0.00 |
+| stmt | 59.82 | 14.96 | 0.00 | 92.68 | 0.00 |
+| branch | 48.37 | 12.09 | 0.00 | 83.44 | 0.00 |
+| cond | 24.19 | 6.05 | 0.00 | 82.25 | 0.00 |
+| expr | 16.66 | 4.17 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 18.75 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 5.55 | 0.00 | 77.77 | 0.00 |
-| toggle | 5.65 | 1.41 | 0.13 | 48.45 | 0.03 |
+| toggle | 4.41 | 1.10 | 0.06 | 41.27 | 0.01 |
 
 ---
 _Back to [bucket](../buckets/ERROR.md) &middot; [dashboard](../../DV_REPORT.md)_

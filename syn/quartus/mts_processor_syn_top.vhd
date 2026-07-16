@@ -1,3 +1,12 @@
+-- File    : mts_processor_syn_top.vhd
+-- Author  : Yifeng Wang (yifenwan@phys.ethz.ch)
+-- Version : 26.6.0
+-- Date    : 20260716
+-- Change  : Exercise the production external-epoch-reset profile with a
+--           three-cycle pulse coincident with each generated SYNC command.
+--           Preserve all histogram-facing 48-bit carry bits in the standalone
+--           synthesis observation signature.
+
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -10,8 +19,12 @@ entity mts_processor_syn_top is
 end entity mts_processor_syn_top;
 
 architecture rtl of mts_processor_syn_top is
+    constant EPOCH_RESET_START_CONST    : unsigned(10 downto 0)    := to_unsigned(256, 11);
+    constant EPOCH_RESET_STOP_CONST     : unsigned(10 downto 0)    := to_unsigned(259, 11);
+
     signal rst_ctr                     : unsigned(7 downto 0) := (others => '0');
     signal rst                         : std_logic;
+    signal epoch_reset                 : std_logic;
     signal stim_ctr                    : unsigned(31 downto 0) := (others => '0');
     signal probe_accum                 : std_logic_vector(31 downto 0) := (others => '0');
 
@@ -45,6 +58,8 @@ architecture rtl of mts_processor_syn_top is
     signal aso_hit_type1_extended_1_data  : std_logic_vector(86 downto 0);
     signal aso_hit_type1_extended_1_valid : std_logic;
     signal coe_hit_type1_ts              : std_logic_vector(47 downto 0);
+    signal coe_hit_arrival_gts_8n        : std_logic_vector(47 downto 0);
+    signal coe_hit_type1_latency_8n      : std_logic_vector(47 downto 0);
 
     signal asi_ctrl_data               : std_logic_vector(8 downto 0) := (others => '0');
     signal asi_ctrl_valid              : std_logic := '0';
@@ -66,8 +81,9 @@ begin
 
     u_dut : entity work.mts_processor
         generic map(
-            LPM_DIV_PIPELINE => 4,
-            DEBUG            => 1
+            LPM_DIV_PIPELINE                => 4,
+            DEBUG                           => 1,
+            USE_EXTERNAL_EPOCH_RESET        => true
         )
         port map(
             avs_csr_readdata            => avs_csr_readdata,
@@ -98,6 +114,8 @@ begin
             aso_hit_type1_extended_1_data  => aso_hit_type1_extended_1_data,
             aso_hit_type1_extended_1_valid => aso_hit_type1_extended_1_valid,
             coe_hit_type1_ts              => coe_hit_type1_ts,
+            coe_hit_arrival_gts_8n        => coe_hit_arrival_gts_8n,
+            coe_hit_type1_latency_8n      => coe_hit_type1_latency_8n,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
             aso_debug_ts_valid          => aso_debug_ts_valid,
@@ -109,8 +127,10 @@ begin
             coe_debug_status_data       => coe_debug_status_data,
             coe_hit_type1_sidecar_data  => coe_hit_type1_sidecar_data,
             coe_hit_type1_sidecar_valid => coe_hit_type1_sidecar_valid,
-            i_rst                       => rst,
-            i_clk                       => clk
+            -- Exercise the packaged production epoch-reset profile.
+            coe_epoch_reset    => epoch_reset,
+            i_rst              => rst,
+            i_clk              => clk
         );
 
     process(clk)
@@ -123,6 +143,8 @@ begin
             end if;
 
             if rst = '1' then
+                epoch_reset                 <= '0';
+                -- Reset the synthetic traffic sources and observation state.
                 stim_ctr                    <= (others => '0');
                 probe_accum                 <= (others => '0');
                 avs_csr_read                <= '0';
@@ -142,6 +164,20 @@ begin
                 asi_ctrl_valid              <= '0';
             else
                 stim_ctr <= stim_ctr + 1;
+
+                -- The generated control stream presents SYNC at
+                -- stim_ctr(10 downto 7)=2.  Register a three-clock epoch pulse
+                -- over that generated command.  The low-11-bit compare repeats
+                -- it in later run cycles, so synthesis cannot collapse it into
+                -- the global reset path.
+                if
+                    stim_ctr(10 downto 0) >= EPOCH_RESET_START_CONST and
+                    stim_ctr(10 downto 0) < EPOCH_RESET_STOP_CONST
+                then
+                    epoch_reset <= '1';
+                else
+                    epoch_reset <= '0';
+                end if;
 
                 if (asi_hit_type0_valid = '0') or (asi_hit_type0_ready = '1') then
                     if stim_ctr(1 downto 0) /= "00" then
@@ -202,6 +238,16 @@ begin
                 probe_next := probe_accum xor avs_csr_readdata xor std_logic_vector(stim_ctr);
                 if aso_hit_type1_valid = '1' then
                     probe_next := probe_next xor aso_hit_type1_data(31 downto 0);
+                    probe_next := probe_next xor coe_hit_type1_ts(31 downto 0);
+                    probe_next := probe_next xor coe_hit_arrival_gts_8n(31 downto 0);
+                    probe_next := probe_next xor coe_hit_type1_latency_8n(31 downto 0);
+                    -- Fold every carry bit into an externally observable slice.
+                    -- This prevents a standalone fit from trimming the upper
+                    -- 16 bits of any 48-bit histogram-facing conduit.
+                    probe_next(15 downto 0)     := probe_next(15 downto 0) xor coe_hit_type1_ts(47 downto 32);
+                    probe_next(31 downto 16)    := probe_next(31 downto 16) xor coe_hit_arrival_gts_8n(47 downto 32);
+                    probe_next(23 downto 8)     := probe_next(23 downto 8) xor coe_hit_type1_latency_8n(47 downto 32);
+
                     probe_next(3 downto 0) := probe_next(3 downto 0) xor aso_hit_type1_channel;
                     probe_next(4)          := probe_next(4) xor aso_hit_type1_startofpacket;
                     probe_next(5)          := probe_next(5) xor aso_hit_type1_endofpacket;
@@ -230,6 +276,8 @@ begin
                 probe_next(24) := probe_next(24) xor avs_csr_waitrequest;
                 probe_next(25) := probe_next(25) xor asi_hit_type0_ready;
                 probe_next(26) := probe_next(26) xor asi_ctrl_ready;
+                -- Keep the epoch profile externally observable after fitting.
+                probe_next(27) := probe_next(27) xor epoch_reset;
                 probe_accum    <= probe_next;
             end if;
         end if;

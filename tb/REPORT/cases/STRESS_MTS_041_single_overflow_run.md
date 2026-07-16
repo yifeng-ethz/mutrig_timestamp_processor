@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `3` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STRESS_MTS_041_single_overflow_run_after_s1.log`](../../uvm/logs/STRESS_MTS_041_single_overflow_run_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STRESS_MTS_041_single_overflow_run_s1.ucdb`](../../uvm/cov_after/STRESS_MTS_041_single_overflow_run_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STRESS_MTS_041_single_overflow_run_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STRESS_MTS_041_single_overflow_run_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `3` |
 | ℹ️ | log.csr | `6` |
 | ℹ️ | log.debug_burst | `3` |
@@ -35,9 +35,11 @@
 | ℹ️ | log.dual_path_pairs | `3` |
 | ℹ️ | log.empty_eops | `0` |
 | ℹ️ | log.eops | `0` |
-| ℹ️ | log.hit_error_traces | `3` |
+| ℹ️ | log.hit_error_traces | `2` |
 | ℹ️ | log.inputs | `3` |
-| ℹ️ | log.math_error_traces | `3` |
+| ℹ️ | log.latency48_identity | `3` |
+| ℹ️ | log.latency48_negative_diagnostics | `1` |
+| ℹ️ | log.math_error_traces | `2` |
 | ℹ️ | log.payloads | `3` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 82.10 | 27.37 | 0.38 | 93.03 | 0.13 |
-| branch | 67.71 | 22.57 | 0.78 | 83.85 | 0.26 |
-| cond | 43.10 | 14.37 | 1.72 | 76.72 | 0.57 |
-| expr | 50.00 | 16.67 | 0.00 | 50.00 | 0.00 |
+| stmt | 81.00 | 27.00 | 0.38 | 90.88 | 0.13 |
+| branch | 65.25 | 21.75 | 0.98 | 77.92 | 0.33 |
+| cond | 41.93 | 13.98 | 1.61 | 73.38 | 0.54 |
+| expr | 50.00 | 16.67 | 0.00 | 83.33 | 0.00 |
 | fsm_state | 75.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 7.41 | 0.00 | 55.55 | 0.00 |
-| toggle | 30.25 | 10.08 | 2.55 | 46.74 | 0.85 |
+| toggle | 27.94 | 9.31 | 3.02 | 42.61 | 1.01 |
 
 ---
 _Back to [bucket](../buckets/PROF.md) &middot; [dashboard](../../DV_REPORT.md)_

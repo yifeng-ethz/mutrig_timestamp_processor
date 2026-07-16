@@ -75,14 +75,19 @@ interface mtsp_hit1_if(input logic clk, input logic rst);
   logic        ready;
   logic        empty;
   logic        error;
+  logic [47:0] ts;
+  logic [47:0] arrival_gts;
+  logic [47:0] latency;
 
   modport drv (
     output ready,
-    input  channel, sop, eop, data, valid, empty, error, clk, rst
+    input  channel, sop, eop, data, valid, empty, error,
+           ts, arrival_gts, latency, clk, rst
   );
 
   modport mon (
-    input channel, sop, eop, data, valid, ready, empty, error, clk, rst
+    input channel, sop, eop, data, valid, ready, empty, error,
+          ts, arrival_gts, latency, clk, rst
   );
 endinterface
 

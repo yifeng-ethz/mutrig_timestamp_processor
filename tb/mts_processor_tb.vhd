@@ -15,7 +15,11 @@ architecture sim of mts_processor_tb is
     constant CSR_DISCARD_ADDR_CONST : natural := 1;
     constant CSR_TOTAL_HI_ADDR_CONST: natural := 3;
     constant CSR_TOTAL_LO_ADDR_CONST: natural := 4;
-    constant CSR_GO_DERIVE_TOT_CONST: std_logic_vector(31 downto 0) := x"40000001";
+    -- A CSR write replaces every control bit.  Keep delay_ts_field_use_t
+    -- (reg0[29]) asserted while enabling derive_tot (reg0[30]); otherwise the
+    -- test unintentionally selects the E timestamp immediately after epoch
+    -- reset and can manufacture a future/negative physical lifetime.
+    constant CSR_GO_DERIVE_TOT_CONST: std_logic_vector(31 downto 0) := x"60000001";
     constant ET_FIELD_HI_CONST      : natural := 8;
     constant ET_FIELD_LO_CONST      : natural := 0;
     constant PIPELINE_WAIT_CONST    : natural := 24;
@@ -49,6 +53,8 @@ architecture sim of mts_processor_tb is
     signal aso_hit_type1_extended_1_data : std_logic_vector(86 downto 0);
     signal aso_hit_type1_extended_1_valid: std_logic;
     signal coe_hit_type1_ts              : std_logic_vector(47 downto 0);
+    signal coe_hit_arrival_gts_8n        : std_logic_vector(47 downto 0);
+    signal coe_hit_type1_latency_8n      : std_logic_vector(47 downto 0);
     signal asi_ctrl_data            : std_logic_vector(8 downto 0) := (others => '0');
     signal asi_ctrl_valid           : std_logic := '0';
     signal aso_debug_ts_valid       : std_logic;
@@ -201,6 +207,13 @@ architecture sim of mts_processor_tb is
                         & " got=0x"
                         & to_hstring(sidecar_data)
                         severity failure;
+                assert unsigned(coe_hit_type1_latency_8n) =
+                       unsigned(coe_hit_arrival_gts_8n) - unsigned(coe_hit_type1_ts)
+                    report "latency48 is not the modulo difference of co-sampled arrival GTS and true hit timestamp"
+                    severity failure;
+                assert signed(coe_hit_type1_latency_8n) >= 0
+                    report "default physical-lifetime mode produced a negative signed latency48 diagnostic"
+                    severity failure;
                 return;
             end if;
         end loop;
@@ -245,7 +258,9 @@ begin
             aso_hit_type1_extended_0_valid => aso_hit_type1_extended_0_valid,
             aso_hit_type1_extended_1_data  => aso_hit_type1_extended_1_data,
             aso_hit_type1_extended_1_valid => aso_hit_type1_extended_1_valid,
-        coe_hit_type1_ts              => coe_hit_type1_ts,
+            coe_hit_type1_ts              => coe_hit_type1_ts,
+            coe_hit_arrival_gts_8n        => coe_hit_arrival_gts_8n,
+            coe_hit_type1_latency_8n      => coe_hit_type1_latency_8n,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
             aso_debug_ts_valid          => aso_debug_ts_valid,

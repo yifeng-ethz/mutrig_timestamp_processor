@@ -33,13 +33,13 @@
 
 | metric | pct |
 |---|---|
-| stmt | 84.55 |
-| branch | 74.01 |
-| cond | 50.86 |
+| stmt | 82.54 |
+| branch | 70.12 |
+| cond | 49.19 |
 | expr | 50.00 |
 | fsm_state | 100.00 |
 | fsm_trans | 44.44 |
-| toggle | 28.49 |
+| toggle | 25.13 |
 
 ## Scoreboard Evidence
 
@@ -58,6 +58,8 @@
 | ✅ | `dual_path_pairs` | 130 | `== case_count (130)` |
 | ✅ | `traces` | 130 | `== case_count (130)` |
 | ✅ | `trace_detail_lines` | 130 | `== case_count (130)` |
+| ✅ | `latency48_identity` | 134 | `== valid beats (134)` |
+| ✅ | `latency48_negative_diagnostics` | 0 | `== 0 in nominal continuous traffic` |
 
 ## Transaction growth curve
 

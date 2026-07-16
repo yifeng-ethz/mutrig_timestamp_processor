@@ -1,8 +1,8 @@
 # DV Harness Plan: mutrig_timestamp_processor
 
 **Target:** `mts_processor`  
-**Phase:** Architecture definition for signoff  
-**Date:** 2026-04-15
+**Phase:** Implemented harness, VERSION `26.5.0.0713` delta closure
+**Date:** 2026-07-15
 
 ## 1. Harness Goals
 
@@ -14,7 +14,8 @@ The harness must make these properties observable:
 - marker behavior on `startofpacket` and termination `endofpacket`
 - debug side-stream correctness on `debug_ts`, `debug_burst`, and `ts_delta`
 - software-visible counter correctness through reset and long runs
-- current always-ready control behavior and the future stateful-ready upgrade cases from `RUN_SEQ_UPGRADE_PLAN.md`
+- the readyless run-control boundary and internal command-state behavior from `RUN_SEQ_UPGRADE_PLAN.md`
+- the co-valid 48-bit true timestamp, selected arrival coordinate, and latency identity
 
 The harness must preserve the checked-in VHDL smoke bench while adding a reusable UVM layer that can drive real system-like run-control traffic.
 
@@ -129,6 +130,9 @@ Observed transaction fields:
 - `endofpacket`
 - `empty`
 - `error`
+- 48-bit `hit_type1_ts`
+- 48-bit `hit_arrival_gts`
+- 48-bit `hit_type1_latency_8n`
 - cycle timestamp
 
 ### 3.5 Debug Monitor
@@ -144,6 +148,12 @@ Responsibilities:
   optional bring-up logging; every payload hit observed on the normal
   `hit_type1` path must have a matching `debug_ts` sample, and the scoreboard
   treats missing or misaligned debug samples as a closure blocker.
+- on every Type1 payload beat, check the independent conduit identity
+  `latency48 == arrival_gts48 - true_hit_ts48` modulo 48 bits
+- interpret signed-negative production lifetime as a retained upstream
+  epoch/run-SYNC/PLL diagnostic, never as a valid physical delay
+- allow signed-negative values only for explicit fault injection or CSR-bit-6
+  overflow-base diagnostic tests
 
 ## 4. Scoreboard Model
 
@@ -196,10 +206,12 @@ Mirror:
 - route channel selection from `tcc_8n(5:4)`
 - current constant-zero `empty`
 
-### 4.6 Debug/error model
+### 4.6 Debug/error and 48-bit lifetime model
 
 Mirror:
-- `debug_ts = counter_gts_8n - selected_timestamp`
+- production lifetime `counter_gts_8n - selected_true_timestamp`
+- debug-coordinate latency `counter_ov_base_1n6/5 - selected_true_timestamp`
+  only when CSR bit 6 is set
 - `aso_hit_type1_error` range check against `expected_latency`
 - `debug_burst` trimmed delta fields
 - `ts_delta` sign-magnitude to two's-complement conversion
@@ -216,14 +228,20 @@ at the same simulation time, records a per-hit trace entry, and recomputes the
 timestamp-delay error from `debug_ts` and the current latency CSR. A mismatch
 between that math result and `aso_hit_type1_error` is a `UVM_ERROR`.
 
-### 4.7 Upgrade-gating model
+The Type1 monitor also performs an unconditional 48-bit identity check. In
+production mode a signed-negative result is a `UVM_ERROR` unless the testcase
+has enabled its short directed-fault window. The raw value is still counted and
+reported; no clamp or absolute-value conversion is permitted. The X041 delta
+test selects CSR bit 6, proves `-900` exactly, maps it to diagnostic frame bin
+10 with a 910-cycle modulus, and repeats the result after a standard SYNC.
+
+### 4.7 Run-control gating model
 
 A secondary checker tracks the obligations from `RUN_SEQ_UPGRADE_PLAN.md`:
-- `asi_ctrl_ready` must become stateful after the upgrade
-- termination acknowledgement must be deferred until local drain work is complete
-- terminal packet-boundary propagation must be explicit and deterministic
-
-These checks are expected to fail on current RTL for the upgrade-only cases and must therefore be separately tagged in regressions.
+- the external run-control sink remains readyless and cannot drop a legal
+  command because of an unobservable local ready state
+- local drain work completes before terminal packet-boundary propagation
+- terminal packet-boundary propagation is explicit and deterministic
 
 ## 5. Planned SVA Modules
 
@@ -240,8 +258,8 @@ Checks:
 Checks:
 - run-control data stable while `valid=1`
 - one-hot legal command in positive tests
-- current `asi_ctrl_ready` high behavior captured as a known fact
-- post-upgrade readiness checks enabled by test knob for upgrade-gating cases
+- no ready signal is assumed at the entity boundary
+- legal commands are captured exactly once by the readyless sink
 
 ### 5.3 `mts_hit0_sva.sv`
 
@@ -257,6 +275,7 @@ Checks:
 - `endofpacket` only when `valid=1`
 - `empty` remains low in current RTL
 - optional checker that records output emission while `ready=0` to document the current non-backpressure contract
+- `hit_type1_latency_8n == hit_arrival_gts_8n - hit_type1_ts` on every valid payload beat
 
 ### 5.5 `mts_internal_sva.sv`
 
@@ -297,13 +316,16 @@ Coverage implementation must map directly to [DV_CROSS.md](/home/yifeng/packages
 - timestamp remainder/route/error coverpoints
 - marker and termination coverpoints
 - debug-stream delta/sign coverpoints
+- 48-bit carry, arrival-coordinate selection, production-lifetime sign, and
+  910-cycle diagnostic-wrap coverpoints
 
 Every testcase added later must name the bins it is expected to hit.
 
-## 8. Bring-Up Order
+## 8. Current Execution Order
 
-1. keep `run_mts_processor_tb.sh` and `mts_processor_tb.vhd` as the first smoke gate,
-2. implement `tb_top.sv` plus interfaces and SVA bind points,
-3. implement monitors and scoreboard before randomized sequences,
-4. bring up a narrow deterministic subset that reproduces the existing smoke vectors,
-5. then expand into the full `DV_BASIC`, `DV_EDGE`, `DV_PROF`, and `DV_ERROR` buckets.
+1. run the four maintained VHDL smoke targets;
+2. compile the UVM harness and run B020/B099/E035/E071/X041;
+3. run the complete documented-case and continuous-frame regression;
+4. regenerate `DV_REPORT.json`, `DV_REPORT.md`, `DV_COV.md`, and `REPORT/`
+   from the report generator;
+5. run static and standalone synthesis/timing closure.

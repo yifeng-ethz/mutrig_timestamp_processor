@@ -191,6 +191,8 @@ begin
             aso_hit_type1_extended_1_data  => aso_hit_type1_extended_1_data,
             aso_hit_type1_extended_1_valid => aso_hit_type1_extended_1_valid,
         coe_hit_type1_ts              => coe_hit_type1_ts,
+        coe_hit_arrival_gts_8n        => open,
+        coe_hit_type1_latency_8n      => open,
             asi_ctrl_data               => asi_ctrl_data,
             asi_ctrl_valid              => asi_ctrl_valid,
             aso_debug_ts_valid          => aso_debug_ts_valid,

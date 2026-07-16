@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `1` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/CORNER_MTS_031_t_gray_equal_padding_upper_after_s1.log`](../../uvm/logs/CORNER_MTS_031_t_gray_equal_padding_upper_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/CORNER_MTS_031_t_gray_equal_padding_upper_s1.ucdb`](../../uvm/cov_after/CORNER_MTS_031_t_gray_equal_padding_upper_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/CORNER_MTS_031_t_gray_equal_padding_upper_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/CORNER_MTS_031_t_gray_equal_padding_upper_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `1` |
 | ℹ️ | log.csr | `3` |
 | ℹ️ | log.debug_burst | `0` |
@@ -35,9 +35,11 @@
 | ℹ️ | log.dual_path_pairs | `1` |
 | ℹ️ | log.empty_eops | `0` |
 | ℹ️ | log.eops | `0` |
-| ℹ️ | log.hit_error_traces | `1` |
+| ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `1` |
-| ℹ️ | log.math_error_traces | `1` |
+| ℹ️ | log.latency48_identity | `1` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
+| ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `1` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 78.71 | 78.71 | 1.12 | 91.96 | 1.12 |
-| branch | 62.59 | 62.59 | 1.95 | 84.37 | 1.95 |
-| cond | 41.37 | 41.37 | 2.59 | 72.41 | 2.59 |
+| stmt | 78.69 | 78.69 | 0.64 | 90.16 | 0.64 |
+| branch | 61.03 | 61.03 | 1.29 | 79.03 | 1.29 |
+| cond | 37.90 | 37.90 | 2.42 | 71.77 | 2.42 |
 | expr | 50.00 | 50.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 75.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 22.22 | 0.00 | 66.66 | 0.00 |
-| toggle | 19.20 | 19.20 | 8.32 | 41.61 | 8.32 |
+| toggle | 17.11 | 17.11 | 8.36 | 34.04 | 8.36 |
 
 ---
 _Back to [bucket](../buckets/EDGE.md) &middot; [dashboard](../../DV_REPORT.md)_

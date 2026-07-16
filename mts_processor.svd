@@ -4,8 +4,8 @@
   <vendorID>MU3E</vendorID>
   <name>MU3E_MTS_PROCESSOR</name>
   <series>MU3E_FPGA_IP</series>
-  <version>26.1.0.0506</version>
-  <description>CMSIS-SVD description of the MuTRiG timestamp processor CSR window. This conservative first-pass schema exposes the 8-word relative aperture as read-only WORD registers until the IP author replaces them with the exact CSR contract.</description>
+  <version>26.6.0.0716</version>
+  <description>CMSIS-SVD description of the exact MuTRiG timestamp processor CSR window for the optional external epoch-reset and 48-bit timestamp, arrival, and latency sideband release.</description>
   <addressUnitBits>8</addressUnitBits>
   <width>32</width>
   <size>32</size>
@@ -15,7 +15,7 @@
   <peripherals>
     <peripheral>
       <name>MTS_PROCESSOR_CSR</name>
-      <description>Relative 8-word CSR aperture for the MuTRiG timestamp processor.</description>
+      <description>Relative CSR aperture for the MuTRiG timestamp processor.</description>
       <groupName>MU3E_DATA_PATH</groupName>
       <baseAddress>0x0</baseAddress>
       <addressBlock>
@@ -25,29 +25,87 @@
       </addressBlock>
       <registers>
         <register>
-          <name>WORD000</name>
-          <description>MTS processor CSR word 0.</description>
+          <name>CONTROL_STATUS</name>
+          <description>Datapath controls and live RUNNING status. Bit 6 is a debug coordinate selector and must remain clear for physical hit-lifetime measurements.</description>
           <addressOffset>0x0</addressOffset>
-          <access>read-only</access>
+          <access>read-write</access>
+          <resetValue>0x20000010</resetValue>
           <fields>
             <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 0.</description>
+              <name>go</name>
+              <description>Write-enable datapath generation; readback is the live RUNNING indication.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-              <access>read-only</access>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>force_stop</name>
+              <description>Block new datapath output in every run state.</description>
+              <bitOffset>1</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>soft_reset</name>
+              <description>Self-clearing reset of counters and in-flight processing.</description>
+              <bitOffset>2</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>bypass_lapse</name>
+              <description>Bypass MTS-to-GTS lapse correction for raw-counter debug.</description>
+              <bitOffset>3</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>discard_hiterr</name>
+              <description>Reject Type0 beats carrying the configured hit-error bit.</description>
+              <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>drop_delay_error</name>
+              <description>Drop Type1 beats marked with a timestamp-delay error; clear forwards the marked beat.</description>
+              <bitOffset>5</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>debug_overflow_base_arrival</name>
+              <description>Debug only: select divided overflow-base arrival. The resulting signed latency is a phase coordinate, not physical lifetime.</description>
+              <bitOffset>6</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>delay_ts_field_use_t</name>
+              <description>Use T rather than E timestamp for delay classification.</description>
+              <bitOffset>29</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
+            </field>
+            <field>
+              <name>derive_tot</name>
+              <description>Enable long-hit E-minus-T derivation.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>1</bitWidth>
+              <access>read-write</access>
             </field>
           </fields>
         </register>
         <register>
-          <name>WORD001</name>
-          <description>MTS processor CSR word 1.</description>
+          <name>DISCARD_HIT_COUNTER</name>
+          <description>Number of input hits rejected by the hit-error policy.</description>
           <addressOffset>0x4</addressOffset>
           <access>read-only</access>
+          <resetValue>0x00000000</resetValue>
           <fields>
             <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 1.</description>
+              <name>discard_hit_count</name>
+              <description>Discarded input-hit count.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <access>read-only</access>
@@ -55,89 +113,47 @@
           </fields>
         </register>
         <register>
-          <name>WORD002</name>
-          <description>MTS processor CSR word 2.</description>
+          <name>EXPECTED_LATENCY_8NS</name>
+          <description>Upper bound for the legacy delay-error classifier, in 8 ns ticks.</description>
           <addressOffset>0x8</addressOffset>
-          <access>read-only</access>
+          <access>read-write</access>
+          <resetValue>0x000007D0</resetValue>
           <fields>
             <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 2.</description>
+              <name>expected_latency</name>
+              <description>Configured delay-error window; default 2000 ticks.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
-              <access>read-only</access>
+              <access>read-write</access>
             </field>
           </fields>
         </register>
         <register>
-          <name>WORD003</name>
-          <description>MTS processor CSR word 3.</description>
+          <name>TOTAL_HIT_COUNT_HI</name>
+          <description>Upper 16 bits of the 48-bit Type0 ingress-hit counter.</description>
           <addressOffset>0xC</addressOffset>
           <access>read-only</access>
+          <resetValue>0x00000000</resetValue>
           <fields>
             <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 3.</description>
+              <name>total_hit_count_hi</name>
+              <description>Ingress-hit count bits 47 through 32.</description>
               <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
+              <bitWidth>16</bitWidth>
               <access>read-only</access>
             </field>
           </fields>
         </register>
         <register>
-          <name>WORD004</name>
-          <description>MTS processor CSR word 4.</description>
+          <name>TOTAL_HIT_COUNT_LO</name>
+          <description>Lower 32 bits of the 48-bit Type0 ingress-hit counter.</description>
           <addressOffset>0x10</addressOffset>
           <access>read-only</access>
+          <resetValue>0x00000000</resetValue>
           <fields>
             <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 4.</description>
-              <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-              <access>read-only</access>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>WORD005</name>
-          <description>MTS processor CSR word 5.</description>
-          <addressOffset>0x14</addressOffset>
-          <access>read-only</access>
-          <fields>
-            <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 5.</description>
-              <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-              <access>read-only</access>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>WORD006</name>
-          <description>MTS processor CSR word 6.</description>
-          <addressOffset>0x18</addressOffset>
-          <access>read-only</access>
-          <fields>
-            <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 6.</description>
-              <bitOffset>0</bitOffset>
-              <bitWidth>32</bitWidth>
-              <access>read-only</access>
-            </field>
-          </fields>
-        </register>
-        <register>
-          <name>WORD007</name>
-          <description>MTS processor CSR word 7.</description>
-          <addressOffset>0x1C</addressOffset>
-          <access>read-only</access>
-          <fields>
-            <field>
-              <name>value</name>
-              <description>Raw MTS processor CSR word 7.</description>
+              <name>total_hit_count_lo</name>
+              <description>Ingress-hit count bits 31 through 0.</description>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
               <access>read-only</access>

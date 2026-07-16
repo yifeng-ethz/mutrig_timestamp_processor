@@ -4,7 +4,7 @@
 
 ## Intent
 
-- **Scenario:** Craft a hit yielding `debug_ts=-1`; verify `aso_hit_type1_error=1`. Covers the first negative error.
+- **Scenario:** Intentionally place the synthetic hit timestamp one cycle ahead of production arrival. This is a directed upstream epoch fault, not a legal physical delay. Pass criteria: The raw signed latency remains `-1`, the scoreboard records the explicit fault window without clamping it, and `aso_hit_type1_error=1`.
 - **Primary checks:** UVM reference model checks normal payload, debug sideband, CSR/readout, and bounded protocol invariants for this documented case.
 - **Contract anchor:** DV_EDGE.md:E071
 
@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `3` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/CORNER_MTS_071_debug_ts_minus_one_after_s1.log`](../../uvm/logs/CORNER_MTS_071_debug_ts_minus_one_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/CORNER_MTS_071_debug_ts_minus_one_s1.ucdb`](../../uvm/cov_after/CORNER_MTS_071_debug_ts_minus_one_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/CORNER_MTS_071_debug_ts_minus_one_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/CORNER_MTS_071_debug_ts_minus_one_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `3` |
 | ℹ️ | log.csr | `4` |
 | ℹ️ | log.debug_burst | `2` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `3` |
 | ℹ️ | log.inputs | `3` |
+| ℹ️ | log.latency48_identity | `3` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `3` |
 | ℹ️ | log.payloads | `3` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 80.22 | 26.74 | 0.00 | 94.39 | 0.00 |
-| branch | 63.77 | 21.26 | 0.00 | 88.67 | 0.00 |
-| cond | 38.79 | 12.93 | 0.00 | 76.72 | 0.00 |
+| stmt | 79.58 | 26.53 | 0.13 | 92.08 | 0.04 |
+| branch | 61.68 | 20.56 | 0.32 | 83.22 | 0.11 |
+| cond | 37.09 | 12.36 | 0.00 | 76.61 | 0.00 |
 | expr | 50.00 | 16.67 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 7.41 | 0.00 | 66.66 | 0.00 |
-| toggle | 16.80 | 5.60 | 0.00 | 52.21 | 0.00 |
+| toggle | 13.71 | 4.57 | 0.14 | 45.96 | 0.05 |
 
 ---
 _Back to [bucket](../buckets/EDGE.md) &middot; [dashboard](../../DV_REPORT.md)_

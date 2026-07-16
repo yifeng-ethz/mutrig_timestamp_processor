@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `20` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STRESS_MTS_080_terminate_during_heavy_csr_polling_after_s1.log`](../../uvm/logs/STRESS_MTS_080_terminate_during_heavy_csr_polling_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STRESS_MTS_080_terminate_during_heavy_csr_polling_s1.ucdb`](../../uvm/cov_after/STRESS_MTS_080_terminate_during_heavy_csr_polling_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STRESS_MTS_080_terminate_during_heavy_csr_polling_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STRESS_MTS_080_terminate_during_heavy_csr_polling_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `20` |
 | ℹ️ | log.csr | `86` |
 | ℹ️ | log.debug_burst | `16` |
@@ -35,9 +35,11 @@
 | ℹ️ | log.dual_path_pairs | `16` |
 | ℹ️ | log.empty_eops | `4` |
 | ℹ️ | log.eops | `4` |
-| ℹ️ | log.hit_error_traces | `1` |
+| ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `16` |
-| ℹ️ | log.math_error_traces | `1` |
+| ℹ️ | log.latency48_identity | `20` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
+| ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `16` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 85.49 | 4.27 | 0.00 | 95.29 | 0.00 |
-| branch | 74.80 | 3.74 | 0.00 | 87.40 | 0.00 |
-| cond | 50.86 | 2.54 | 0.00 | 78.44 | 0.00 |
-| expr | 50.00 | 2.50 | 0.00 | 50.00 | 0.00 |
+| stmt | 83.05 | 4.15 | 0.00 | 93.19 | 0.00 |
+| branch | 70.45 | 3.52 | 0.00 | 81.49 | 0.00 |
+| cond | 50.00 | 2.50 | 0.00 | 76.61 | 0.00 |
+| expr | 50.00 | 2.50 | 0.00 | 83.33 | 0.00 |
 | fsm_state | 100.00 | 5.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 44.44 | 2.22 | 0.00 | 66.66 | 0.00 |
-| toggle | 19.95 | 1.00 | 0.00 | 52.86 | 0.00 |
+| toggle | 17.88 | 0.89 | 0.00 | 49.02 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/PROF.md) &middot; [dashboard](../../DV_REPORT.md)_

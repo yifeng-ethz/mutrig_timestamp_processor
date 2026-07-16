@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `2` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/CORNER_MTS_057_toggle_derive_tot_between_hits_after_s1.log`](../../uvm/logs/CORNER_MTS_057_toggle_derive_tot_between_hits_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/CORNER_MTS_057_toggle_derive_tot_between_hits_s1.ucdb`](../../uvm/cov_after/CORNER_MTS_057_toggle_derive_tot_between_hits_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/CORNER_MTS_057_toggle_derive_tot_between_hits_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/CORNER_MTS_057_toggle_derive_tot_between_hits_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `2` |
 | ℹ️ | log.csr | `7` |
 | ℹ️ | log.debug_burst | `2` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `2` |
+| ℹ️ | log.latency48_identity | `2` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `2` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 80.22 | 40.11 | 0.00 | 93.27 | 0.00 |
-| branch | 65.35 | 32.67 | 0.00 | 87.50 | 0.00 |
-| cond | 38.79 | 19.39 | 0.00 | 75.86 | 0.00 |
+| stmt | 79.58 | 39.79 | 0.00 | 91.06 | 0.00 |
+| branch | 62.98 | 31.49 | 0.00 | 81.61 | 0.00 |
+| cond | 37.09 | 18.55 | 0.00 | 75.80 | 0.00 |
 | expr | 50.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 37.50 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 11.11 | 0.00 | 66.66 | 0.00 |
-| toggle | 13.39 | 6.70 | 0.03 | 51.39 | 0.01 |
+| toggle | 12.02 | 6.01 | 0.03 | 45.03 | 0.01 |
 
 ---
 _Back to [bucket](../buckets/EDGE.md) &middot; [dashboard](../../DV_REPORT.md)_

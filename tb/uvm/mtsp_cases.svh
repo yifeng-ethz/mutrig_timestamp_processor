@@ -17,6 +17,7 @@
     localparam int unsigned SMOKE_PATTERN_ALL = 3;
     bit          raw_by_decoded_loaded;
     int unsigned raw_by_decoded[int unsigned];
+    int unsigned expected_bank_offset;
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
@@ -26,8 +27,21 @@
     function void build_phase(uvm_phase phase);
       super.build_phase(phase);
       raw_by_decoded_loaded = 1'b0;
+      expected_bank_offset = 0;
+      void'($value$plusargs("MTSP_EXPECTED_BANK_OFFSET=%d",
+        expected_bank_offset));
       if (!$value$plusargs("MTSP_CASE_ID=%s", case_id))
         `uvm_fatal("MTSP_CASE", "Missing +MTSP_CASE_ID=<doc_case_id>")
+    endfunction
+
+    function automatic int unsigned expected_source_asic(
+        int unsigned local_asic);
+      return expected_bank_offset + (local_asic & 3);
+    endfunction
+
+    function automatic int unsigned ordinary_source_sideband(
+        int unsigned local_asic);
+      return ((local_asic & 3) << 4);
     endfunction
 
     function automatic mtsp_hit1_obs_item find_last_hit1_obs();
@@ -341,6 +355,14 @@
           $sformatf("%s could not read DUT HDL path %s", ctx, path))
     endtask
 
+    task automatic deposit_dut_hdl(string path,
+                                   uvm_hdl_data_t value,
+                                   input string ctx);
+      if (!uvm_hdl_deposit(path, value))
+        `uvm_fatal("MTSP_HDL",
+          $sformatf("%s could not deposit DUT HDL path %s", ctx, path))
+    endtask
+
     task automatic read_dut_bit(string path,
                                 output bit value,
                                 input string ctx);
@@ -631,7 +653,7 @@
       send_hit_beat(asic_value, channel_value, tcc_raw_value, ecc_raw_value,
         eflag_value, 1'b1, 1'b0, '0, 1'b1, tfine_value);
       wait_for_beat_count(base_beats + 1, 256, ctx);
-      expect_last_payload_math(asic_value, channel_value, tfine_value,
+      expect_last_payload_math(expected_source_asic(asic_value), channel_value, tfine_value,
         tcc8n_value, tcc1n6_value, et1n6_value, ctx);
     endtask
 
@@ -654,7 +676,7 @@
         1'b1, 1'b0, '0, 1'b1, tfine_value);
       wait_for_beat_count(base_beats + 1, 128, ctx);
       wait_for_trace_count(base_traces + 1, 128, ctx);
-      expect_last_payload_math(asic_value, channel_value, tfine_value,
+      expect_last_payload_math(expected_source_asic(asic_value), channel_value, tfine_value,
         quotient, remainder, 9'd0, ctx);
 
       trace = find_last_trace();
@@ -691,7 +713,7 @@
         eflag_value, sop_value, 1'b0, '0, 1'b1, tfine_value);
       wait_for_beat_count(base_beats + 1, 128, ctx);
       wait_for_trace_count(base_traces + 1, 128, ctx);
-      expect_last_payload_math(asic_value, channel_value, tfine_value,
+      expect_last_payload_math(expected_source_asic(asic_value), channel_value, tfine_value,
         t_quotient, t_remainder, et1n6_value, ctx);
       expect_last_trace_pair(ctx);
     endtask
@@ -756,7 +778,11 @@
         end
         SMOKE_VEC_SATURATION: begin
           tcc_raw_value   = 15'h0001;
-          ecc_raw_value   = 15'h0000;
+          // Decoded E=3000 remains safely inside the frame while still
+          // exceeding the 511-count ToT saturation boundary.  The former
+          // terminal LFSR symbol decoded at the wrap edge and was not a
+          // physically schedulable ordinary hit.
+          ecc_raw_value   = 15'h45F8;
           eflag_value     = 1'b1;
           expected_tcc8n  = 0;
           expected_tcc1n6 = 0;
@@ -1445,8 +1471,12 @@
           $sformatf("%s target quotient %0d is outside ROM-backed range for target_delta=%0d predicted_arrival=%0d",
             ctx, target_quotient_signed, target_delta, predicted_arrival))
       target_quotient = target_quotient_signed;
+      // Calibration already chose a physical output epoch. A second generic
+      // source wait would shift the intended delta while adding no safety.
+      bypass_source_epoch_alignment = 1'b1;
       send_quotient_hit_and_capture(target_quotient, 0, 2, 0, 5'd26,
         observed_delta, ctx);
+      bypass_source_epoch_alignment = 1'b0;
       expect_last_trace_delta(target_delta, target_delta, expected_error, ctx);
     endtask
 
@@ -1512,7 +1542,7 @@
         eflag_value, sop_value, 1'b0, '0, 1'b1, tfine_value);
       wait_for_beat_count(base_beats + 1, 256, ctx);
       wait_for_trace_count(base_traces + 1, 256, ctx);
-      expect_last_payload_math(asic_value, channel_value, tfine_value,
+      expect_last_payload_math(expected_source_asic(asic_value), channel_value, tfine_value,
         expected_tcc8n, expected_tcc1n6, expected_et1n6, ctx);
       expect_last_trace_pair(ctx);
     endtask
@@ -1683,6 +1713,8 @@
       int unsigned expected_et;
       bit          t_adjust;
       bit          e_adjust;
+      bit          old_allow_negative;
+      bit          directed_adjust_boundary;
 
       lookup_raw_for_quotient(t_quotient, t_remainder, t_raw_value,
         $sformatf("%s T overflow symbol", ctx));
@@ -1693,6 +1725,10 @@
                  overflow_adjust_eligible(t_quotient, t_remainder);
       e_adjust = (!bypass_lapse) &&
                  overflow_adjust_eligible(e_quotient, e_remainder);
+      // Any post-wrap raw code in this helper is an epoch-disambiguation
+      // vector. Codes at/below the upper edge can also be ahead of the
+      // run-local GTS even though only codes above it receive subtraction.
+      directed_adjust_boundary = (!bypass_lapse) && (wrap_count != 0);
       if (bypass_lapse) begin
         expected_t_decoded = overflow_decoded_value(t_quotient, t_remainder);
         expected_e_decoded = overflow_decoded_value(e_quotient, e_remainder);
@@ -1711,6 +1747,19 @@
       base_beats   = m_env.m_scb.beat_count;
       base_history = m_env.m_scb.history.size();
       base_traces  = m_env.m_scb.trace_history.size();
+      // This helper intentionally samples the internal lookback boundary at
+      // an exact raw code. Depending on free-running overflow phase versus
+      // run-local GTS, that synthetic code can be in the future. Keep such a
+      // negative lifetime visible as directed diagnostic evidence, but do
+      // not let the generic production source guard wait past the lookback
+      // window and invalidate the boundary test.
+      old_allow_negative = m_env.m_scb.allow_negative_physical_diagnostic;
+      if (directed_adjust_boundary) begin
+        m_env.m_scb.allow_negative_physical_diagnostic = 1'b1;
+        `uvm_info("MTSP_LATENCY48",
+          $sformatf("%s directed overflow boundary permits an explicit future-phase diagnostic", ctx),
+          UVM_LOW)
+      end
       send_hit_beat(asic_value, channel_value, t_raw_value, e_raw_value,
         eflag_value, sop_value, eop_value, '0, 1'b1, tfine_value);
       wait_for_input_count(base_inputs + 1, 128, ctx);
@@ -1723,6 +1772,7 @@
         expect_trace_error_at(base_traces, expected_error, ctx);
       else
         expect_trace_math_self_consistent_at(base_traces, ctx);
+      m_env.m_scb.allow_negative_physical_diagnostic = old_allow_negative;
     endtask
 
     task automatic wait_for_ts_delta_count(int unsigned expected_count,
@@ -2469,6 +2519,14 @@
       csr_write(3'd0, (CSR_CTRL_WRITE_DEFAULT & ~32'h2000_0000));
       wait_cycles(2);
       expect_csr_mask(3'd0, 32'h0000_0000, CSR_CTRL_MODE_MASK, $sformatf("%s delay_e_short", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0040);
+      wait_cycles(2);
+      expect_csr_mask(3'd0, 32'h0000_0040, 32'h0000_0040,
+        $sformatf("%s debug overflow-base arrival bit6", case_id));
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT);
+      wait_cycles(2);
+      expect_csr_mask(3'd0, 32'h0000_0000, 32'h0000_0040,
+        $sformatf("%s production physical-arrival default", case_id));
     endtask
 
     task automatic do_std_021_expected_latency_zero_write();
@@ -2743,15 +2801,18 @@
       wait_for_reset_release();
       run_start();
       base_beats = m_env.m_scb.beat_count;
-      send_hit_beat(3, 17, 'h0013, 'h001F, 1'b1, 1'b1, 1'b0, '0, 1'b1, 5'd21);
+      // Use legal early MuTRiG sequence symbols.  The former 0x0013 TCC is
+      // not an early timestamp in the decoder ROM and therefore represented
+      // a hit from the future immediately after run SYNC.
+      send_hit_beat(3, 17, 'h0003, 'h000F, 1'b1, 1'b1, 1'b0, '0, 1'b1, 5'd21);
       wait_for_beat_count(base_beats + 1, 128, case_id);
       expect_last_payload_fields(3, 17, 21, case_id);
       if (m_env.m_scb.hit0_history.size() == 0)
         `uvm_fatal("MTSP_CASE", "Expected hit0 monitor to capture the accepted sideband")
       in_obs = m_env.m_scb.hit0_history[m_env.m_scb.hit0_history.size() - 1];
-      if (in_obs.channel !== 6'd3)
+      if (in_obs.channel !== 6'b11_0000)
         `uvm_fatal("MTSP_CASE",
-          $sformatf("Expected packet sideband channel to follow the sideband domain, got %0d",
+          $sformatf("Expected packet sideband channel to encode ASIC3 in slot bits [5:4], got %0d",
             in_obs.channel))
     endtask
 
@@ -2924,8 +2985,16 @@
       configure_datapath_mode(1'b0, 1'b1);
       run_start();
       wait_inside_one_wrap_lookback(case_id);
+      // Preserve the sampled overflow/lookback phase while checking the E
+      // adjust boundary. The selected T timestamp remains physical and is
+      // retained as an explicit diagnostic if this free-running phase places
+      // it ahead of the run-local GTS.
+      bypass_source_epoch_alignment = 1'b1;
+      m_env.m_scb.allow_negative_physical_diagnostic = 1'b1;
       send_hit_and_expect_math(2, 11, 15'h259B, 15'h5EE7, 1'b1, 5'd13,
         13'd2761, 3'd2, 9'd0, case_id);
+      m_env.m_scb.allow_negative_physical_diagnostic = 1'b0;
+      bypass_source_epoch_alignment = 1'b0;
     endtask
 
     task automatic do_std_059_divider_quotient_populates_tcc8n();
@@ -3004,20 +3073,29 @@
 
     task automatic do_std_067_delay_field_e_path();
       int unsigned base_ts_delta;
+      int unsigned e_recent_raw;
 
       wait_for_reset_release();
       configure_datapath_mode(1'b1, 1'b0, 1'b0);
+      csr_write(3'd2, 32'd32);
+      wait_cycles(2);
       run_start();
+      // A physical E-path error is an old timestamp, never a future one.
+      // Let the run epoch age, then compare E=0 (old/error) with a recent
+      // E=100 sample (clean).
+      wait_cycles(100);
+      lookup_raw_for_quotient(100, 0, e_recent_raw,
+        $sformatf("%s recent E timestamp", case_id));
       base_ts_delta = m_env.m_scb.ts_delta_count;
 
-      send_hit_and_expect_math(2, 7, 15'h0001, 15'h5EE7, 1'b1, 5'd23,
+      send_hit_and_expect_math(2, 7, 15'h0001, 15'h0001, 1'b1, 5'd23,
         13'd0, 3'd0, 9'd0, $sformatf("%s first E-selected hit", case_id));
       expect_last_payload_error(1'b1, $sformatf("%s first E-selected hit", case_id));
-      send_hit_and_expect_math(2, 7, 15'h7FFE, 15'h0001, 1'b1, 5'd24,
+      send_hit_and_expect_math(2, 7, 15'h7FFE, e_recent_raw, 1'b1, 5'd24,
         13'd2, 3'd4, 9'd0, $sformatf("%s second E-selected hit", case_id));
       expect_last_payload_error(1'b0, $sformatf("%s second E-selected hit", case_id));
       wait_for_ts_delta_count(base_ts_delta + 2, 64, case_id);
-      expect_last_ts_delta_polarity(1'b1, case_id);
+      expect_last_ts_delta_polarity(1'b0, case_id);
     endtask
 
     task automatic do_std_068_tfine_passthrough();
@@ -3292,8 +3370,10 @@
           $sformatf("%s calibrated quotient %0d is outside the ROM-backed range",
             case_id, predicted_arrival))
       target_quotient = predicted_arrival;
+      bypass_source_epoch_alignment = 1'b1;
       send_quotient_hit_and_capture(target_quotient, 0, 2, 1, 5'd3,
         observed_delta, case_id);
+      bypass_source_epoch_alignment = 1'b0;
       expect_last_payload_error(1'b1, case_id);
       expect_last_trace_delta(0, 0, 1'b1, case_id);
     endtask
@@ -3312,8 +3392,10 @@
           $sformatf("%s calibrated quotient %0d leaves no room for ahead-of-arrival hit",
             case_id, predicted_arrival))
       target_quotient = predicted_arrival + 16;
+      m_env.m_scb.allow_negative_physical_diagnostic = 1'b1;
       send_quotient_hit_and_capture(target_quotient, 0, 2, 2, 5'd4,
         observed_delta, case_id);
+      m_env.m_scb.allow_negative_physical_diagnostic = 1'b0;
       expect_last_payload_error(1'b1, case_id);
       expect_last_trace_delta(-32768, -1, 1'b1, case_id);
     endtask
@@ -3358,17 +3440,21 @@
       int unsigned base_traces;
 
       wait_for_reset_release();
-      lookup_raw_for_quotient(0, 0, t_raw, $sformatf("%s T timestamp", case_id));
-      lookup_raw_for_quotient(2000, 0, e_raw, $sformatf("%s E timestamp", case_id));
+      // Keep both candidates physical: T is a recent timestamp after source
+      // alignment, while E=0 is deliberately old (but never in the future).
+      lookup_raw_for_quotient(100, 0, t_raw, $sformatf("%s T timestamp", case_id));
+      lookup_raw_for_quotient(0, 0, e_raw, $sformatf("%s E timestamp", case_id));
 
       configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd32);
+      wait_cycles(2);
       run_start();
       base_beats  = m_env.m_scb.beat_count;
       base_traces = m_env.m_scb.trace_history.size();
       send_hit_beat(2, 4, t_raw, e_raw, 1'b1, 1'b1, 1'b0, '0, 1'b1, 5'd7);
       wait_for_beat_count(base_beats + 1, 128, $sformatf("%s T-selected run", case_id));
       wait_for_trace_count(base_traces + 1, 128, $sformatf("%s T-selected run", case_id));
-      expect_last_payload_math(2, 4, 5'd7, 13'd0, 3'd0, 9'd0,
+      expect_last_payload_math(2, 4, 5'd7, 13'd100, 3'd0, 9'd0,
         $sformatf("%s T-selected run", case_id));
       expect_last_payload_error(1'b0, $sformatf("%s T-selected run", case_id));
       expect_last_trace_delta(1, 1999, 1'b0, $sformatf("%s T-selected run", case_id));
@@ -3377,15 +3463,16 @@
       wait_cycles(4);
       configure_datapath_mode(1'b1, 1'b0, 1'b0);
       run_start();
+      wait_cycles(100);
       base_beats  = m_env.m_scb.beat_count;
       base_traces = m_env.m_scb.trace_history.size();
       send_hit_beat(2, 4, t_raw, e_raw, 1'b1, 1'b1, 1'b0, '0, 1'b1, 5'd8);
       wait_for_beat_count(base_beats + 1, 128, $sformatf("%s E-selected run", case_id));
       wait_for_trace_count(base_traces + 1, 128, $sformatf("%s E-selected run", case_id));
-      expect_last_payload_math(2, 4, 5'd8, 13'd0, 3'd0, 9'd0,
+      expect_last_payload_math(2, 4, 5'd8, 13'd100, 3'd0, 9'd0,
         $sformatf("%s E-selected run", case_id));
       expect_last_payload_error(1'b1, $sformatf("%s E-selected run", case_id));
-      expect_last_trace_delta(-32768, -1, 1'b1, $sformatf("%s E-selected run", case_id));
+      expect_last_trace_delta(32, 32767, 1'b1, $sformatf("%s E-selected run", case_id));
     endtask
 
     task automatic do_std_091_debug_burst_only_running();
@@ -3498,21 +3585,39 @@
       int signed   observed_delta;
       int unsigned base_ts_delta;
       int unsigned base_debug_burst;
+      mtsp_hit1_obs_item hit_obs;
 
       wait_for_reset_release();
       configure_datapath_mode(1'b1, 1'b0, 1'b1);
       run_start();
       base_ts_delta    = m_env.m_scb.ts_delta_count;
       base_debug_burst = m_env.m_scb.debug_burst_count;
-      send_quotient_hit_and_capture(20, 0, 2, 0, 5'd14, observed_delta,
+      // Keep the synthetic hit timestamp behind the freshly synchronized GTS;
+      // this case checks arrival spacing, not an upstream epoch fault.
+      send_quotient_hit_and_capture(0, 0, 2, 0, 5'd14, observed_delta,
         $sformatf("%s first equal-timestamp hit", case_id));
       wait_cycles(80);
-      send_quotient_hit_and_capture(20, 0, 2, 0, 5'd15, observed_delta,
+      send_quotient_hit_and_capture(0, 0, 2, 0, 5'd15, observed_delta,
         $sformatf("%s delayed equal-timestamp hit", case_id));
       wait_for_ts_delta_count(base_ts_delta + 2, 64, case_id);
       wait_for_debug_burst_count(base_debug_burst + 2, 64, case_id);
       expect_last_ts_delta_range(0, 0, case_id);
       expect_last_debug_burst_arrival_min(4, case_id);
+      hit_obs = find_last_hit1_obs();
+      if (hit_obs == null)
+        `uvm_fatal("MTSP_LATENCY48", "missing Type1 output for latency48 check")
+      if (hit_obs.latency !== (hit_obs.arrival_gts - hit_obs.ts))
+        `uvm_fatal("MTSP_LATENCY48",
+          $sformatf("%s latency identity mismatch arrival=0x%012h ts=0x%012h latency=0x%012h",
+            case_id, hit_obs.arrival_gts, hit_obs.ts, hit_obs.latency))
+      if ($signed(hit_obs.latency) < 0)
+        `uvm_fatal("MTSP_LATENCY48",
+          $sformatf("%s default physical lifetime is negative (%0d); diagnose run-sync/epoch/PLL rather than hiding it",
+            case_id, $signed(hit_obs.latency)))
+      if (m_env.m_scb.latency_identity_count < 2)
+        `uvm_fatal("MTSP_LATENCY48",
+          $sformatf("%s expected at least two checked latency48 beats, got %0d",
+            case_id, m_env.m_scb.latency_identity_count))
     endtask
 
     task automatic do_std_100_debug_streams_clear_outside_running();
@@ -3567,7 +3672,7 @@
       start_legacy_smoke_mode();
       send_smoke_hit_and_expect_et(15'h000F, 15'h0003, 1'b1, 9'd0,
         $sformatf("%s negative clamp", case_id));
-      send_smoke_hit_and_expect_et(15'h0001, 15'h0000, 1'b1, 9'd511,
+      send_smoke_hit_and_expect_et(15'h0001, 15'h45F8, 1'b1, 9'd511,
         $sformatf("%s saturation clamp", case_id));
     endtask
 
@@ -3720,6 +3825,7 @@
                                                     int unsigned outside_sideband,
                                                     string ctx);
       int unsigned base_beats;
+      int unsigned base_eops;
       int unsigned base_empty_eops;
       int unsigned base_history_size;
 
@@ -3727,20 +3833,20 @@
       run_start();
 
       base_beats        = m_env.m_scb.beat_count;
+      base_eops         = m_env.m_scb.eop_count;
       base_empty_eops   = m_env.m_scb.empty_eop_count;
       base_history_size = m_env.m_scb.history.size();
-      send_hit_beat(outside_sideband, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
-      wait_for_beat_count(base_beats + 1, 128,
-        $sformatf("%s outside-window open packet", ctx));
-      expect_last_trace_pair($sformatf("%s outside-window payload", ctx));
-      expect_last_payload_error(1'b0, $sformatf("%s outside-window payload", ctx));
+      send_hit_beat_with_sideband(6'b10_0000 | outside_sideband[3:0],
+        2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 32,
+        $sformatf("%s outside-window hit is filtered", ctx));
       pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
       send_endofrun_pulse();
       wait_for_ctrl_ready_low(4, $sformatf("%s outside-window terminate", ctx));
       wait_for_empty_eop_count(base_empty_eops + 4, 128,
         $sformatf("%s outside-window close markers", ctx));
       wait_for_ctrl_ready_high(128, $sformatf("%s outside-window ready restore", ctx));
-      expect_close_markers_since(base_history_size, 4'b1111, 1,
+      expect_close_markers_since(base_history_size, 4'b1111, 0,
         $sformatf("%s outside-window drain", ctx));
 
       send_ctrl(CTRL_IDLE, "IDLE");
@@ -3749,14 +3855,16 @@
       base_beats        = m_env.m_scb.beat_count;
       base_empty_eops   = m_env.m_scb.empty_eop_count;
       base_history_size = m_env.m_scb.history.size();
-      send_hit_beat(inside_sideband, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
+      send_hit_beat_with_sideband(6'b10_0000 | inside_sideband[3:0],
+        2, 0, 15'h0003, 15'h000F, 1'b1, 1'b1, 1'b0);
       wait_for_beat_count(base_beats + 1, 128,
         $sformatf("%s inside-window open packet", ctx));
       expect_last_trace_pair($sformatf("%s inside-window first payload", ctx));
       expect_last_payload_error(1'b0, $sformatf("%s inside-window first payload", ctx));
       pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
       wait_for_hit0_ready(1'b1, 16, $sformatf("%s inside-window tail ready", ctx));
-      send_hit_beat(inside_sideband, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
+      send_hit_beat_with_sideband(6'b10_0000 | inside_sideband[3:0],
+        2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
       wait_for_beat_count(base_beats + 2, 128,
         $sformatf("%s inside-window eop tail", ctx));
       expect_last_trace_pair($sformatf("%s inside-window eop payload", ctx));
@@ -4107,7 +4215,9 @@
       lookup_raw_for_quotient(predicted_arrival - 1, 0, raw_value, case_id);
       base_beats  = m_env.m_scb.beat_count;
       base_traces = m_env.m_scb.trace_history.size();
+      bypass_source_epoch_alignment = 1'b1;
       send_hit_beat(2, 3, raw_value, raw_value, 1'b0, 1'b1, 1'b0);
+      bypass_source_epoch_alignment = 1'b0;
       wait_for_beat_count(base_beats + 1, 128,
         $sformatf("%s equality-threshold hit", case_id));
       wait_for_trace_count(base_traces + 1, 128,
@@ -4540,7 +4650,7 @@
     task automatic do_corner_030_sideband_channel_outside_enabled_window();
       int unsigned raw_value;
       int unsigned base_beats;
-      int unsigned base_traces;
+      int unsigned base_eops;
       int unsigned base_empty_eops;
       int unsigned base_history_size;
 
@@ -4548,24 +4658,21 @@
       run_start();
       lookup_raw_for_quotient(0, 0, raw_value, case_id);
       base_beats        = m_env.m_scb.beat_count;
-      base_traces       = m_env.m_scb.trace_history.size();
+      base_eops         = m_env.m_scb.eop_count;
       base_empty_eops   = m_env.m_scb.empty_eop_count;
       base_history_size = m_env.m_scb.history.size();
 
       send_hit_beat_with_sideband(6'd5, 5, 4, raw_value, raw_value,
         1'b0, 1'b1, 1'b1);
-      wait_for_beat_count(base_beats + 1, 128, case_id);
-      wait_for_trace_count(base_traces + 1, 128, case_id);
-      expect_last_payload_fields(5, 4, 0, case_id);
-      expect_last_output_flags(1'b1, 1'b0, 1'b0, 0, case_id);
-      expect_last_trace_pair(case_id);
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 32,
+        $sformatf("%s low-nibble channel5 filter", case_id));
 
       pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
       send_endofrun_pulse();
       wait_for_empty_eop_count(base_empty_eops + 4, 128,
         $sformatf("%s close markers outside sideband window", case_id));
       wait_for_ctrl_ready_high(128, $sformatf("%s ready restore", case_id));
-      expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+      expect_close_markers_since(base_history_size, 4'b1111, 0, case_id);
     endtask
 
     task automatic do_corner_031_t_gray_equal_padding_upper();
@@ -4615,6 +4722,8 @@
       int unsigned pulse_count;
       int unsigned pulse_counter;
       bit          will_happen;
+      uvm_hdl_data_t epoch_value;
+      mtsp_hit1_obs_item hit_obs;
 
       wait_for_reset_release();
       configure_datapath_mode(1'b0, 1'b0);
@@ -4650,6 +4759,36 @@
       wait_for_beat_count(base_beats + 1, 128, case_id);
       wait_for_trace_count(base_traces + 1, 128, case_id);
       expect_last_trace_pair($sformatf("%s post-wrap normal/debug pair", case_id));
+
+      // Seed a coherent epoch above bit 31. The next hit must carry all 48 true
+      // timestamp bits while latency remains the small physical lifetime.
+      epoch_value = '0;
+      epoch_value[47:0] = 48'h0001_0000_0000;
+      deposit_dut_hdl("/tb_top/dut/counter_gts_8n", epoch_value,
+        $sformatf("%s seed high GTS epoch", case_id));
+      epoch_value = '0;
+      epoch_value[49:0] = 50'h005_0000_0000;
+      deposit_dut_hdl("/tb_top/dut/counter_ov_base_1n6", epoch_value,
+        $sformatf("%s seed matching high MTS epoch", case_id));
+      wait_cycles(1);
+
+      base_beats = m_env.m_scb.beat_count;
+      lookup_raw_for_quotient(0, 0, raw_value, case_id);
+      send_hit_beat(2, 5, raw_value, raw_value, 1'b0, 1'b1, 1'b0,
+        '0, 1'b1, 5'd5);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s 48-bit epoch-carry hit", case_id));
+      hit_obs = find_last_hit1_obs();
+      if (hit_obs == null || hit_obs.ts[47:32] != 16'h0001 ||
+          hit_obs.arrival_gts[47:32] != 16'h0001)
+        `uvm_fatal("MTSP_LATENCY48",
+          $sformatf("%s 48-bit carry was truncated ts=0x%012h arrival=0x%012h",
+            case_id, hit_obs == null ? 48'd0 : hit_obs.ts,
+            hit_obs == null ? 48'd0 : hit_obs.arrival_gts))
+      if ($signed(hit_obs.latency) < 0)
+        `uvm_fatal("MTSP_LATENCY48",
+          $sformatf("%s high-epoch physical lifetime became negative (%0d)",
+            case_id, $signed(hit_obs.latency)))
     endtask
 
     task automatic do_corner_036_overflow_lookback_expiry();
@@ -5009,24 +5148,32 @@
       int unsigned base_beats;
       int unsigned base_history;
       int unsigned base_traces;
+      int unsigned t_recent_raw;
+      int unsigned e_old_raw;
 
       wait_for_reset_release();
       configure_datapath_mode(1'b1, 1'b0, 1'b1);
+      csr_write(3'd2, 32'd32);
+      wait_cycles(2);
       run_start();
+      lookup_raw_for_quotient(100, 0, t_recent_raw,
+        $sformatf("%s recent T timestamp", case_id));
+      lookup_raw_for_quotient(0, 0, e_old_raw,
+        $sformatf("%s old E timestamp", case_id));
 
       base_beats   = m_env.m_scb.beat_count;
       base_history = m_env.m_scb.history.size();
       base_traces  = m_env.m_scb.trace_history.size();
 
-      send_hit_beat(2, 13, 15'h0001, 15'h5ee7, 1'b1, 1'b1, 1'b0,
+      send_hit_beat(2, 13, t_recent_raw, e_old_raw, 1'b1, 1'b1, 1'b0,
         '0, 1'b1, 5'd15);
       csr_write(3'd0, datapath_mode_word(1'b1, 1'b0, 1'b0));
-      send_hit_beat(2, 14, 15'h0001, 15'h5ee7, 1'b1, 1'b1, 1'b0,
+      send_hit_beat(2, 14, t_recent_raw, e_old_raw, 1'b1, 1'b1, 1'b0,
         '0, 1'b1, 5'd16);
 
       wait_for_beat_count(base_beats + 2, 256, case_id);
       wait_for_trace_count(base_traces + 2, 256, case_id);
-      expect_payload_math_at(base_history, 2, 13, 15, 0, 0, 0,
+      expect_payload_math_at(base_history, 2, 13, 15, 100, 0, 0,
         $sformatf("%s first hit payload", case_id));
       expect_payload_error_at(base_history, 1'b0,
         $sformatf("%s first hit sampled T delay", case_id));
@@ -5034,7 +5181,7 @@
         $sformatf("%s first hit normal/debug pair", case_id));
       expect_trace_error_at(base_traces, 1'b0,
         $sformatf("%s first hit debug math sampled T delay", case_id));
-      expect_payload_math_at(base_history + 1, 2, 14, 16, 0, 0, 0,
+      expect_payload_math_at(base_history + 1, 2, 14, 16, 100, 0, 0,
         $sformatf("%s second hit payload", case_id));
       expect_payload_error_at(base_history + 1, 1'b1,
         $sformatf("%s second hit sampled E delay", case_id));
@@ -5083,7 +5230,7 @@
     task automatic do_corner_063_first_hit_disabled_channel_no_sop();
       int unsigned raw_value;
       int unsigned base_beats;
-      int unsigned base_traces;
+      int unsigned base_eops;
       int unsigned base_empty_eops;
       int unsigned base_history_size;
 
@@ -5093,29 +5240,21 @@
       lookup_raw_for_quotient(0, 0, raw_value, case_id);
 
       base_beats        = m_env.m_scb.beat_count;
-      base_traces       = m_env.m_scb.trace_history.size();
+      base_eops         = m_env.m_scb.eop_count;
       base_empty_eops   = m_env.m_scb.empty_eop_count;
       base_history_size = m_env.m_scb.history.size();
       send_hit_beat_with_sideband(0, 2, 0, raw_value, raw_value, 1'b0,
         1'b1, 1'b0);
-      wait_for_beat_count(base_beats + 1, 128,
-        $sformatf("%s disabled-sideband payload", case_id));
-      wait_for_trace_count(base_traces + 1, 128,
-        $sformatf("%s disabled-sideband trace", case_id));
-      expect_payload_math_at(base_history_size, 2, 0, 0, 0, 0, 0,
-        $sformatf("%s disabled-sideband payload math", case_id));
-      expect_output_flags_at(base_history_size, 1'b1, 1'b0, 1'b0, 0,
-        $sformatf("%s route-lane SOP is independent of input window", case_id));
-      expect_trace_pair_at(base_traces,
-        $sformatf("%s disabled-sideband normal/debug pair", case_id));
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 32,
+        $sformatf("%s disabled low-nibble channel0 is filtered", case_id));
 
       pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
       wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
       send_endofrun_pulse();
       wait_for_empty_eop_count(base_empty_eops + 4, 128,
         $sformatf("%s disabled-sideband close markers", case_id));
-      expect_close_markers_detail_since(base_history_size, 4'b1111, 4'b1110,
-        4, 1, $sformatf("%s disabled-sideband did not hold input packet open",
+      expect_close_markers_detail_since(base_history_size, 4'b1111, 4'b1111,
+        4, 0, $sformatf("%s disabled-sideband did not hold input packet open",
         case_id));
       wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
     endtask
@@ -5271,7 +5410,9 @@
       configure_datapath_mode(1'b1, 1'b0, 1'b1);
       csr_write(3'd2, 32'd4);
       run_start();
+      m_env.m_scb.allow_negative_physical_diagnostic = 1'b1;
       send_hit_for_debug_delta(-1, 1'b1, case_id);
+      m_env.m_scb.allow_negative_physical_diagnostic = 1'b0;
     endtask
 
     task automatic do_corner_072_debug_ts_zero();
@@ -5757,7 +5898,9 @@
       lookup_raw_for_quotient(predicted_arrival - 1, 0, raw_value, case_id);
       base_beats  = m_env.m_scb.beat_count;
       base_traces = m_env.m_scb.trace_history.size();
+      bypass_source_epoch_alignment = 1'b1;
       send_hit_beat(2, 3, raw_value, raw_value, 1'b0, 1'b1, 1'b0);
+      bypass_source_epoch_alignment = 1'b0;
       wait_for_beat_count(base_beats + 1, 128,
         $sformatf("%s generic equality-threshold hit", case_id));
       wait_for_trace_count(base_traces + 1, 128,
@@ -6124,26 +6267,27 @@
     endtask
 
     task automatic do_corner_118_terminating_eop_disabled_sideband_channel();
+      int unsigned base_beats;
+      int unsigned base_eops;
       int unsigned base_empty_eops;
       int unsigned base_history_size;
-      int unsigned base_traces;
 
       wait_for_reset_release();
       run_start();
       pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
       wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
       wait_for_hit0_ready(1'b1, 16, $sformatf("%s flushing hit ready", case_id));
+      base_beats        = m_env.m_scb.beat_count;
+      base_eops         = m_env.m_scb.eop_count;
       base_empty_eops   = m_env.m_scb.empty_eop_count;
       base_history_size = m_env.m_scb.history.size();
-      base_traces       = m_env.m_scb.trace_history.size();
       send_hit_beat_with_sideband(5, 2, 0, 15'h0003, 15'h000F, 1'b1, 1'b0, 1'b1);
+      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 16,
+        $sformatf("%s outside-window flushing hit is filtered", case_id));
       send_endofrun_pulse();
-      wait_for_trace_count(base_traces + 1, 128,
-        $sformatf("%s outside-window eop payload trace", case_id));
-      expect_last_trace_pair($sformatf("%s outside-window eop payload trace", case_id));
       wait_for_empty_eop_count(base_empty_eops + 4, 128,
         $sformatf("%s outside-window close markers", case_id));
-      expect_close_markers_since(base_history_size, 4'b1111, 1, case_id);
+      expect_close_markers_since(base_history_size, 4'b1111, 0, case_id);
       wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
     endtask
 
@@ -6171,8 +6315,8 @@
         $sformatf("%s non-eop flushing first payload clean", case_id));
       expect_trace_pair_at(base_traces + 1,
         $sformatf("%s non-eop flushing second payload", case_id));
-      expect_trace_error_at(base_traces + 1, 1'b1,
-        $sformatf("%s non-eop flushing second payload delay-error", case_id));
+      expect_trace_error_at(base_traces + 1, 1'b0,
+        $sformatf("%s non-eop flushing second payload clean", case_id));
       wait_for_empty_eop_count(base_empty_eops + 4, 128,
         $sformatf("%s non-eop flushing close markers", case_id));
       expect_close_markers_since(base_history_size, 4'b1111, 2, case_id);
@@ -6219,6 +6363,19 @@
       wait_for_empty_eop_count(base_empty_eops + 4, 128,
         $sformatf("%s flushing close-marker drain", case_id));
       wait_for_ctrl_ready_high(128, $sformatf("%s flushing ready restore", case_id));
+
+      // After all terminal work completes, direct SYNC is a legal recovery
+      // command from FLUSHING.  Prove command acceptance and the shared epoch
+      // reset state, not only the ready transition.
+      send_ctrl(CTRL_SYNC, "SYNC_after_flushing_drain");
+      wait_for_ctrl_ready_high(16,
+        $sformatf("%s direct sync ready", case_id));
+      expect_run_state_cmd_value(2,
+        $sformatf("%s direct sync command code", case_id));
+      expect_processor_state_value(1,
+        $sformatf("%s direct sync processor reset", case_id));
+      expect_hit0_ready(1'b0,
+        $sformatf("%s direct sync blocks hit input", case_id));
     endtask
 
     task automatic do_corner_124_missing_synthetic_boundary_upgrade();
@@ -6563,7 +6720,8 @@
                                                          int unsigned channel_value,
                                                          bit derive_tot,
                                                          string ctx);
-      expect_payload_math_at(history_idx, stress_asic(stimulus_idx),
+      expect_payload_math_at(history_idx,
+        expected_source_asic(stress_asic(stimulus_idx)),
         channel_value, stress_tfine(stimulus_idx),
         stress_t_quotient(stimulus_idx), stress_t_remainder(stimulus_idx),
         stress_expected_et(stimulus_idx, derive_tot), ctx);
@@ -6800,7 +6958,8 @@
         bit expected_error;
 
         expected_error = bypass_lapse;
-        expect_payload_math_at(base_history_size + idx, stress_asic(idx),
+        expect_payload_math_at(base_history_size + idx,
+          expected_source_asic(stress_asic(idx)),
           stress_channel(idx), stress_tfine(idx), expected_q, expected_r, 0,
           $sformatf("%s payload idx=%0d", ctx, idx));
         expect_trace_pair_at(base_traces + idx,
@@ -6863,7 +7022,8 @@
         bypass_value = pkt[0];
         expected_q   = bypass_value ? 2 : 6555;
         expected_r   = bypass_value ? 0 : 2;
-        expect_payload_math_at(base_history_size + idx, stress_asic(idx),
+        expect_payload_math_at(base_history_size + idx,
+          expected_source_asic(stress_asic(idx)),
           stress_channel(idx), stress_tfine(idx), expected_q, expected_r, 0,
           $sformatf("%s payload idx=%0d", ctx, idx));
         expect_trace_pair_at(base_traces + idx,
@@ -6921,7 +7081,8 @@
 
         phase          = idx / phase_hits;
         expected_error = (latencies[phase] < 16);
-        expect_payload_math_at(base_history_size + idx, stress_asic(idx),
+        expect_payload_math_at(base_history_size + idx,
+          expected_source_asic(stress_asic(idx)),
           stress_channel(idx), stress_tfine(idx), stress_t_quotient(idx),
           stress_t_remainder(idx), stress_expected_et(idx, 1'b0),
           $sformatf("%s payload idx=%0d", ctx, idx));
@@ -7051,6 +7212,11 @@
           `uvm_fatal("MTSP_CASE",
             $sformatf("%s unsupported profile pattern %0d", ctx, pattern))
       endcase
+      // Current MTS derives source ASIC from AVST[5:4] and applies the
+      // enabled-input window to AVST[3:0].  Keep those domains explicit in
+      // every profile vector.
+      sideband_channel = ((asic_value & 3) << 4) |
+        (sideband_channel & 15);
     endtask
 
     task automatic send_profile_hit(int unsigned sideband_channel,
@@ -7064,9 +7230,12 @@
                                     int unsigned tfine_value,
                                     string ctx);
       int unsigned raw_value;
+      int unsigned source_sideband;
 
       lookup_raw_for_quotient(quotient, remainder, raw_value, ctx);
-      send_hit_beat_with_sideband(sideband_channel, asic_value, channel_value,
+      source_sideband = ((asic_value & 3) << 4) |
+        (sideband_channel & 15);
+      send_hit_beat_with_sideband(source_sideband, asic_value, channel_value,
         raw_value, raw_value, 1'b0, sop_value, eop_value, error_value, 1'b1,
         tfine_value);
     endtask
@@ -7108,7 +7277,7 @@
                                              string ctx);
       mtsp_hit1_obs_item hit_obs;
 
-      expect_payload_math_at(history_idx, asic_value, channel_value,
+      expect_payload_math_at(history_idx, expected_source_asic(asic_value), channel_value,
         tfine_value, quotient, remainder, 0, ctx);
       hit_obs = m_env.m_scb.history[history_idx];
       if (hit_obs.channel !== route_value[3:0])
@@ -7636,14 +7805,18 @@
     task automatic run_control_sequence_repeated_case(bit direct_running,
                                                       int unsigned iterations,
                                                       string ctx);
+      int unsigned base_inputs;
       int unsigned base_beats;
       int unsigned base_eops;
       int unsigned base_empty_eops;
+      int unsigned base_traces;
 
       wait_for_reset_release();
+      base_inputs     = m_env.m_scb.hit0_history.size();
       base_beats      = m_env.m_scb.beat_count;
       base_eops       = m_env.m_scb.eop_count;
       base_empty_eops = m_env.m_scb.empty_eop_count;
+      base_traces     = m_env.m_scb.trace_history.size();
 
       for (int unsigned iter = 0; iter < iterations; iter++) begin
         if (direct_running) begin
@@ -7653,7 +7826,47 @@
           wait_for_hit0_ready(1'b1, 16,
             $sformatf("%s direct-running ready iter=%0d", ctx, iter));
         end else begin
+          int unsigned       iter_beats;
+          int unsigned       iter_traces;
+          uvm_hdl_data_t     gts_value;
+          uvm_hdl_data_t     ov_base_value;
+          mtsp_hit1_obs_item hit_obs;
+          bit signed [47:0]  latency_signed;
+
           run_start();
+          read_dut_hdl("/tb_top/dut/counter_gts_8n", gts_value,
+            $sformatf("%s fresh GTS iter=%0d", ctx, iter));
+          read_dut_hdl("/tb_top/dut/counter_ov_base_1n6", ov_base_value,
+            $sformatf("%s fresh MTS epoch iter=%0d", ctx, iter));
+          if (gts_value[47:0] > 48'd64 || ov_base_value[49:0] != 50'd0)
+            `uvm_fatal("MTSP_LATENCY48",
+              $sformatf("%s iter=%0d SYNC did not re-arm a fresh epoch: gts=0x%012h ov_base=0x%013h",
+                ctx, iter, gts_value[47:0], ov_base_value[49:0]))
+
+          iter_beats  = m_env.m_scb.beat_count;
+          iter_traces = m_env.m_scb.trace_history.size();
+          // Raw 0x0001 decodes to timestamp zero.  It is therefore a true
+          // hit in the freshly synchronized epoch, not an intentionally
+          // future decoder/math vector.
+          send_hit_beat(2, iter % 32, 15'h0001, 15'h0001, 1'b0,
+            1'b1, 1'b0);
+          wait_for_beat_count(iter_beats + 1, 128,
+            $sformatf("%s epoch hit iter=%0d", ctx, iter));
+          wait_for_trace_count(iter_traces + 1, 128,
+            $sformatf("%s epoch trace iter=%0d", ctx, iter));
+          hit_obs = find_last_hit1_obs();
+          if (hit_obs == null)
+            `uvm_fatal("MTSP_LATENCY48",
+              $sformatf("%s iter=%0d missing epoch-check hit", ctx, iter))
+          latency_signed = hit_obs.latency;
+          if (hit_obs.ts != 48'd0 ||
+              hit_obs.latency != (hit_obs.arrival_gts - hit_obs.ts) ||
+              latency_signed < 0 || hit_obs.arrival_gts > 48'd64)
+            `uvm_fatal("MTSP_LATENCY48",
+              $sformatf("%s iter=%0d bad fresh-epoch lifetime ts=0x%012h arrival=0x%012h latency=%0d",
+                ctx, iter, hit_obs.ts, hit_obs.arrival_gts, latency_signed))
+          expect_total_count(48'd1,
+            $sformatf("%s fresh-epoch total iter=%0d", ctx, iter));
         end
         send_ctrl(CTRL_IDLE, $sformatf("IDLE_%0d", iter));
         wait_cycles(2);
@@ -7661,8 +7874,19 @@
           $sformatf("%s post-idle iter=%0d", ctx, iter));
       end
 
-      expect_no_new_beats(base_beats, base_eops, base_empty_eops, 16, ctx);
-      expect_total_count(48'd0, ctx);
+      if (direct_running) begin
+        expect_no_new_beats(base_beats, base_eops, base_empty_eops, 16, ctx);
+        expect_total_count(48'd0, ctx);
+      end else begin
+        wait_for_input_count(base_inputs + iterations, iterations + 256, ctx);
+        wait_for_beat_count(base_beats + iterations, iterations + 256, ctx);
+        wait_for_trace_count(base_traces + iterations, iterations + 256, ctx);
+        if (m_env.m_scb.eop_count != base_eops ||
+            m_env.m_scb.empty_eop_count != base_empty_eops)
+          `uvm_fatal("MTSP_LATENCY48",
+            $sformatf("%s repeated re-arm emitted unexpected EOPs", ctx))
+        expect_total_count(48'd1, ctx);
+      end
       expect_discard_count(32'd0, ctx);
     endtask
 
@@ -8025,7 +8249,8 @@
         route_value  = profile_route_from_q(quotient_seq[idx]);
         expected_sop = !route_seen[route_value];
         route_seen[route_value] = 1'b1;
-        expect_hit0_fields_at(base_inputs + idx, sideband_seq[idx],
+        expect_hit0_fields_at(base_inputs + idx,
+          ((asic_seq[idx] & 3) << 4) | (sideband_seq[idx] & 15),
           sop_seq[idx], eop_seq[idx], '0,
           $sformatf("%s input marker idx=%0d", ctx, idx));
         expect_profile_payload_at(base_history_size + idx, base_traces + idx,
@@ -8113,7 +8338,8 @@
         bit [2:0] error_value;
 
         error_value = hiterr_seq[idx] ? 3'b001 : 3'b000;
-        expect_hit0_fields_at(base_inputs + idx, stress_asic(idx), idx == 0,
+        expect_hit0_fields_at(base_inputs + idx,
+          ordinary_source_sideband(stress_asic(idx)), idx == 0,
           1'b0, error_value, $sformatf("%s input idx=%0d", ctx, idx));
         if (!(discard_seq[idx] && hiterr_seq[idx])) begin
           expect_stress_payload_at(base_history_size + emitted_idx,
@@ -8141,8 +8367,6 @@
       int unsigned base_debug_ts;
       int unsigned base_debug_burst;
       int unsigned base_ts_delta;
-      int unsigned raw_clean;
-      int unsigned raw_error;
       bit          route_seen[4];
 
       if (hit_count > 96)
@@ -8150,15 +8374,9 @@
           $sformatf("%s delay-path hit_count=%0d exceeds local model depth",
             ctx, hit_count))
 
-      lookup_raw_for_quotient(0, 0, raw_clean, $sformatf("%s clean symbol",
-        ctx));
-      lookup_raw_for_quotient(1024, 0, raw_error, $sformatf("%s error symbol",
-        ctx));
       for (int unsigned idx = 0; idx < hit_count; idx++) begin
         delay_use_t_seq[idx]    = stress_rand_mod(idx, 93, 2);
         selected_error_seq[idx] = stress_rand_mod(idx, 193, 3) == 0;
-        expected_t_q_seq[idx]   = (delay_use_t_seq[idx] &&
-          selected_error_seq[idx]) ? 1024 : 0;
       end
 
       wait_for_reset_release();
@@ -8166,6 +8384,7 @@
       csr_write(3'd2, 32'd512);
       wait_cycles(2);
       run_start();
+      wait_cycles(600);
 
       base_inputs      = m_env.m_scb.hit0_history.size();
       base_beats       = m_env.m_scb.beat_count;
@@ -8177,19 +8396,28 @@
 
       for (int unsigned idx = 0; idx < hit_count; idx++) begin
         bit [31:0]   mode_word;
+        int unsigned live_gts;
+        int unsigned clean_q;
+        int unsigned selected_q;
+        int unsigned t_q;
+        int unsigned e_q;
         int unsigned t_raw_value;
         int unsigned e_raw_value;
 
         mode_word = datapath_mode_word(1'b1, 1'b0, delay_use_t_seq[idx]);
         csr_write(3'd0, mode_word);
         wait_cycles(2);
-        if (delay_use_t_seq[idx]) begin
-          t_raw_value = selected_error_seq[idx] ? raw_error : raw_clean;
-          e_raw_value = raw_clean;
-        end else begin
-          t_raw_value = raw_clean;
-          e_raw_value = selected_error_seq[idx] ? raw_error : raw_clean;
-        end
+        read_dut_uint("/tb_top/dut/counter_gts_8n", live_gts,
+          $sformatf("%s live GTS idx=%0d", ctx, idx));
+        clean_q    = live_gts;
+        selected_q = selected_error_seq[idx] ? (live_gts - 520) : clean_q;
+        t_q         = delay_use_t_seq[idx] ? selected_q : clean_q;
+        e_q         = delay_use_t_seq[idx] ? clean_q : selected_q;
+        expected_t_q_seq[idx] = t_q;
+        lookup_raw_for_quotient(t_q, 0, t_raw_value,
+          $sformatf("%s T symbol idx=%0d", ctx, idx));
+        lookup_raw_for_quotient(e_q, 0, e_raw_value,
+          $sformatf("%s E symbol idx=%0d", ctx, idx));
         send_hit_beat(2, idx % 32, t_raw_value, e_raw_value, 1'b0, 1'b1,
           1'b1, '0, 1'b1, idx[4:0]);
       end
@@ -8211,7 +8439,8 @@
         route_value  = profile_route_from_q(expected_t_q_seq[idx]);
         expected_sop = !route_seen[route_value];
         route_seen[route_value] = 1'b1;
-        expect_hit0_fields_at(base_inputs + idx, 2, 1'b1, 1'b1, '0,
+        expect_hit0_fields_at(base_inputs + idx, ordinary_source_sideband(2),
+          1'b1, 1'b1, '0,
           $sformatf("%s input packet idx=%0d", ctx, idx));
         expect_payload_math_at(base_history_size + idx, 2, idx % 32,
           idx[4:0], expected_t_q_seq[idx], 0, 0,
@@ -8300,7 +8529,8 @@
         route_value  = profile_route_from_q(stress_t_quotient(idx));
         expected_sop = !route_seen[route_value];
         route_seen[route_value] = 1'b1;
-        expect_hit0_fields_at(base_inputs + idx, stress_asic(idx), 1'b1,
+        expect_hit0_fields_at(base_inputs + idx,
+          ordinary_source_sideband(stress_asic(idx)), 1'b1,
           1'b1, '0, $sformatf("%s input packet idx=%0d", ctx, idx));
         expect_stress_payload_at(base_history_size + idx, base_traces + idx,
           idx, derive_seq[idx], $sformatf("%s payload idx=%0d", ctx, idx));
@@ -8381,7 +8611,8 @@
 
       emitted_idx = 0;
       for (int unsigned idx = 0; idx < hit_count; idx++) begin
-        expect_hit0_fields_at(base_inputs + idx, stress_asic(idx), idx == 0,
+        expect_hit0_fields_at(base_inputs + idx,
+          ordinary_source_sideband(stress_asic(idx)), idx == 0,
           1'b0, '0, $sformatf("%s input idx=%0d", ctx, idx));
         if (!drop_seq[idx]) begin
           expect_stress_payload_at(base_history_size + emitted_idx,
@@ -8612,7 +8843,8 @@
         phase          = idx / phase_hits;
         latency_value  = random_latency_value(phase);
         expected_error = (latency_value < 16);
-        expect_payload_math_at(base_history_size + idx, stress_asic(idx),
+        expect_payload_math_at(base_history_size + idx,
+          expected_source_asic(stress_asic(idx)),
           stress_channel(idx), stress_tfine(idx), stress_t_quotient(idx),
           stress_t_remainder(idx), stress_expected_et(idx, 1'b0),
           $sformatf("%s payload idx=%0d", ctx, idx));
@@ -8725,7 +8957,6 @@
         send_hit_beat(2, idx % 32, raw_value, raw_value, 1'b0,
           idx == 0, 1'b0, '0, 1'b1, idx[4:0]);
       end
-
       wait_for_input_count(base_inputs + hit_count, hit_count + 512, ctx);
       wait_for_beat_count(base_beats + hit_count, hit_count + 1024, ctx);
       wait_for_trace_count(base_traces + hit_count, hit_count + 1024, ctx);
@@ -8845,8 +9076,7 @@
     task automatic run_debug_error_pipeline_case(bit delay_ts_field_use_t,
                                                  int unsigned hit_count,
                                                  string ctx);
-      int unsigned raw_clean;
-      int unsigned raw_error;
+      int unsigned t_q_seq[128];
       int unsigned base_inputs;
       int unsigned base_beats;
       int unsigned base_history_size;
@@ -8860,10 +9090,9 @@
       csr_write(3'd2, 32'd512);
       wait_cycles(2);
       run_start();
-      lookup_raw_for_quotient(0, 0, raw_clean,
-        $sformatf("%s clean-delay symbol", ctx));
-      lookup_raw_for_quotient(1024, 0, raw_error,
-        $sformatf("%s error-delay symbol", ctx));
+      // Build both classes from the live run epoch: clean timestamps are
+      // current, while error timestamps are physically old by >512 cycles.
+      wait_cycles(600);
       base_inputs       = m_env.m_scb.hit0_history.size();
       base_beats        = m_env.m_scb.beat_count;
       base_history_size = m_env.m_scb.history.size();
@@ -8873,15 +9102,27 @@
       base_ts_delta    = m_env.m_scb.ts_delta_count;
 
       for (int unsigned idx = 0; idx < hit_count; idx++) begin
+        int unsigned live_gts;
+        int unsigned clean_q;
+        int unsigned error_q;
         int unsigned selected_q;
+        int unsigned t_q;
+        int unsigned e_q;
         int unsigned t_raw_value;
         int unsigned e_raw_value;
 
-        selected_q  = idx[0] ? 1024 : 0;
-        t_raw_value = delay_ts_field_use_t ?
-          (idx[0] ? raw_error : raw_clean) : raw_clean;
-        e_raw_value = delay_ts_field_use_t ?
-          raw_clean : (idx[0] ? raw_error : raw_clean);
+        read_dut_uint("/tb_top/dut/counter_gts_8n", live_gts,
+          $sformatf("%s live GTS idx=%0d", ctx, idx));
+        clean_q    = live_gts;
+        error_q    = live_gts - 520;
+        selected_q = idx[0] ? error_q : clean_q;
+        t_q         = delay_ts_field_use_t ? selected_q : clean_q;
+        e_q         = delay_ts_field_use_t ? clean_q : selected_q;
+        t_q_seq[idx] = t_q;
+        lookup_raw_for_quotient(t_q, 0, t_raw_value,
+          $sformatf("%s T symbol idx=%0d", ctx, idx));
+        lookup_raw_for_quotient(e_q, 0, e_raw_value,
+          $sformatf("%s E symbol idx=%0d", ctx, idx));
         send_hit_beat(2, idx % 32, t_raw_value, e_raw_value, 1'b0,
           idx == 0, 1'b0, '0, 1'b1, idx[4:0]);
       end
@@ -8896,15 +9137,11 @@
       wait_for_ts_delta_count(base_ts_delta + hit_count, hit_count + 256,
         ctx);
       for (int unsigned idx = 0; idx < hit_count; idx++) begin
-        int unsigned selected_q;
-        int unsigned expected_t_q;
         bit          expected_error;
 
-        selected_q      = idx[0] ? 1024 : 0;
-        expected_t_q    = delay_ts_field_use_t ? selected_q : 0;
         expected_error  = idx[0];
         expect_payload_math_at(base_history_size + idx, 2, idx % 32,
-          idx[4:0], expected_t_q, 0, 0,
+          idx[4:0], t_q_seq[idx], 0, 0,
           $sformatf("%s payload idx=%0d", ctx, idx));
         expect_trace_pair_at(base_traces + idx,
           $sformatf("%s trace idx=%0d", ctx, idx));
@@ -8959,6 +9196,10 @@
       base_debug_burst = m_env.m_scb.debug_burst_count;
       base_ts_delta    = m_env.m_scb.ts_delta_count;
 
+      // This sequence analytically fixes output arrival to 12+idx; retain
+      // its calibrated one-cycle spacing while the strict latency48
+      // scoreboard still rejects any negative output lifetime.
+      bypass_source_epoch_alignment = 1'b1;
       for (int unsigned idx = 0; idx < hit_count; idx++) begin
         int signed   target_delta;
         int signed   target_quotient_signed;
@@ -8978,6 +9219,7 @@
         send_hit_beat(2, idx % 32, raw_value, raw_value, 1'b0,
           idx == 0, 1'b0, '0, 1'b1, idx[4:0]);
       end
+      bypass_source_epoch_alignment = 1'b0;
 
       wait_for_input_count(base_inputs + hit_count, hit_count + 512, ctx);
       wait_for_beat_count(base_beats + hit_count, hit_count + 1024, ctx);
@@ -10495,6 +10737,9 @@
       configure_datapath_mode(1'b1, 1'b0, 1'b1);
       for (int unsigned phase_idx = 0; phase_idx < 2; phase_idx++) begin
         start_run_control_cycle(1'b0, phase_idx, ctx);
+        // All four route timestamps (0/16/32/48) are physical before the
+        // measured burst begins, so the source guard adds no setup bubbles.
+        wait_cycles(64);
         base_inputs      = m_env.m_scb.hit0_history.size();
         base_beats       = m_env.m_scb.beat_count;
         base_history     = m_env.m_scb.history.size();
@@ -10801,14 +11046,17 @@
       wait_for_reset_release();
       configure_datapath_mode(1'b0, 1'b0, 1'b1);
       run_start();
-      for (int unsigned wrap = 1; wrap <= 3; wrap++) begin
+      // Five consecutive wraps visit every deliberate near-wrap counter phase:
+      // 32765, 32763, 32766, 32764, and 32762.  Three wraps leave the final two
+      // production branches untested.
+      for (int unsigned wrap = 1; wrap <= 5; wrap++) begin
         wait_for_overflow_lookback_at_count(wrap, 9000,
           $sformatf("%s overflow wrap=%0d", case_id, wrap));
         send_overflow_hit_and_expect(wrap, 5000, 0, 5000, 0, 1'b0, 1'b0,
           1'b0, 2, wrap, wrap[4:0], wrap == 1, 1'b0, 1'b0,
           $sformatf("%s adjusted hit wrap=%0d", case_id, wrap));
       end
-      expect_total_count(48'd3, case_id);
+      expect_total_count(48'd5, case_id);
       expect_discard_count(32'd0, case_id);
     endtask
 
@@ -12281,7 +12529,61 @@
     endtask
 
     task automatic do_neg_041_negative_debug_ts_error();
+      int unsigned raw_value;
+      int unsigned base_beats;
+      int signed   wrapped_phase;
+      mtsp_hit1_obs_item hit_obs;
+
       do_corner_071_debug_ts_minus_one();
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0008 |
+        32'h0000_0040);
+      expect_csr_mask(3'd0, 32'h0000_0040, 32'h0000_0040,
+        $sformatf("%s debug-coordinate select", case_id));
+      lookup_raw_for_quotient(900, 0, raw_value, case_id);
+
+      for (int sample = 0; sample < 2; sample++) begin
+        base_beats = m_env.m_scb.beat_count;
+        send_hit_beat(2, sample + 1, raw_value, raw_value, 1'b0, 1'b1,
+          1'b0, '0, 1'b1, sample[4:0]);
+        wait_for_beat_count(base_beats + 1, 128,
+          $sformatf("%s 910-cycle phase sample %0d", case_id, sample));
+        hit_obs = find_last_hit1_obs();
+        if (hit_obs == null || $signed(hit_obs.latency) != -900)
+          `uvm_fatal("MTSP_LATENCY48",
+            $sformatf("%s expected signed debug phase -900, got %0d",
+              case_id, hit_obs == null ? 0 : $signed(hit_obs.latency)))
+        wrapped_phase = (($signed(hit_obs.latency) % 910) + 910) % 910;
+        if (wrapped_phase != 10)
+          `uvm_fatal("MTSP_LATENCY48",
+            $sformatf("%s expected -900 to wrap to frame bin 10 at period 910, got %0d",
+              case_id, wrapped_phase))
+        `uvm_info("MTSP_LATENCY48",
+          $sformatf("%s sample=%0d diagnostic_latency=%0d frame_period=910 wrapped_bin=%0d",
+            case_id, sample, $signed(hit_obs.latency), wrapped_phase), UVM_LOW)
+        if (sample == 0)
+          wait_cycles(910);
+      end
+
+      send_ctrl(CTRL_IDLE, "IDLE");
+      run_start();
+      csr_write(3'd0, CSR_CTRL_WRITE_DEFAULT | 32'h0000_0008 |
+        32'h0000_0040);
+      base_beats = m_env.m_scb.beat_count;
+      send_hit_beat(2, 3, raw_value, raw_value, 1'b0, 1'b1, 1'b0);
+      wait_for_beat_count(base_beats + 1, 128,
+        $sformatf("%s post-SYNC phase sample", case_id));
+      hit_obs = find_last_hit1_obs();
+      if (hit_obs == null || $signed(hit_obs.latency) != -900)
+        `uvm_fatal("MTSP_LATENCY48",
+          $sformatf("%s run SYNC did not reproduce signed phase -900, got %0d",
+            case_id, hit_obs == null ? 0 : $signed(hit_obs.latency)))
+      `uvm_info("MTSP_LATENCY48",
+        $sformatf("%s post-SYNC diagnostic_latency=%0d frame_period=910 wrapped_bin=10",
+          case_id, $signed(hit_obs.latency)), UVM_LOW)
+      if (m_env.m_scb.latency_negative_diagnostic_count < 3)
+        `uvm_fatal("MTSP_LATENCY48",
+          $sformatf("%s expected at least three retained negative diagnostics, got %0d",
+            case_id, m_env.m_scb.latency_negative_diagnostic_count))
     endtask
 
     task automatic do_neg_042_zero_debug_ts_error();
@@ -12414,43 +12716,7 @@
     endtask
 
     task automatic do_neg_063_sop_on_disabled_channel();
-      int unsigned raw_value;
-      int unsigned base_beats;
-      int unsigned base_traces;
-      int unsigned base_empty_eops;
-      int unsigned base_history_size;
-
-      wait_for_reset_release();
-      configure_datapath_mode(1'b1, 1'b0);
-      run_start();
-      lookup_raw_for_quotient(0, 0, raw_value, case_id);
-
-      base_beats        = m_env.m_scb.beat_count;
-      base_traces       = m_env.m_scb.trace_history.size();
-      base_empty_eops   = m_env.m_scb.empty_eop_count;
-      base_history_size = m_env.m_scb.history.size();
-      send_hit_beat_with_sideband(6'd5, 2, 0, raw_value, raw_value, 1'b0,
-        1'b1, 1'b0);
-      wait_for_beat_count(base_beats + 1, 128,
-        $sformatf("%s disabled-sideband payload", case_id));
-      wait_for_trace_count(base_traces + 1, 128,
-        $sformatf("%s disabled-sideband trace", case_id));
-      expect_payload_math_at(base_history_size, 2, 0, 0, 0, 0, 0,
-        $sformatf("%s disabled-sideband payload math", case_id));
-      expect_output_flags_at(base_history_size, 1'b1, 1'b0, 1'b0, 0,
-        $sformatf("%s route-lane SOP is independent of input window", case_id));
-      expect_trace_pair_at(base_traces,
-        $sformatf("%s disabled-sideband normal/debug pair", case_id));
-
-      pulse_ctrl(CTRL_TERMINATING, "TERMINATING");
-      wait_for_ctrl_ready_low(4, $sformatf("%s terminate ready low", case_id));
-      send_endofrun_pulse();
-      wait_for_empty_eop_count(base_empty_eops + 4, 128,
-        $sformatf("%s disabled-sideband close markers", case_id));
-      expect_close_markers_detail_since(base_history_size, 4'b1111, 4'b1110,
-        4, 1, $sformatf("%s disabled-sideband did not hold input packet open",
-        case_id));
-      wait_for_ctrl_ready_high(128, $sformatf("%s terminate ready restore", case_id));
+      do_corner_063_first_hit_disabled_channel_no_sop();
     endtask
 
     task automatic do_neg_064_eop_outside_terminating_illegal();
@@ -13889,7 +14155,7 @@
         end
         default: begin
           tcc_raw_value   = 15'h0001;
-          ecc_raw_value   = 15'h0000;
+          ecc_raw_value   = 15'h45F8;
           eflag_value     = 1'b1;
           expected_tcc8n  = 0;
           expected_tcc1n6 = 0;

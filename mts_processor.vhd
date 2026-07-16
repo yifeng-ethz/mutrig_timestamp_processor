@@ -1,5 +1,34 @@
--- File name: mts_processor.vhd 
+-- File name: mts_processor.vhd
 -- Author: Yifeng Wang (yifenwan@phys.ethz.ch)
+-- =======================================
+-- Version : 26.6.0
+-- Date    : 20260716
+-- Change  : Add an opt-in synchronous external epoch-reset input. When enabled,
+--           this input exclusively controls the MTS/GTS epoch counters while
+--           CSR soft reset remains active; the default retains the legacy
+--           RESET/SYNC epoch behavior without adding a runtime mux.
+--           Export a 48-bit latency sideband co-sampled with each Type1 hit.
+--           The value is computed inside MTS as the selected arrival GTS
+--           minus the exported true hit timestamp, so downstream histogram
+--           logic only trims/bins an already epoch-consistent result. In the
+--           production default (CONTROL_STATUS[6]=0), arrival is the direct
+--           emission GTS and latency is the positive physical hit lifetime.
+-- Version : 26.4.1
+-- Date    : 20260601
+-- Change  : Add the counter_ov_base/5 diagnostic coordinate (ov_div, a third divider
+--           that mirrors tcc/ecc). Legacy internal name frame_aligned_arrival remains,
+--           but CSR reg0[6] is debug-only: when set, coe_hit_arrival_gts_8n carries
+--           ov_div_quotient instead of the physical per-hit counter_gts_8n.
+--           Then delay = ov/5 - hit_ts = (counter_ov_base - white_ts)/5 = -cc_out/5 =
+--           -in_frame_phase, EXACT (the overflow base cancels, no counter mismatch). With
+--           emulator phase-tcc cc_out=5*phi: header-sync (fixed phi) -> sharp peak,
+--           slope -1 vs header_delay; periodic (uniform phi) -> plateau. This is an
+--           arithmetic debug coordinate, not physical hit lifetime. Default 0 keeps
+--           direct-arrival physical transport latency bit-for-bit.
+-- Prior   : 26.4.0 latched counter_gts_8n at the emulator frame sop (frame_sop_gts) - the
+--           WRONG base: the emulator frame (910/1550) differs from the MTS overflow
+--           counter_ov_base (~6553), so the bases did not cancel -> ~one-frame smearing
+--           (FINDINGS_20260601 Update 2). frame_sop_gts latch left in place, now unused.
 -- =======================================
 -- Revision: 1.0 (file created)
 --		Date: Mar 25, 2024
@@ -69,7 +98,7 @@
 --           Register the corrected divider numerators in hit_prediv, then split divider launch and
 --           ToT subtraction into separate cycles. A one-cycle delayed copy of the divider outputs keeps
 --           the quotient/remainder aligned with the metadata shift pipeline. External RESET / OUT_OF_DAQ
---           words now collapse to IDLE in the local control agent because this IP has no dedicated
+--           words now collapse to IDLE in the local control logic because this IP has no dedicated
 --           datapath action for them and must acknowledge the broadcast command stream cleanly. The
 --           latency-derived overflow padding state is now initialized at power-up and re-derived on
 --           run-control SYNC, matching the visible expected_latency CSR without requiring a host rewrite.
@@ -98,7 +127,7 @@
 --           packet-start bookkeeping, and debug delta history so software reset recovery does not inherit
 --           stale timing context from the previous traffic phase.
 --           Illegal run-control words still decode to ERROR, but ERROR no longer leaves
---           asi_ctrl_ready stuck low; the next legal control word can recover the local agent.
+--           asi_ctrl_ready stuck low; the next legal control word can recover the local control state.
 --           Once upstream end-of-run is observed, stale packet-open bookkeeping no longer blocks
 --           the terminal close-marker train; the physical input pipeline still drains first.
 -- Version : 26.3.2
@@ -241,7 +270,8 @@ generic (
     MUTRIG_OVERFLOW_LOOKBACK_8N               : natural := 2000; -- controls post-wrap epoch disambiguation only
     DEBUG					: natural := 1;
     DEBUG_TRACE_REPORTS     : boolean := false;
-    DV_COUNTER_SEED_ENABLE                    : natural := 0 -- DV-only: enables CSR writes to seed total_hit_cnt for rollover checks
+    DV_COUNTER_SEED_ENABLE                    : natural := 0; -- DV-only: enables CSR writes to seed total_hit_cnt for rollover checks
+    USE_EXTERNAL_EPOCH_RESET                  : boolean := false
 );
 port (
 
@@ -305,6 +335,13 @@ port (
     -- own free-running gts_8n, otherwise the two independent SYNC origins
     -- leave a random per-SYNC ~2^20 offset on delay (BUG-012). gts-unify.
     coe_hit_arrival_gts_8n           : out std_logic_vector(47 downto 0);
+
+    -- 48-bit modulo latency computed inside MTS on the same Type1 beat:
+    -- selected arrival GTS - coe_hit_type1_ts. With the production-default
+    -- direct-arrival selection this is the positive physical hit lifetime.
+    -- CONTROL_STATUS[6] selects a legacy overflow-base debug coordinate only;
+    -- that debug result must not be interpreted as physical transport time.
+    coe_hit_type1_latency_8n         : out std_logic_vector(47 downto 0);
 
 
     -- input stream of control signal (enable)
@@ -371,7 +408,10 @@ port (
 
     -- clock and reset interface
     i_rst                   : in std_logic; -- async reset assertion, sync reset release
-    i_clk                   : in std_logic -- clock should match the lvds parallel clock (125MHz)
+    i_clk                   : in std_logic; -- clock should match the lvds parallel clock (125MHz)
+    -- Optional synchronous epoch reset. Platform Designer exposes this conduit
+    -- only when USE_EXTERNAL_EPOCH_RESET=true; raw VHDL instances may omit it.
+    coe_epoch_reset         : in std_logic := '0'
 );
 end entity mts_processor;
 
@@ -665,6 +705,11 @@ architecture rtl of mts_processor is
         bypass_lapse            : std_logic;
         drop_delay_error        : std_logic;
         discard_hiterr          : std_logic;
+        frame_aligned_arrival   : std_logic;   -- Legacy name for reg0[6]. Debug only:
+                                               -- export divided counter_ov_base instead
+                                               -- of direct per-hit emission GTS. Its
+                                               -- subtraction yields an arithmetic phase
+                                               -- coordinate, not physical hit lifetime.
         expected_latency        : std_logic_vector(31 downto 0);
     end record;
     signal csr                  : csr_t := (
@@ -676,6 +721,7 @@ architecture rtl of mts_processor is
         bypass_lapse         => '0',
         drop_delay_error     => '0',
         discard_hiterr       => '1',
+        frame_aligned_arrival => '0',
         expected_latency     => std_logic_vector(to_unsigned(MUTRIG_BUFFER_EXPECTED_LATENCY_8N, 32))
     );
     
@@ -788,6 +834,16 @@ architecture rtl of mts_processor is
     signal ecc_div_quotient_d : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
     signal tcc_div_remain_d   : std_logic_vector(2 downto 0);
     signal ecc_div_remain_d   : std_logic_vector(2 downto 0);
+    -- ov_div: divide counter_ov_base (mirrors the tcc/ecc dividers) by 5 so
+    -- the overflow-base debug coordinate is co-sampled with hit_ts in 8 ns.
+    -- Selecting this coordinate gives ov/5 - hit_ts =
+    -- (counter_ov_base - white_ts)/5 = -cc_out/5 = -in_frame_phase (slope -1, exact).
+    signal ov_gts_1n6_slv50   : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
+    signal ov_div_numer       : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
+    signal ov_div_quotient    : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
+    signal ov_div_remain      : std_logic_vector(2 downto 0);
+    signal ov_div_quotient_d  : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
+    signal hit_out_ov_base_8n : std_logic_vector(47 downto 0) := (others => '0');
     signal hit_out_delay_error : std_logic := '0';
     signal hit_out_debug_timestamp : std_logic_vector(47 downto 0) := (others => '0');
     signal debug_sidecar_hit_out : std_logic_vector(DEBUG_SIDECAR_WIDTH_CONST - 1 downto 0);
@@ -806,6 +862,7 @@ architecture rtl of mts_processor is
 
         tcc_div_numer   : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
         ecc_div_numer   : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
+        ov_div_numer    : std_logic_vector(LPM_DIV_WIDTHN-1 downto 0);
     end record;
     signal hit_prediv    : prediv_stage_t;
     signal hit_totcalc   : prediv_stage_t;
@@ -819,8 +876,13 @@ architecture rtl of mts_processor is
     signal fpga_overflow_will_happen       : std_logic;
     signal fpga_overflow_lookback_cnt		: unsigned(31 downto 0);
     signal overflow_adjust_active           : std_logic;
+    signal timestamp_epoch_reset            : std_logic;
     -- counter gts 
     signal counter_gts_8n					: unsigned(47 downto 0); -- can be tuned
+    -- Historical counter_gts_8n capture at MuTRiG start-of-packet. It remains for
+    -- debug visibility but is not selected by csr.frame_aligned_arrival; reg0[6]
+    -- selects the divided counter_ov_base diagnostic coordinate instead.
+    signal frame_sop_gts_8n					: unsigned(47 downto 0);
     
     -- terminate / per-run close markers
     constant N_ENABLED_CHANNEL          : natural := ENABLED_CHANNEL_HI - ENABLED_CHANNEL_LO + 1;
@@ -908,6 +970,20 @@ architecture rtl of mts_processor is
     
 
 begin
+
+    external_epoch_reset_gen : if USE_EXTERNAL_EPOCH_RESET generate
+        -- Integration supplies a clock-domain-local epoch pulse/level. Do not
+        -- combine it with the legacy RESET/SYNC state in this configuration.
+        timestamp_epoch_reset <= coe_epoch_reset;
+    end generate external_epoch_reset_gen;
+
+    legacy_epoch_reset_gen : if not USE_EXTERNAL_EPOCH_RESET generate
+        -- Separate elaboration preserves the original reset predicate and
+        -- timing cone when the opt-in external interface is disabled.
+        timestamp_epoch_reset <= '1' when
+            processor_state = RESET and reset_flow = SYNC
+            else '0';
+    end generate legacy_epoch_reset_gen;
 
     debug_status_enabled_gen : if DEBUG >= 1 generate
         proc_debug_status_comb : process (all)
@@ -1233,10 +1309,29 @@ begin
         QUOTIENT			=> ecc_div_quotient, -- used for delay calculation only if csr.delay_ts_field_use_t=0
         REMAIN				=> ecc_div_remain
     );
-    
+
+    ov_div : LPM_DIVIDE
+    -- input: counter_ov_base part of white ts
+    -- output: divided overflow-base debug coordinate in 8 ns units
+    generic map (
+        LPM_WIDTHN				=> LPM_DIV_WIDTHN,
+        LPM_WIDTHD				=> 3,
+        LPM_NREPRESENTATION		=> "UNSIGNED",
+        LPM_DREPRESENTATION		=> "UNSIGNED",
+        LPM_PIPELINE			=> LPM_DIV_PIPELINE,
+        LPM_TYPE				=> "L_DIVIDE"
+    )
+    port map (
+        CLOCK 				=> i_clk,
+        NUMER				=> ov_div_numer,
+        DENOM				=> std_logic_vector(to_unsigned(5,3)),
+        QUOTIENT			=> ov_div_quotient,
+        REMAIN				=> ov_div_remain
+    );
+
     padding_logic_gts_product <= std_logic_vector(counter_ov_base_1n6);
     
-    proc_run_control_mgmt_agent : process (i_rst, i_clk)
+    proc_run_control_mgmt_ctrl : process (i_rst, i_clk)
         variable decoded_run_state_v  : run_state_t;
         variable incoming_run_state_v : run_state_t;
     begin
@@ -1292,6 +1387,8 @@ begin
     --		4: total hits count (L)
     begin
         if (i_rst = '1') then 
+            avs_csr_readdata            <= (others => '0');
+            avs_csr_waitrequest         <= '1';
             csr.go                      <= '1'; -- NOTE: default is go. If go is low, cmd from run_state_controller cannot send processor to run state.
             csr.force_stop              <= '0';
             csr.soft_reset              <= '0';
@@ -1299,6 +1396,7 @@ begin
             csr.delay_ts_field_use_t    <= '1';
             csr.bypass_lapse            <= '0';
             csr.drop_delay_error        <= '0';
+            csr.frame_aligned_arrival   <= '0';
             csr.expected_latency        <= std_logic_vector(to_unsigned(MUTRIG_BUFFER_EXPECTED_LATENCY_8N, csr.expected_latency'length));
             expected_latency_1n6        <= to_unsigned(MUTRIG_BUFFER_EXPECTED_LATENCY_8N * 5, expected_latency_1n6'length);
             csr.discard_hiterr          <= '1'; -- NOTE: default is discard hiterr
@@ -1321,6 +1419,7 @@ begin
                         csr.bypass_lapse        <=  avs_csr_writedata(3);
                         csr.discard_hiterr      <= 	avs_csr_writedata(4);
                         csr.drop_delay_error    <=  avs_csr_writedata(5);
+                        csr.frame_aligned_arrival <= avs_csr_writedata(6);
                         -- 3-bit of op mode 
                         -- [2] derive tot : 1=long, 0=short (def). Decode E branch and validate E-BadHit. Output format go to type1b.
                         csr.derive_tot        <= avs_csr_writedata(OP_MODE_LO + 2);
@@ -1371,6 +1470,7 @@ begin
                         avs_csr_readdata(3)     <= csr.bypass_lapse;
                         avs_csr_readdata(4)     <= csr.discard_hiterr;
                         avs_csr_readdata(5)     <= csr.drop_delay_error;
+                        avs_csr_readdata(6)     <= csr.frame_aligned_arrival;
                         avs_csr_readdata(OP_MODE_LO + 2)                <= csr.derive_tot;
                         avs_csr_readdata(OP_MODE_LO + 1)                <= csr.delay_ts_field_use_t;
                     when 1 => 
@@ -1413,6 +1513,7 @@ begin
         if (i_rst = '1') then 
             processor_state		<= IDLE;
             reset_flow			<= DONE;
+            processor_allow_input		<= '0';
         
         elsif (rising_edge(i_clk)) then
             processor_allow_input		<= '0';
@@ -1517,7 +1618,7 @@ begin
             counter_ov_base_1n6          <= (others => '0');
             fpga_overflow_lookback_cnt   <= (others => '0');
         elsif rising_edge(i_clk) then
-            if ((processor_state = RESET and reset_flow = SYNC) or csr.soft_reset = '1') then
+            if (timestamp_epoch_reset = '1' or csr.soft_reset = '1') then
                  -- reset counter
                 counter_mts_1n6		<= (others => '0');
                 counter_ov_cnt		<= (others => '0');
@@ -1568,13 +1669,19 @@ begin
     begin
         if (i_rst = '1') then
             counter_gts_8n <= (others => '0');
+            frame_sop_gts_8n <= (others => '0');
         elsif rising_edge(i_clk) then
-            if ((processor_state = RESET and reset_flow = SYNC) or csr.soft_reset = '1') then
+            if (timestamp_epoch_reset = '1' or csr.soft_reset = '1') then
                  -- reset counter
                 counter_gts_8n		<= (others => '0');
+                frame_sop_gts_8n	<= (others => '0');
             else
                 -- begin counter
                 counter_gts_8n		<= counter_gts_8n + to_unsigned(1,counter_gts_8n'length);
+                -- latch the gts at each MuTRiG frame start and hold it over the frame
+                if (asi_hit_type0_valid = '1' and asi_hit_type0_startofpacket = '1') then
+                    frame_sop_gts_8n	<= counter_gts_8n;
+                end if;
             end if;
         end if;
     end process;
@@ -1626,7 +1733,12 @@ begin
         -- output
         cc_gts_1n6_slv50		<= std_logic_vector(padding_logic_white_ts_v);
         ecc_gts_1n6_slv50		<= std_logic_vector(padding_logic_white_ts_e_v);
-    
+        -- counter_ov_base part of white_ts (= white_ts - cc_out, overflow-adjust
+        -- included). Dividing by 5 creates the debug coordinate whose subtraction
+        -- cancels the overflow base: ov/5 - white_ts/5 = -cc_out/5 = -phi.
+        ov_gts_1n6_slv50		<= std_logic_vector(padding_logic_white_ts_v
+                                       - resize(padding_logic_gray_ts_v, padding_logic_white_ts_v'length));
+
     end process;
     
     proc_hit_type0_channel_gate_comb : process (all)
@@ -1777,6 +1889,7 @@ begin
 
             hit_prediv.tcc_div_numer <= (others => '0');
             hit_prediv.ecc_div_numer <= (others => '0');
+            hit_prediv.ov_div_numer  <= (others => '0');
             hit_totcalc.asic         <= (others => '0');
             hit_totcalc.channel      <= (others => '0');
             hit_totcalc.t_fine       <= (others => '0');
@@ -1789,11 +1902,14 @@ begin
 
             hit_totcalc.tcc_div_numer <= (others => '0');
             hit_totcalc.ecc_div_numer <= (others => '0');
+            hit_totcalc.ov_div_numer  <= (others => '0');
 
             tcc_div_numer            <= (others => '0');
             ecc_div_numer            <= (others => '0');
+            ov_div_numer             <= (others => '0');
             tcc_div_quotient_d       <= (others => '0');
             ecc_div_quotient_d       <= (others => '0');
+            ov_div_quotient_d        <= (others => '0');
             tcc_div_remain_d         <= (others => '0');
             ecc_div_remain_d         <= (others => '0');
 
@@ -1822,6 +1938,7 @@ begin
             hit_out.hiterr  <= '0';
             hit_out_delay_error <= '0';
             hit_out_debug_timestamp <= (others => '0');
+            hit_out_ov_base_8n      <= (others => '0');
             stp_asi_hit_type0_channel_q <= (others => '0');
             stp_asi_hit_type0_accept_q  <= '0';
             stp_source_asic_stage0_q     <= (others => '0');
@@ -1880,6 +1997,7 @@ begin
 
             hit_prediv.tcc_div_numer <= (others => '0');
             hit_prediv.ecc_div_numer <= (others => '0');
+            hit_prediv.ov_div_numer  <= (others => '0');
             hit_totcalc.asic      <= (others => '0');
             hit_totcalc.channel   <= (others => '0');
             hit_totcalc.t_fine    <= (others => '0');
@@ -1892,11 +2010,14 @@ begin
 
             hit_totcalc.tcc_div_numer <= (others => '0');
             hit_totcalc.ecc_div_numer <= (others => '0');
-            
+            hit_totcalc.ov_div_numer  <= (others => '0');
+
             tcc_div_numer		<= (others => '0');
             ecc_div_numer       <= (others => '0');
+            ov_div_numer        <= (others => '0');
             tcc_div_quotient_d   <= tcc_div_quotient;
             ecc_div_quotient_d   <= ecc_div_quotient;
+            ov_div_quotient_d    <= ov_div_quotient;
             tcc_div_remain_d     <= tcc_div_remain;
             ecc_div_remain_d     <= ecc_div_remain;
             -- Single-owner divider pipeline: stage 0 is cleared/loaded here and
@@ -1950,9 +2071,11 @@ begin
             if (csr.soft_reset = '1') then
                 tcc_div_quotient_d       <= (others => '0');
                 ecc_div_quotient_d       <= (others => '0');
+                ov_div_quotient_d        <= (others => '0');
                 tcc_div_remain_d         <= (others => '0');
                 ecc_div_remain_d         <= (others => '0');
                 hit_out_debug_timestamp  <= (others => '0');
+                hit_out_ov_base_8n       <= (others => '0');
                 stp_asi_hit_type0_channel_q <= (others => '0');
                 stp_asi_hit_type0_accept_q  <= '0';
                 for i in 0 to LPM_DIV_PIPELINE loop
@@ -2035,9 +2158,11 @@ begin
                     if (hit_padding.bypass_lapse = '0') then  -- mts -> gts transformation enable
                         hit_prediv.tcc_div_numer <= cc_gts_1n6_slv50;
                         hit_prediv.ecc_div_numer <= ecc_gts_1n6_slv50;
+                        hit_prediv.ov_div_numer  <= ov_gts_1n6_slv50;   -- frame base (white_ts - cc_out)
                     else -- mts -> gts transformation disable (this would result in random dist., which is simply for sanity check.)
                         hit_prediv.tcc_div_numer(hit_padding.cc_out'high downto 0)  <= hit_padding.cc_out;
                         hit_prediv.ecc_div_numer(hit_padding.ecc_out'high downto 0) <= hit_padding.ecc_out;
+                        hit_prediv.ov_div_numer  <= (others => '0');    -- frame base = 0 when ts = raw cc
                     end if;
                 end if;
 
@@ -2050,6 +2175,7 @@ begin
                     end if;
                     tcc_div_numer           <= hit_prediv.tcc_div_numer;
                     ecc_div_numer           <= hit_prediv.ecc_div_numer;
+                    ov_div_numer            <= hit_prediv.ov_div_numer;
                     hit_totcalc.asic        <= hit_prediv.asic;
                     hit_totcalc.channel     <= hit_prediv.channel;
                     hit_totcalc.t_fine      <= hit_prediv.t_fine;
@@ -2062,6 +2188,7 @@ begin
                     hit_totcalc.valid       <= '1';
                     hit_totcalc.tcc_div_numer <= hit_prediv.tcc_div_numer;
                     hit_totcalc.ecc_div_numer <= hit_prediv.ecc_div_numer;
+                    hit_totcalc.ov_div_numer  <= hit_prediv.ov_div_numer;
                 end if;
 
                 if (hit_totcalc.valid = '1') then
@@ -2104,6 +2231,9 @@ begin
                     hit_out.et_1n6		<= hit_div(LPM_DIV_PIPELINE).et_1n6;
                     hit_out.valid		<= '1';
                     hit_out.hiterr		<= hit_div(LPM_DIV_PIPELINE).hiterr;
+                    -- Divided counter_ov_base, co-sampled with hit_ts. CSR bit 6 may
+                    -- export this debug coordinate, yielding ov/5 - hit_ts = -phi.
+                    hit_out_ov_base_8n  <= ov_div_quotient_d(hit_out_ov_base_8n'range);
 
                     hit_delay_arrival_v          := resize(counter_gts_8n, hit_delay_arrival_v'length);
                     hit_delay_expected_latency_v := resize(unsigned(csr.expected_latency), hit_delay_expected_latency_v'length);
@@ -2186,6 +2316,7 @@ begin
         variable input_slot_v     : natural;
         variable terminate_lane_v : natural;
         variable extended_data_v   : std_logic_vector(86 downto 0);
+        variable arrival_gts_v     : unsigned(47 downto 0);
     begin
         if (i_rst = '1') then 
             route_startofrun_sent         <= (others => '0');
@@ -2205,6 +2336,7 @@ begin
             aso_hit_type1_extended_1_valid <= '0';
             coe_hit_type1_ts              <= (others => '0');
             coe_hit_arrival_gts_8n        <= (others => '0');
+            coe_hit_type1_latency_8n      <= (others => '0');
             coe_hit_type1_sidecar_data    <= (others => '0');
             coe_hit_type1_sidecar_valid   <= '0';
             stp_hit_out_asic_q            <= (others => '0');
@@ -2226,6 +2358,7 @@ begin
             aso_hit_type1_extended_1_valid <= '0';
             coe_hit_type1_ts              <= (others => '0');
             coe_hit_arrival_gts_8n        <= (others => '0');
+            coe_hit_type1_latency_8n      <= (others => '0');
             coe_hit_type1_sidecar_data    <= (others => '0');
             coe_hit_type1_sidecar_valid   <= '0';
             stp_hit_out_asic_q            <= (others => '0');
@@ -2288,10 +2421,19 @@ begin
                     -- extended_0/1 sources pack into bits [86:39]. Direct V3
                     -- histogram delay-mode input. Merged from eb67302.
                     coe_hit_type1_ts                                             <= hit_out_debug_timestamp;
-                    -- arrival GTS co-sampled with the emission ts on this beat;
-                    -- same counter_gts_8n used for hit_delay_arrival_v / egress_arrival.
-                    -- Downstream histogram delay key = arrival_gts - hit_type1_ts.
-                    coe_hit_arrival_gts_8n                                       <= std_logic_vector(counter_gts_8n);
+                    -- Arrival is co-sampled with the emitted timestamp. Default bit 6=0
+                    -- exports counter_gts_8n, so latency48 is physical lifetime in the
+                    -- same run epoch. Legacy frame_aligned_arrival=1 exports the divided
+                    -- overflow-base debug coordinate; it is not a physical frame-start
+                    -- timestamp and its subtraction must not be called hit lifetime.
+                    if (csr.frame_aligned_arrival = '1') then
+                        -- Debug only: ov/5 - hit_ts = -in-frame phase.
+                        arrival_gts_v                                            := unsigned(hit_out_ov_base_8n);
+                    else
+                        arrival_gts_v                                            := counter_gts_8n;
+                    end if;
+                    coe_hit_arrival_gts_8n                                       <= std_logic_vector(arrival_gts_v);
+                    coe_hit_type1_latency_8n                                     <= std_logic_vector(arrival_gts_v - unsigned(hit_out_debug_timestamp));
                     if (DEBUG >= 2) then
                         coe_hit_type1_sidecar_data                               <= debug_sidecar_hit_out;
                         coe_hit_type1_sidecar_valid                              <= debug_sidecar_hit_out_valid;

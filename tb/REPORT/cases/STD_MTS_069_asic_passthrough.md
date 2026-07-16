@@ -4,7 +4,7 @@
 
 ## Intent
 
-- **Scenario:** Drive distinct payload ASIC IDs and expect them to emerge unchanged in `aso_hit_type1_data[38:35]`. Guards ASIC identity propagation.
+- **Scenario:** Drive payload ASIC 9 while selecting local mux slot 1 in AVST channel bits `[5:4]`. Pass criteria: Type1 ASIC is source slot 1, not the stale payload ASIC field; channel and timestamp math remain unchanged.
 - **Primary checks:** UVM reference model checks normal payload, debug sideband, CSR/readout, and bounded protocol invariants for this documented case.
 - **Contract anchor:** DV_BASIC.md:B069
 
@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `1` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STD_MTS_069_asic_passthrough_after_s1.log`](../../uvm/logs/STD_MTS_069_asic_passthrough_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STD_MTS_069_asic_passthrough_s1.ucdb`](../../uvm/cov_after/STD_MTS_069_asic_passthrough_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STD_MTS_069_asic_passthrough_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STD_MTS_069_asic_passthrough_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `1` |
 | ℹ️ | log.csr | `3` |
 | ℹ️ | log.debug_burst | `0` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `1` |
+| ℹ️ | log.latency48_identity | `1` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `1` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 77.58 | 77.58 | 0.00 | 94.72 | 0.00 |
-| branch | 61.02 | 61.02 | 0.39 | 88.97 | 0.39 |
-| cond | 37.06 | 37.06 | 0.86 | 75.86 | 0.86 |
+| stmt | 78.04 | 78.04 | 0.00 | 91.52 | 0.00 |
+| branch | 59.74 | 59.74 | 0.00 | 81.49 | 0.00 |
+| cond | 35.48 | 35.48 | 0.00 | 70.96 | 0.00 |
 | expr | 50.00 | 50.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 75.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 22.22 | 0.00 | 66.66 | 0.00 |
-| toggle | 14.55 | 14.55 | 0.65 | 48.89 | 0.65 |
+| toggle | 11.13 | 11.13 | 0.23 | 40.00 | 0.23 |
 
 ---
 _Back to [bucket](../buckets/BASIC.md) &middot; [dashboard](../../DV_REPORT.md)_

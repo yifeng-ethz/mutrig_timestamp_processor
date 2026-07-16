@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `1` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/NEG_MTS_012_write_unsupported_addr5_after_s1.log`](../../uvm/logs/NEG_MTS_012_write_unsupported_addr5_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/NEG_MTS_012_write_unsupported_addr5_s1.ucdb`](../../uvm/cov_after/NEG_MTS_012_write_unsupported_addr5_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/NEG_MTS_012_write_unsupported_addr5_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/NEG_MTS_012_write_unsupported_addr5_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `0` |
 | ℹ️ | log.csr | `11` |
 | ℹ️ | log.debug_burst | `0` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `0` |
+| ℹ️ | log.latency48_identity | `0` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `0` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 51.22 | 51.22 | 0.19 | 86.25 | 0.19 |
-| branch | 33.85 | 33.85 | 0.40 | 76.77 | 0.40 |
-| cond | 4.31 | 4.31 | 0.00 | 58.62 | 0.00 |
-| expr | 0.00 | 0.00 | 0.00 | 100.00 | 0.00 |
+| stmt | 53.91 | 53.91 | 0.13 | 83.69 | 0.13 |
+| branch | 32.46 | 32.46 | 0.33 | 72.40 | 0.33 |
+| cond | 3.22 | 3.22 | 0.00 | 54.83 | 0.00 |
+| expr | 0.00 | 0.00 | 0.00 | 83.33 | 0.00 |
 | fsm_state | 25.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 0.00 | 0.00 | 0.00 | 77.77 | 0.00 |
-| toggle | 2.81 | 2.81 | 1.29 | 12.15 | 1.29 |
+| toggle | 1.88 | 1.88 | 0.76 | 10.75 | 0.76 |
 
 ---
 _Back to [bucket](../buckets/ERROR.md) &middot; [dashboard](../../DV_REPORT.md)_

@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `2` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STD_MTS_075_no_repeated_sop_same_channel_after_s1.log`](../../uvm/logs/STD_MTS_075_no_repeated_sop_same_channel_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STD_MTS_075_no_repeated_sop_same_channel_s1.ucdb`](../../uvm/cov_after/STD_MTS_075_no_repeated_sop_same_channel_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STD_MTS_075_no_repeated_sop_same_channel_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STD_MTS_075_no_repeated_sop_same_channel_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `2` |
 | ℹ️ | log.csr | `3` |
 | ℹ️ | log.debug_burst | `1` |
@@ -35,9 +35,11 @@
 | ℹ️ | log.dual_path_pairs | `2` |
 | ℹ️ | log.empty_eops | `0` |
 | ℹ️ | log.eops | `0` |
-| ℹ️ | log.hit_error_traces | `1` |
+| ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `2` |
-| ℹ️ | log.math_error_traces | `1` |
+| ℹ️ | log.latency48_identity | `2` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
+| ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `2` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 79.47 | 39.73 | 0.00 | 94.72 | 0.00 |
-| branch | 63.38 | 31.69 | 0.00 | 88.97 | 0.00 |
-| cond | 38.79 | 19.39 | 0.00 | 75.86 | 0.00 |
+| stmt | 78.94 | 39.47 | 0.00 | 91.52 | 0.00 |
+| branch | 61.03 | 30.52 | 0.00 | 81.49 | 0.00 |
+| cond | 37.09 | 18.55 | 0.81 | 71.77 | 0.41 |
 | expr | 50.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 37.50 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 11.11 | 0.00 | 66.66 | 0.00 |
-| toggle | 13.08 | 6.54 | 0.12 | 49.01 | 0.06 |
+| toggle | 10.60 | 5.30 | 0.12 | 40.33 | 0.06 |
 
 ---
 _Back to [bucket](../buckets/BASIC.md) &middot; [dashboard](../../DV_REPORT.md)_

@@ -1,4 +1,82 @@
-# Standalone Quartus Signoff
+# ✅ Signoff — mutrig_timestamp_processor
+
+**DUT:** `mts_processor` &nbsp; **Date:** `2026-07-16` &nbsp;
+**Release under check:** `26.6.0.0716` latency48 refresh &nbsp;
+**Git base:** `master` / `19e5310afe8ac0fbdb364cfc3ebc967976be4053` plus exact-source SHA-256 `6e8bd65c58772cdac91713b631ce9084573187128bcdb31f7c00dd845d32bed1`
+
+This page is the master signoff dashboard. Current synthesis fields and the
+prepared gate-flow contract live in
+[`../syn/SYN_REPORT.md`](../syn/SYN_REPORT.md); current DV evidence lives in
+[`../tb/DV_REPORT.md`](../tb/DV_REPORT.md).
+
+## Legend
+
+✅ pass / closed &middot; ⚠️ partial / caveat &middot; ❌ failed / blocked &middot; ❓ pending &middot; ℹ️ informational
+
+## 2026-07-16 - VERSION 26.6.0.0716
+
+Verdict: **PASS.**
+
+This section is the current source-of-truth for VERSION `26.6.0.0716`. Its
+results are bound to exact-source SHA-256
+`6e8bd65c58772cdac91713b631ce9084573187128bcdb31f7c00dd845d32bed1` and
+promotion receipt
+`92075a2db8acd9e617c00c1c88c1f179381b5dc2d56efe0462c00b2568b0d84d`.
+The older PASS below remains a historical VERSION `26.1.0.0506` baseline.
+
+### DV and static closure
+
+| Gate | Result | Evidence |
+|---|---|---|
+| Full isolated UVM | 521/521 PASS at seed `1` | STD 130, CORNER 131, STRESS 130, NEG 130 |
+| Continuous-frame UVM | 5/5 PASS | four bucket frames plus one 521-case all-buckets frame |
+| Focused re-seed | 5/5 PASS at seed `260716` | CSR mode, GTS lifetime, wrap, debug-minus-one, and explicit negative diagnostic |
+| Full-width lifetime identity | PASS | 27,944 checks of `latency48 = arrival48 - true_hit_ts48`; zero mismatch and zero production-negative result |
+| Directed negative diagnostics | PASS | 14 expected diagnostics across eight explicit negative cases; these are not production hits |
+| UCDB health | 531/531 PASS | all required isolated, frame, and focused UCDBs merged successfully |
+| Maintained VHDL smoke | 5 targets / 6 runs PASS | math, termination, re-arm, ASIC-ID UP/DW, and external epoch |
+| Hardware Tcl validation | 3/3 PASS | packaged port and parameter contract |
+| Questa static | PASS | lint `0`, CDC `0`, RDC `0` |
+
+The production latency path is the 48-bit hit lifetime derived from the true
+hit timestamp and arrival GTS. Signed negative values remain visible only for
+directed upstream epoch/configuration fault diagnostics; they are not hidden or
+reinterpreted as normal physical lifetime.
+
+### Synthesis and timing closure
+
+The standalone project targets `5AGXBA7D4F31C5` with Quartus Prime
+18.1.0 Build 625 Standard Edition. It uses Standard Fit, seed `1`, and the
+7.273 ns (137.5 MHz) signoff constraint.
+
+| Resource | Fitted usage | Accepted range |
+|---|---:|---:|
+| ALMs | 1,238 | 578..3,468 |
+| Registers | 2,321 | 980..5,880 |
+| Block memory bits | 491,745 | 245,835..1,475,010 |
+| RAM blocks | 63 | 31..186 |
+| DSP blocks | 0 | 0 |
+
+Every explicit corner has zero TNS for setup, hold, recovery, removal, and
+minimum pulse width.
+
+| Corner | Setup | Hold | Recovery | Removal | Minimum pulse width |
+|---|---:|---:|---:|---:|---:|
+| Slow 1100 mV 85 C | +1.254 ns | +0.272 ns | +2.829 ns | +1.017 ns | +2.624 ns |
+| Slow 1100 mV 0 C | +1.293 ns | +0.196 ns | +3.035 ns | +0.945 ns | +2.667 ns |
+| Fast 1100 mV 85 C | +3.700 ns | +0.164 ns | +4.361 ns | +0.563 ns | +2.465 ns |
+| Fast 1100 mV 0 C | +4.008 ns | +0.112 ns | +4.670 ns | +0.516 ns | +2.471 ns |
+
+The maintained RTL and post-fit functional-netlist simulations both produce
+signature `1820064b`. This is a zero-delay comparison with no SDF; the four
+explicit TimeQuest reports above own timing closure.
+
+### Current evidence
+
+- exact-source receipt: `tb/evidence/current_source_signoff.json`;
+- generated DV summary: `tb/DV_REPORT.md`;
+- current-release evidence: `tb/REPORT/current_release/full_dv_26_6_0_0716.md`;
+- synthesis report: `syn/SYN_REPORT.md`.
 
 ## 2026-05-11 - VERSION 26.1.0.0506
 

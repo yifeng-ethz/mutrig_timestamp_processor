@@ -5,7 +5,7 @@ SIM_LIB_DIR    := /data1/intelFPGA_pro/23.1/quartus/eda/sim_lib
 IP_SRC = $(realpath ..)
 WORK   = work_mts_processor
 
-.PHONY: license_check compile run_math run_term run_rearm run_asic_id run_all clean
+.PHONY: license_check compile run_math run_term run_rearm run_asic_id run_external_epoch run_all clean
 
 license_check:
 	@echo "═══ Checking Mentor floating license at $(QUESTA_LICENSE_SERVER) ═══"
@@ -19,7 +19,8 @@ $(WORK)/_vmake: $(IP_SRC)/dual_port_rom.v \
 	                mts_processor_tb.vhd \
 	                mts_processor_terminating_tb.vhd \
 	                mts_processor_rearm_tb.vhd \
-	                mts_processor_asic_id_tb.vhd
+	                mts_processor_asic_id_tb.vhd \
+	                mts_processor_external_epoch_tb.vhd
 	@if [ -d "$(WORK)" ]; then find "$(WORK)" -mindepth 1 -delete; fi
 	@if [ -d lpm ]; then find lpm -mindepth 1 -delete; fi
 	$(VLIB) $(WORK)
@@ -34,6 +35,7 @@ $(WORK)/_vmake: $(IP_SRC)/dual_port_rom.v \
 	$(VCOM) -2008 -work $(WORK) mts_processor_terminating_tb.vhd
 	$(VCOM) -2008 -work $(WORK) mts_processor_rearm_tb.vhd
 	$(VCOM) -2008 -work $(WORK) mts_processor_asic_id_tb.vhd
+	$(VCOM) -2008 -work $(WORK) mts_processor_external_epoch_tb.vhd
 	cp $(IP_SRC)/dual_port_rom_init.txt .
 	@touch $@
 
@@ -51,7 +53,10 @@ run_asic_id: compile
 	$(VSIM) -c -L lpm -do "run -all; quit -f" -work $(WORK) mts_processor_asic_id_tb
 	$(VSIM) -c -L lpm -gDUT_BANK=DW -gASIC_OFFSET=4 -do "run -all; quit -f" -work $(WORK) mts_processor_asic_id_tb
 
-run_all: run_math run_term run_rearm run_asic_id
+run_external_epoch: compile
+	$(VSIM) -c -L lpm -do "run -all; quit -f" -work $(WORK) mts_processor_external_epoch_tb
+
+run_all: run_math run_term run_rearm run_asic_id run_external_epoch
 
 clean:
 	@if [ -d "$(WORK)" ]; then find "$(WORK)" -mindepth 1 -delete; fi

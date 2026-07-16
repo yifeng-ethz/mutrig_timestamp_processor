@@ -4,7 +4,7 @@
 
 ## Intent
 
-- **Scenario:** Write `op_mode[30:28]` with `derive_tot`, `delay_ts_field_use_t`, and reserved bit 28 variations; expect bits 30 and 29 to read back and bit 28 to remain functionally inert. Documents the actual implemented subset.
+- **Scenario:** Sweep `op_mode[30:28]`, then set/read/clear CSR bit 6. Verify bits 30 and 29 read back, bit 28 remains inert, bit 6 defaults low for physical arrival, and the overflow-base diagnostic selection round-trips exactly. Pass criteria: All implemented mode fields match masked readback; bit 6 returns to the production-default direct-arrival mode after clear.
 - **Primary checks:** UVM reference model checks normal payload, debug sideband, CSR/readout, and bounded protocol invariants for this documented case.
 - **Contract anchor:** DV_BASIC.md:B020
 
@@ -25,10 +25,10 @@
 |:---:|---|---|
 | ✅ | observed_txn | `1` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STD_MTS_020_op_mode_bits_readback_after_s1.log`](../../uvm/logs/STD_MTS_020_op_mode_bits_readback_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STD_MTS_020_op_mode_bits_readback_s1.ucdb`](../../uvm/cov_after/STD_MTS_020_op_mode_bits_readback_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STD_MTS_020_op_mode_bits_readback_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STD_MTS_020_op_mode_bits_readback_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `0` |
-| ℹ️ | log.csr | `6` |
+| ℹ️ | log.csr | `10` |
 | ℹ️ | log.debug_burst | `0` |
 | ℹ️ | log.debug_path_required | `1` |
 | ℹ️ | log.debug_ts | `0` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `0` |
+| ℹ️ | log.latency48_identity | `0` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `0` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 51.78 | 51.78 | 0.00 | 88.88 | 0.00 |
-| branch | 32.28 | 32.28 | 0.00 | 75.98 | 0.00 |
-| cond | 4.31 | 4.31 | 0.00 | 68.96 | 0.00 |
+| stmt | 54.42 | 54.42 | 0.00 | 87.93 | 0.00 |
+| branch | 31.16 | 31.16 | 0.00 | 71.75 | 0.00 |
+| cond | 3.22 | 3.22 | 0.00 | 63.70 | 0.00 |
 | expr | 0.00 | 0.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 25.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 0.00 | 0.00 | 0.00 | 66.66 | 0.00 |
-| toggle | 1.44 | 1.44 | 0.23 | 15.53 | 0.23 |
+| toggle | 1.18 | 1.18 | 0.23 | 13.24 | 0.23 |
 
 ---
 _Back to [bucket](../buckets/BASIC.md) &middot; [dashboard](../../DV_REPORT.md)_

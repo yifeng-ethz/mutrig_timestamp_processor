@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `128` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/NEG_MTS_084_debug_zero_changes_functionality_after_s1.log`](../../uvm/logs/NEG_MTS_084_debug_zero_changes_functionality_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/NEG_MTS_084_debug_zero_changes_functionality_s1.ucdb`](../../uvm/cov_after/NEG_MTS_084_debug_zero_changes_functionality_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/NEG_MTS_084_debug_zero_changes_functionality_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/NEG_MTS_084_debug_zero_changes_functionality_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `128` |
 | ℹ️ | log.csr | `6` |
 | ℹ️ | log.debug_burst | `128` |
@@ -35,9 +35,11 @@
 | ℹ️ | log.dual_path_pairs | `128` |
 | ℹ️ | log.empty_eops | `0` |
 | ℹ️ | log.eops | `0` |
-| ℹ️ | log.hit_error_traces | `21` |
+| ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `128` |
-| ℹ️ | log.math_error_traces | `21` |
+| ℹ️ | log.latency48_identity | `128` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
+| ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `128` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 80.49 | 0.63 | 0.00 | 95.48 | 0.00 |
-| branch | 63.75 | 0.50 | 0.04 | 89.80 | 0.00 |
-| cond | 38.73 | 0.30 | 0.00 | 83.62 | 0.00 |
+| stmt | 79.84 | 0.62 | 0.00 | 92.68 | 0.00 |
+| branch | 62.98 | 0.49 | 0.00 | 83.44 | 0.00 |
+| cond | 38.70 | 0.30 | 0.00 | 82.25 | 0.00 |
 | expr | 50.00 | 0.39 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 75.00 | 0.59 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 0.17 | 0.00 | 77.77 | 0.00 |
-| toggle | 27.10 | 0.21 | 0.07 | 49.94 | 0.00 |
+| toggle | 22.67 | 0.18 | 0.14 | 43.85 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/ERROR.md) &middot; [dashboard](../../DV_REPORT.md)_

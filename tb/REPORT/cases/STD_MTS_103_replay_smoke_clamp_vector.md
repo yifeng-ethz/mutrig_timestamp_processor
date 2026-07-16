@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `2` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STD_MTS_103_replay_smoke_clamp_vector_after_s1.log`](../../uvm/logs/STD_MTS_103_replay_smoke_clamp_vector_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STD_MTS_103_replay_smoke_clamp_vector_s1.ucdb`](../../uvm/cov_after/STD_MTS_103_replay_smoke_clamp_vector_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STD_MTS_103_replay_smoke_clamp_vector_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STD_MTS_103_replay_smoke_clamp_vector_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `2` |
 | ℹ️ | log.csr | `3` |
 | ℹ️ | log.debug_burst | `1` |
@@ -35,9 +35,11 @@
 | ℹ️ | log.dual_path_pairs | `2` |
 | ℹ️ | log.empty_eops | `0` |
 | ℹ️ | log.eops | `0` |
-| ℹ️ | log.hit_error_traces | `1` |
+| ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `2` |
-| ℹ️ | log.math_error_traces | `1` |
+| ℹ️ | log.latency48_identity | `2` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
+| ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `2` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 76.83 | 38.41 | 0.00 | 94.91 | 0.00 |
-| branch | 56.69 | 28.34 | 0.00 | 89.76 | 0.00 |
-| cond | 27.58 | 13.79 | 0.00 | 78.44 | 0.00 |
+| stmt | 76.89 | 38.45 | 0.00 | 92.16 | 0.00 |
+| branch | 54.87 | 27.43 | 0.00 | 82.79 | 0.00 |
+| cond | 26.61 | 13.30 | 0.00 | 74.19 | 0.00 |
 | expr | 50.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 50.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 11.11 | 5.55 | 0.00 | 66.66 | 0.00 |
-| toggle | 19.05 | 9.53 | 0.31 | 50.23 | 0.15 |
+| toggle | 13.75 | 6.88 | 0.18 | 41.91 | 0.09 |
 
 ---
 _Back to [bucket](../buckets/BASIC.md) &middot; [dashboard](../../DV_REPORT.md)_

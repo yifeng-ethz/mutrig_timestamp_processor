@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `1` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/NEG_MTS_015_write_expected_latency_during_reset_after_s1.log`](../../uvm/logs/NEG_MTS_015_write_expected_latency_during_reset_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/NEG_MTS_015_write_expected_latency_during_reset_s1.ucdb`](../../uvm/cov_after/NEG_MTS_015_write_expected_latency_during_reset_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/NEG_MTS_015_write_expected_latency_during_reset_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/NEG_MTS_015_write_expected_latency_during_reset_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `0` |
 | ℹ️ | log.csr | `4` |
 | ℹ️ | log.debug_burst | `0` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `0` |
+| ℹ️ | log.latency48_identity | `0` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `0` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 49.71 | 49.71 | 0.00 | 86.44 | 0.00 |
-| branch | 31.88 | 31.88 | 0.00 | 77.16 | 0.00 |
-| cond | 4.31 | 4.31 | 0.00 | 58.62 | 0.00 |
-| expr | 0.00 | 0.00 | 0.00 | 100.00 | 0.00 |
+| stmt | 52.75 | 52.75 | 0.00 | 83.82 | 0.00 |
+| branch | 30.84 | 30.84 | 0.00 | 72.72 | 0.00 |
+| cond | 3.22 | 3.22 | 0.00 | 54.83 | 0.00 |
+| expr | 0.00 | 0.00 | 0.00 | 83.33 | 0.00 |
 | fsm_state | 25.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 0.00 | 0.00 | 0.00 | 77.77 | 0.00 |
-| toggle | 2.94 | 2.94 | 0.72 | 15.30 | 0.72 |
+| toggle | 1.91 | 1.91 | 0.42 | 12.66 | 0.42 |
 
 ---
 _Back to [bucket](../buckets/ERROR.md) &middot; [dashboard](../../DV_REPORT.md)_

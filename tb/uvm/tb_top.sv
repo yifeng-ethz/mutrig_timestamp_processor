@@ -31,7 +31,6 @@ module tb_top;
   logic        hit1_extended_0_valid;
   logic [86:0] hit1_extended_1_data;
   logic        hit1_extended_1_valid;
-  logic [47:0] hit1_ts;
   logic [63:0] hit0_sidecar_data;
   logic        hit0_sidecar_valid;
   logic [63:0] hit1_sidecar_data;
@@ -76,7 +75,9 @@ module tb_top;
     .aso_hit_type1_extended_0_valid (hit1_extended_0_valid),
     .aso_hit_type1_extended_1_data  (hit1_extended_1_data),
     .aso_hit_type1_extended_1_valid (hit1_extended_1_valid),
-    .coe_hit_type1_ts              (hit1_ts),
+    .coe_hit_type1_ts              (hit1_if.ts),
+    .coe_hit_arrival_gts_8n        (hit1_if.arrival_gts),
+    .coe_hit_type1_latency_8n      (hit1_if.latency),
     .asi_ctrl_data               (ctrl_if.data),
     .asi_ctrl_valid              (ctrl_if.valid),
     .aso_debug_ts_valid          (dbg_if.debug_ts_valid),
@@ -102,11 +103,20 @@ module tb_top;
       hit1_if.empty |-> (hit1_if.valid && hit1_if.eop);
   endproperty
 
+  property p_latency48_identity;
+    @(posedge clk) disable iff (rst)
+      hit1_if.valid |->
+        (hit1_if.latency == (hit1_if.arrival_gts - hit1_if.ts));
+  endproperty
+
   assert property (p_hit1_sop_requires_valid)
     else $error("hit_type1 SOP asserted without valid");
 
   assert property (p_empty_requires_eop)
     else $error("hit_type1 empty asserted without valid EOP");
+
+  assert property (p_latency48_identity)
+    else $error("latency48 is not arrival_gts - true_hit_ts on a valid Type1 beat");
 
   initial begin
     uvm_config_db#(virtual mtsp_reset_if.drv)::set(

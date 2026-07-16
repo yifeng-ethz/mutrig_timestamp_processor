@@ -30,6 +30,7 @@ VCOM_COV    ?= -cover bcesft
 VLOG_COV    ?= +cover=bcesft
 DEBUG_PATH_REQUIRED ?= 1
 RESET_EXPECTED_LATENCY ?= 2000
+EXPECTED_BANK_OFFSET ?= 0
 DUT_GENERIC_ARGS ?=
 CASE_VSIM_GENERIC_ARGS :=
 
@@ -60,6 +61,7 @@ RESET_EXPECTED_LATENCY := 128
 endif
 ifeq ($(CASE_ID),STD_MTS_119_bank_string_is_debug_only)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/BANK=DOWN
+EXPECTED_BANK_OFFSET := 4
 endif
 ifeq ($(CASE_ID),STD_MTS_120_debug_zero_is_functionally_equivalent)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DEBUG=0
@@ -71,6 +73,9 @@ ifeq ($(CASE_ID),CORNER_MTS_018_counter_read_on_low_word_rollover)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DV_COUNTER_SEED_ENABLE=1
 endif
 ifeq ($(CASE_ID),CORNER_MTS_063_first_hit_disabled_channel_no_sop)
+CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=1 -g/tb_top/dut/ENABLED_CHANNEL_HI=3
+endif
+ifeq ($(CASE_ID),NEG_MTS_063_sop_on_disabled_channel)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/ENABLED_CHANNEL_LO=1 -g/tb_top/dut/ENABLED_CHANNEL_HI=3
 endif
 ifeq ($(CASE_ID),CORNER_MTS_091_single_channel_window_index0)
@@ -129,6 +134,7 @@ CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DEBUG=0
 endif
 ifeq ($(CASE_ID),STRESS_MTS_089_bank_up_vs_down_compare)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/BANK=DOWN
+EXPECTED_BANK_OFFSET := 4
 endif
 ifeq ($(CASE_ID),STRESS_MTS_090_inert_parameter_sweep_compare)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/PADDING_EOP_WAIT_CYCLE=1 -g/tb_top/dut/CRCERR_BIT_LOC=2 -g/tb_top/dut/FRAME_CORRPT_BIT_LOC=1
@@ -154,6 +160,7 @@ CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/DEBUG=0
 endif
 ifeq ($(CASE_ID),NEG_MTS_085_bank_string_changes_functionality)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/BANK=DOWN
+EXPECTED_BANK_OFFSET := 4
 endif
 ifeq ($(CASE_ID),NEG_MTS_086_padding_eop_wait_changes_behavior_today)
 CASE_VSIM_GENERIC_ARGS += -g/tb_top/dut/PADDING_EOP_WAIT_CYCLE=1
@@ -232,6 +239,7 @@ run_sim:
 	  +MTSP_FRAME_KIND=$(FRAME_KIND) +MTSP_FRAME_BUCKET=$(FRAME_BUCKET) \
 	  +MTSP_DEBUG_PATH_REQUIRED=$(DEBUG_PATH_REQUIRED) \
 	  +MTSP_EXPECTED_LATENCY_RESET=$(RESET_EXPECTED_LATENCY) \
+	  +MTSP_EXPECTED_BANK_OFFSET=$(EXPECTED_BANK_OFFSET) \
 	  -suppress 3009 -suppress 3473 -voptargs="+acc" \
 	  $(CASE_VSIM_GENERIC_ARGS) $(DUT_GENERIC_ARGS) $(VSIM_GENERIC_ARGS) \
 	  work.$(TB_TOP) \

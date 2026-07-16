@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `36` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STRESS_MTS_072_terminate_after_dense_burst_after_s1.log`](../../uvm/logs/STRESS_MTS_072_terminate_after_dense_burst_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STRESS_MTS_072_terminate_after_dense_burst_s1.ucdb`](../../uvm/cov_after/STRESS_MTS_072_terminate_after_dense_burst_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STRESS_MTS_072_terminate_after_dense_burst_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STRESS_MTS_072_terminate_after_dense_burst_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `36` |
 | ℹ️ | log.csr | `6` |
 | ℹ️ | log.debug_burst | `32` |
@@ -35,9 +35,11 @@
 | ℹ️ | log.dual_path_pairs | `32` |
 | ℹ️ | log.empty_eops | `4` |
 | ℹ️ | log.eops | `4` |
-| ℹ️ | log.hit_error_traces | `1` |
+| ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `32` |
-| ℹ️ | log.math_error_traces | `1` |
+| ℹ️ | log.latency48_identity | `36` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
+| ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `32` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 85.31 | 2.37 | 0.00 | 95.29 | 0.00 |
-| branch | 74.40 | 2.07 | 0.00 | 87.40 | 0.00 |
-| cond | 50.86 | 1.41 | 0.00 | 78.44 | 0.00 |
-| expr | 50.00 | 1.39 | 0.00 | 50.00 | 0.00 |
+| stmt | 82.92 | 2.30 | 0.00 | 93.19 | 0.00 |
+| branch | 70.12 | 1.95 | 0.00 | 81.49 | 0.00 |
+| cond | 50.00 | 1.39 | 0.00 | 76.61 | 0.00 |
+| expr | 50.00 | 1.39 | 0.00 | 83.33 | 0.00 |
 | fsm_state | 100.00 | 2.78 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 44.44 | 1.23 | 0.00 | 66.66 | 0.00 |
-| toggle | 20.52 | 0.57 | 0.00 | 52.86 | 0.00 |
+| toggle | 18.76 | 0.52 | 0.00 | 49.02 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/PROF.md) &middot; [dashboard](../../DV_REPORT.md)_

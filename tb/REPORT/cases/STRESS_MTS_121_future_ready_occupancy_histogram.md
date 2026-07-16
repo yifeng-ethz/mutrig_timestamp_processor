@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `64` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STRESS_MTS_121_future_ready_occupancy_histogram_after_s1.log`](../../uvm/logs/STRESS_MTS_121_future_ready_occupancy_histogram_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STRESS_MTS_121_future_ready_occupancy_histogram_s1.ucdb`](../../uvm/cov_after/STRESS_MTS_121_future_ready_occupancy_histogram_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STRESS_MTS_121_future_ready_occupancy_histogram_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STRESS_MTS_121_future_ready_occupancy_histogram_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `64` |
 | ℹ️ | log.csr | `33` |
 | ℹ️ | log.debug_burst | `0` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `64` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `0` |
+| ℹ️ | log.latency48_identity | `64` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `0` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 62.33 | 0.97 | 0.00 | 95.29 | 0.00 |
-| branch | 57.08 | 0.89 | 0.00 | 87.45 | 0.00 |
-| cond | 37.06 | 0.58 | 0.00 | 79.31 | 0.00 |
-| expr | 0.00 | 0.00 | 0.00 | 50.00 | 0.00 |
+| stmt | 62.00 | 0.97 | 0.00 | 93.70 | 0.00 |
+| branch | 52.59 | 0.82 | 0.00 | 82.46 | 0.00 |
+| cond | 33.06 | 0.52 | 0.00 | 79.03 | 0.00 |
+| expr | 0.00 | 0.00 | 0.00 | 83.33 | 0.00 |
 | fsm_state | 100.00 | 1.56 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 44.44 | 0.69 | 0.00 | 66.66 | 0.00 |
-| toggle | 3.63 | 0.06 | 0.00 | 53.45 | 0.00 |
+| toggle | 2.79 | 0.04 | 0.00 | 50.91 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/PROF.md) &middot; [dashboard](../../DV_REPORT.md)_

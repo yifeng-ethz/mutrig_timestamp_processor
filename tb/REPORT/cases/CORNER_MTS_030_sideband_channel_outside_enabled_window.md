@@ -23,27 +23,29 @@
 
 | status | field | value |
 |:---:|---|---|
-| ✅ | observed_txn | `5` |
+| ✅ | observed_txn | `4` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/CORNER_MTS_030_sideband_channel_outside_enabled_window_after_s1.log`](../../uvm/logs/CORNER_MTS_030_sideband_channel_outside_enabled_window_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/CORNER_MTS_030_sideband_channel_outside_enabled_window_s1.ucdb`](../../uvm/cov_after/CORNER_MTS_030_sideband_channel_outside_enabled_window_s1.ucdb) |
-| ℹ️ | log.beats | `5` |
+| ℹ️ | log | `uvm/logs/CORNER_MTS_030_sideband_channel_outside_enabled_window_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/CORNER_MTS_030_sideband_channel_outside_enabled_window_s1.ucdb` — local generated artifact; intentionally not published |
+| ℹ️ | log.beats | `4` |
 | ℹ️ | log.csr | `2` |
-| ℹ️ | log.debug_burst | `1` |
+| ℹ️ | log.debug_burst | `0` |
 | ℹ️ | log.debug_path_required | `1` |
-| ℹ️ | log.debug_ts | `1` |
-| ℹ️ | log.dual_path_pairs | `1` |
+| ℹ️ | log.debug_ts | `0` |
+| ℹ️ | log.dual_path_pairs | `0` |
 | ℹ️ | log.empty_eops | `4` |
 | ℹ️ | log.eops | `4` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `1` |
+| ℹ️ | log.latency48_identity | `4` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
-| ℹ️ | log.payloads | `1` |
+| ℹ️ | log.payloads | `0` |
 | ℹ️ | log.ready_x | `0` |
 | ℹ️ | log.scoreboard_ports | `csr, hit0, hit1, debug_ts, debug_burst, ts_delta` |
-| ℹ️ | log.trace_detail_lines | `1` |
-| ℹ️ | log.traces | `1` |
-| ℹ️ | log.ts_delta | `1` |
+| ℹ️ | log.trace_detail_lines | `0` |
+| ℹ️ | log.traces | `0` |
+| ℹ️ | log.ts_delta | `0` |
 
 ## Coverage
 
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 80.97 | 16.19 | 0.00 | 90.84 | 0.00 |
-| branch | 68.89 | 13.78 | 0.00 | 82.42 | 0.00 |
-| cond | 49.13 | 9.83 | 0.00 | 69.82 | 0.00 |
-| expr | 50.00 | 10.00 | 0.00 | 100.00 | 0.00 |
-| fsm_state | 100.00 | 20.00 | 0.00 | 100.00 | 0.00 |
-| fsm_trans | 33.33 | 6.67 | 0.00 | 66.66 | 0.00 |
-| toggle | 8.07 | 1.61 | 0.07 | 33.29 | 0.01 |
+| stmt | 60.59 | 15.15 | 0.13 | 89.52 | 0.03 |
+| branch | 52.59 | 13.15 | 0.97 | 77.74 | 0.24 |
+| cond | 34.67 | 8.67 | 3.23 | 69.35 | 0.81 |
+| expr | 50.00 | 12.50 | 16.67 | 100.00 | 4.17 |
+| fsm_state | 100.00 | 25.00 | 0.00 | 100.00 | 0.00 |
+| fsm_trans | 33.33 | 8.33 | 0.00 | 66.66 | 0.00 |
+| toggle | 3.94 | 0.98 | 0.17 | 25.68 | 0.04 |
 
 ---
 _Back to [bucket](../buckets/EDGE.md) &middot; [dashboard](../../DV_REPORT.md)_

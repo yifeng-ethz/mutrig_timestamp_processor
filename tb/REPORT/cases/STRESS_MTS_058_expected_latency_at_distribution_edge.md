@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `72` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STRESS_MTS_058_expected_latency_at_distribution_edge_after_s1.log`](../../uvm/logs/STRESS_MTS_058_expected_latency_at_distribution_edge_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STRESS_MTS_058_expected_latency_at_distribution_edge_s1.ucdb`](../../uvm/cov_after/STRESS_MTS_058_expected_latency_at_distribution_edge_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STRESS_MTS_058_expected_latency_at_distribution_edge_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STRESS_MTS_058_expected_latency_at_distribution_edge_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `72` |
 | ℹ️ | log.csr | `7` |
 | ℹ️ | log.debug_burst | `72` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `32` |
 | ℹ️ | log.inputs | `72` |
+| ℹ️ | log.latency48_identity | `72` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `32` |
 | ℹ️ | log.payloads | `72` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 81.73 | 1.14 | 0.00 | 94.53 | 0.00 |
-| branch | 66.53 | 0.92 | 0.00 | 85.43 | 0.00 |
-| cond | 38.79 | 0.54 | 0.00 | 78.44 | 0.00 |
-| expr | 50.00 | 0.69 | 0.00 | 50.00 | 0.00 |
+| stmt | 80.61 | 1.12 | 0.00 | 92.68 | 0.00 |
+| branch | 63.96 | 0.89 | 0.00 | 79.87 | 0.00 |
+| cond | 38.70 | 0.54 | 0.00 | 76.61 | 0.00 |
+| expr | 50.00 | 0.69 | 0.00 | 83.33 | 0.00 |
 | fsm_state | 75.00 | 1.04 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 0.31 | 0.00 | 55.55 | 0.00 |
-| toggle | 27.33 | 0.38 | 0.00 | 52.24 | 0.00 |
+| toggle | 23.43 | 0.33 | 0.00 | 48.52 | 0.00 |
 
 ---
 _Back to [bucket](../buckets/PROF.md) &middot; [dashboard](../../DV_REPORT.md)_

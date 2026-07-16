@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `1` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STD_MTS_049_reset_word_is_nonfunctional_today_after_s1.log`](../../uvm/logs/STD_MTS_049_reset_word_is_nonfunctional_today_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STD_MTS_049_reset_word_is_nonfunctional_today_s1.ucdb`](../../uvm/cov_after/STD_MTS_049_reset_word_is_nonfunctional_today_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STD_MTS_049_reset_word_is_nonfunctional_today_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STD_MTS_049_reset_word_is_nonfunctional_today_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `0` |
 | ℹ️ | log.csr | `1` |
 | ℹ️ | log.debug_burst | `0` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `0` |
 | ℹ️ | log.inputs | `0` |
+| ℹ️ | log.latency48_identity | `0` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `0` |
 | ℹ️ | log.payloads | `0` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 50.28 | 50.28 | 0.18 | 91.14 | 0.18 |
-| branch | 32.28 | 32.28 | 0.39 | 81.88 | 0.39 |
-| cond | 5.17 | 5.17 | 0.00 | 69.82 | 0.00 |
+| stmt | 53.40 | 53.40 | 0.13 | 89.47 | 0.13 |
+| branch | 31.49 | 31.49 | 0.33 | 76.62 | 0.33 |
+| cond | 3.22 | 3.22 | 0.00 | 64.51 | 0.00 |
 | expr | 0.00 | 0.00 | 0.00 | 100.00 | 0.00 |
 | fsm_state | 25.00 | 25.00 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 0.00 | 0.00 | 0.00 | 66.66 | 0.00 |
-| toggle | 1.26 | 1.26 | 0.05 | 29.94 | 0.05 |
+| toggle | 0.97 | 0.97 | 0.03 | 18.81 | 0.03 |
 
 ---
 _Back to [bucket](../buckets/BASIC.md) &middot; [dashboard](../../DV_REPORT.md)_

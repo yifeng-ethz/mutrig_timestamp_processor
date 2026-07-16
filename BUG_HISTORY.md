@@ -57,6 +57,116 @@ Historical formal note:
 | [BUG-020-H](#bug-020-h-disabled-mts-debug-streams-still-reported-as-unconnected) | H | non-datapath-refactor | `common (FEB v3 Platform Designer open/generate)` | fixed | FEB v3 Qsys GUI/generation cleanup 2026-05-15 | this commit | MTS debug streams remained enabled in packaging metadata even when the production FEB v3 configuration set `DEBUG=0`. |
 | [BUG-021-R](#bug-021-r-reset-state-ignored-run_prepare-and-deadlocked-the-run-control-fsm) | R | hard stuck error | `common (host retries the run-start sequence)` | fixed / sim-validated, FEB retest pending | headless SignalTap on FEB SciFi v4 SOF 67965fee: both MTS instances wedged in RESET | this commit | The RESET state had no `RUN_PREPARE` transition, so a second readyless `RUN_PREPARE` (accepted by BUG-019-R's capture path) left the FSM stuck in `{RESET, reset_flow=SYNC, run_state_cmd=RUN_PREPARE}`, `RUNNING` never asserted, and no `hit_type1` extended hits were emitted. |
 | [BUG-022-R](#bug-022-r-type1-asic-id-came-from-stale-payload-bits-instead-of-the-readyless-mux-slot) | R | soft error | `common (histogram per-ASIC Type1 filtering)` | fixed / standalone-verified, FEB compile pending | FEB SciFi v4 histogram filter calibration 2026-05-25 | this commit | Type1 ASIC[38:35] was copied from incoming Type0 payload bits instead of the mux-selected input slot, so the histogram fixed filter saw ASIC ID 0 for every bank hit. |
+| [BUG-023-R](#bug-023-r-frame-sop-arrival-mixed-incompatible-periods-and-smeared-the-phase-diagnostic) | R | soft error | `common (header-synchronous latency diagnostic)` | fixed / delta DV and static pass, full regression and synthesis pending | Phase-I histogram header-sync integration 2026-06-01 | this change | A frame-SOP GTS coordinate mixed the 910-cycle emulator frame with the MTS overflow period, so subtraction could smear the phase plot and be mistaken for physical hit lifetime. |
+| [BUG-024-H](#bug-024-h-default-uvm-hit-helper-put-the-asic-in-the-wrong-avst-channel-bits) | H | non-datapath-refactor | `common (ordinary multi-ASIC UVM stimulus)` | fixed / directed DV pass, full regression pending | `STD_MTS_099_arrival_delta_uses_gts` on VERSION 26.5.0.0713 | this change | The default UVM hit helper placed the requested ASIC in AVST channel[3:0], while RTL derives Type1 ASIC from channel[5:4], so ASIC2 stimulus actually selected ASIC0. |
+| [BUG-025-H](#bug-025-h-nominal-arrival-delta-stimulus-created-a-negative-physical-lifetime) | H | non-datapath-refactor | `common (B099 latency smoke)` | fixed / directed DV pass, full regression pending | `STD_MTS_099_arrival_delta_uses_gts` on VERSION 26.5.0.0713 | this change | The nominal arrival-delta case generated a true hit timestamp ahead of its freshly synchronized GTS and silently treated the resulting negative value as ordinary debug data. |
+
+## 2026-07-15
+
+### BUG-023-R: Frame-SOP arrival mixed incompatible periods and smeared the phase diagnostic
+
+- First seen:
+  - Phase-I histogram header-sync integration while separating physical hit
+    lifetime from the optional signed phase diagnostic.
+- Symptom:
+  - using a latched emulator frame-SOP GTS as the subtraction base produced a
+    broad or frame-dependent coordinate instead of a sharp phase peak;
+  - the signed result could be mislabeled as negative transport latency.
+- Root cause:
+  - the emulator frame period (including the directed 910-cycle mode) and the
+    MTS overflow-base period are different, so the frame-SOP base does not
+    algebraically cancel the white-timestamp overflow term.
+- Fix status:
+  - state:
+    - fixed in VERSION `26.5.0.0713`; directed delta DV and lint/CDC/RDC pass;
+      full 521-case and standalone synthesis closure remain pending.
+  - mechanism:
+    - add a divider for the exact `counter_ov_base` coordinate and co-sample it
+      with the Type1 timestamp;
+    - keep CSR bit 6 default-low for direct emission GTS and physical lifetime;
+    - when bit 6 is explicitly high, export `ov_base/5`, making the diagnostic
+      subtraction exactly `-in_frame_phase`;
+    - export the already computed 48-bit latency so downstream logic does not
+      reconstruct it from independently sampled values.
+  - before_fix_outcome:
+    - frame-SOP subtraction mixed incompatible bases and could smear the plot.
+  - after_fix_outcome:
+    - X041 observes signed `-900`, maps it to bin 10 modulo 910, repeats the
+      result one frame later, and repeats it after `RUN_PREPARE -> SYNC -> RUNNING`;
+    - B099 and E035 prove the production 48-bit identity and epoch carry with
+      nonnegative lifetime.
+  - potential_hazard:
+    - medium until the full regression, gate-level simulation, and standalone
+      timing closure are rerun for the added divider and conduit interface.
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Commit:
+  - this change
+
+### BUG-024-H: Default UVM hit helper put the ASIC in the wrong AVST channel bits
+
+- First seen:
+  - B099 on VERSION `26.5.0.0713` expected ASIC2 but observed Type1 ASIC0.
+- Symptom:
+  - ordinary multi-ASIC UVM cases could report payload ASIC mismatches even
+    though the intended local ASIC number was present in the legacy data field.
+  - B069 still expected payload ASIC 9 after RTL had intentionally switched to
+    the readyless mux-slot source-ID contract.
+- Root cause:
+  - `send_hit_beat()` encoded `{2'b00, asic[3:0]}` while the fixed RTL source-ID
+    contract derives the local ASIC slot from `asi_hit_type0_channel[5:4]`.
+- Fix status:
+  - state:
+    - fixed in the UVM helper; directed delta DV passes; full regression pending.
+  - mechanism:
+    - ordinary hits now encode `{asic[1:0], 4'b0000}`;
+    - mapping-specific tests retain the explicit sideband helper.
+    - ordinary output checks expect the local source slot `asic[1:0]`; the
+      legacy payload ASIC field is deliberately allowed to disagree.
+  - before_fix_outcome:
+    - ordinary ASIC1..3 stimulus selected slot 0 at the DUT boundary.
+  - after_fix_outcome:
+    - B099 passes with ASIC2 visible in Type1, B069 proves payload ASIC9 maps to
+      local source slot1, and the standalone ASIC-ID UP/DW benches remain green.
+  - potential_hazard:
+    - low; the change corrects only bench stimulus encoding.
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Commit:
+  - this change
+
+### BUG-025-H: Nominal arrival-delta stimulus created a negative physical lifetime
+
+- First seen:
+  - the new unconditional latency48 scoreboard reported B099 arrival 13,
+    true timestamp 20, and signed lifetime `-7` immediately after SYNC.
+- Symptom:
+  - a nominal smoke case produced a signed-negative production lifetime that
+    correctly indicates inconsistent upstream epoch setup.
+- Root cause:
+  - B099 chose quotient 20 only to hold two timestamps equal, without ensuring
+    that the synthetic timestamp was behind the freshly restarted GTS epoch.
+- Fix status:
+  - state:
+    - fixed in B099; directed delta DV passes; full regression pending.
+  - mechanism:
+    - use equal quotient-0 timestamps for this arrival-spacing test;
+    - check `latency48 = arrival48 - true_hit_ts48` on every valid beat;
+    - report any nominal signed-negative physical lifetime as an upstream
+      run-SYNC/epoch/PLL error while retaining the raw value.
+  - before_fix_outcome:
+    - nominal test traffic created negative lifetime and did not classify the
+      upstream setup as faulty.
+  - after_fix_outcome:
+    - B099 reports nonnegative lifetimes and still proves timestamp delta zero
+      with a nonzero GTS arrival delta; E071 remains the explicit `-1` fault case.
+  - potential_hazard:
+    - low for the directed fix; the full legacy case catalog still needs its
+      current-release rerun under the stricter global checker.
+  - Claude Opus 4.7 xhigh review decision:
+    - pending / not run in this turn
+- Commit:
+  - this change
 
 ## 2026-05-25
 

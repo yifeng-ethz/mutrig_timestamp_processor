@@ -163,6 +163,9 @@ package mtsp_env_pkg;
     logic      ready;
     bit        empty;
     bit        error;
+    bit [47:0] ts;
+    bit [47:0] arrival_gts;
+    bit [47:0] latency;
     time       time_ps;
 
     function new(string name = "mtsp_hit1_obs_item");
@@ -645,6 +648,9 @@ package mtsp_env_pkg;
           obs.ready   = vif.ready;
           obs.empty   = vif.empty;
           obs.error   = vif.error;
+          obs.ts      = vif.ts;
+          obs.arrival_gts = vif.arrival_gts;
+          obs.latency = vif.latency;
           obs.time_ps = $time;
           ap.write(obs);
         end
@@ -772,9 +778,15 @@ package mtsp_env_pkg;
     int unsigned hit0_valid_drop_fault_count;
     int unsigned hit0_payload_change_fault_count;
     int unsigned dual_path_pair_count;
+    int unsigned latency_identity_count;
+    int unsigned latency_negative_diagnostic_count;
     int unsigned trace_seq;
     bit [31:0]   expected_latency;
     bit          debug_path_required;
+    bit          frame_aligned_arrival;
+    bit          allow_negative_physical_diagnostic;
+    bit          delay_ts_field_use_t;
+    bit          bypass_lapse;
 
     time         last_eop_time_ps;
     bit          last_eop_empty;
@@ -827,9 +839,15 @@ package mtsp_env_pkg;
       hit0_valid_drop_fault_count = 0;
       hit0_payload_change_fault_count = 0;
       dual_path_pair_count = 0;
+      latency_identity_count = 0;
+      latency_negative_diagnostic_count = 0;
       trace_seq        = 0;
       expected_latency = 32'd2000;
       debug_path_required = 1'b1;
+      frame_aligned_arrival = 1'b0;
+      allow_negative_physical_diagnostic = 1'b0;
+      delay_ts_field_use_t = 1'b1;
+      bypass_lapse = 1'b0;
       if ($value$plusargs("MTSP_EXPECTED_LATENCY_RESET=%d", expected_latency_arg))
         expected_latency = expected_latency_arg[31:0];
       if ($value$plusargs("MTSP_DEBUG_PATH_REQUIRED=%d", debug_path_required_arg))
@@ -909,6 +927,11 @@ package mtsp_env_pkg;
       end
       if (item.is_write && item.address == 3'd2)
         expected_latency = item.writedata;
+      if (item.is_write && item.address == 3'd0) begin
+        frame_aligned_arrival = item.writedata[6];
+        delay_ts_field_use_t  = item.writedata[29];
+        bypass_lapse          = item.writedata[3];
+      end
     endfunction
 
     function void write_hit0(mtsp_hit0_obs_item item);
@@ -934,6 +957,30 @@ package mtsp_env_pkg;
     endfunction
 
     function void write_hit1(mtsp_hit1_obs_item item);
+      bit signed [47:0] latency_signed;
+
+      latency_signed = item.latency;
+      if (item.valid && item.latency !== (item.arrival_gts - item.ts))
+        `uvm_error("MTSP_LATENCY48",
+          $sformatf("latency48 identity mismatch arrival=0x%012h ts=0x%012h latency=0x%012h",
+            item.arrival_gts, item.ts, item.latency))
+      else if (item.valid)
+        latency_identity_count++;
+
+      if (item.valid && latency_signed < 0) begin
+        latency_negative_diagnostic_count++;
+        if (!frame_aligned_arrival) begin
+          if (!allow_negative_physical_diagnostic)
+            `uvm_error("MTSP_LATENCY48",
+              $sformatf("negative physical lifetime in production mode: arrival=0x%012h ts=0x%012h latency=%0d; diagnose upstream PLL/epoch/run-sync instead of hiding it",
+                item.arrival_gts, item.ts, latency_signed))
+          else
+            `uvm_info("MTSP_LATENCY48",
+              $sformatf("directed fault injection retained negative physical-latency diagnostic=%0d",
+                latency_signed), UVM_LOW)
+        end
+      end
+
       history.push_back(item);
       beat_count++;
       if (!item.empty) begin
@@ -989,7 +1036,7 @@ package mtsp_env_pkg;
             pending_hit1.size(), pending_debug_ts.size()))
 
       `uvm_info("MTSP_SCB",
-        $sformatf("csr=%0d csr_protocol_faults=%0d csr_rw_faults=%0d csr_waitrequest_sample_faults=%0d csr_bus_change_faults=%0d hit0_ready_low_rejects=%0d hit0_protocol_faults=%0d hit0_valid_drop_faults=%0d hit0_payload_change_faults=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d ready_x=%0d dual_path_pairs=%0d traces=%0d debug_path_required=%0b expected_latency=%0d",
+        $sformatf("csr=%0d csr_protocol_faults=%0d csr_rw_faults=%0d csr_waitrequest_sample_faults=%0d csr_bus_change_faults=%0d hit0_ready_low_rejects=%0d hit0_protocol_faults=%0d hit0_valid_drop_faults=%0d hit0_payload_change_faults=%0d inputs=%0d beats=%0d payloads=%0d eops=%0d empty_eops=%0d debug_ts=%0d debug_burst=%0d ts_delta=%0d ready_x=%0d dual_path_pairs=%0d traces=%0d latency48_identity=%0d latency48_negative_diagnostics=%0d frame_aligned_arrival=%0b debug_path_required=%0b expected_latency=%0d",
           csr_access_count, csr_protocol_fault_count,
           csr_read_write_fault_count, csr_waitrequest_sample_fault_count,
           csr_bus_change_waitrequest_fault_count,
@@ -998,7 +1045,9 @@ package mtsp_env_pkg;
           input_accept_count, beat_count, payload_beat_count, eop_count,
           empty_eop_count, debug_ts_count, debug_burst_count,
           ts_delta_count, hit1_ready_unknown_count, dual_path_pair_count,
-          trace_history.size(), debug_path_required, expected_latency),
+          trace_history.size(), latency_identity_count,
+          latency_negative_diagnostic_count, frame_aligned_arrival,
+          debug_path_required, expected_latency),
         UVM_LOW)
     endfunction
   endclass
@@ -1221,9 +1270,14 @@ package mtsp_env_pkg;
     virtual mtsp_hit0_if.mon hit0_vif;
     virtual mtsp_hit1_if.drv hit1_drv_vif;
     virtual mtsp_dbg_if.mon  dbg_vif;
+    bit                      decoded_by_raw_loaded;
+    bit                      bypass_source_epoch_alignment;
+    int unsigned             decoded_by_raw[int unsigned];
 
     function new(string name, uvm_component parent);
       super.new(name, parent);
+      decoded_by_raw_loaded          = 1'b0;
+      bypass_source_epoch_alignment = 1'b0;
     endfunction
 
     function void build_phase(uvm_phase phase);
@@ -1260,6 +1314,91 @@ package mtsp_env_pkg;
       rst_vif.rst <= 1'b0;
       repeat (release_cycles)
         @(posedge rst_vif.clk);
+      // Mirror the CSR reset values used by the timestamp-aware source model.
+      m_env.m_scb.frame_aligned_arrival = 1'b0;
+      m_env.m_scb.delay_ts_field_use_t  = 1'b1;
+      m_env.m_scb.bypass_lapse          = 1'b0;
+      bypass_source_epoch_alignment     = 1'b0;
+    endtask
+
+    task automatic load_raw_decode_map();
+      int          fd;
+      int          parsed;
+      string       line;
+      int unsigned raw_value;
+      bit [14:0]   decoded_value;
+
+      if (decoded_by_raw_loaded)
+        return;
+      fd = $fopen("dual_port_rom_init.txt", "r");
+      if (fd == 0)
+        `uvm_fatal("MTSP_ROM",
+          "Could not open dual_port_rom_init.txt for physical epoch alignment")
+      decoded_by_raw.delete();
+      while ($fgets(line, fd)) begin
+        raw_value     = '0;
+        decoded_value = '0;
+        parsed = $sscanf(line, "@%h %b", raw_value, decoded_value);
+        if (parsed == 2)
+          decoded_by_raw[raw_value] = int'(decoded_value);
+      end
+      $fclose(fd);
+      decoded_by_raw_loaded = 1'b1;
+    endtask
+
+    task automatic align_selected_hit_to_physical_epoch(
+        int unsigned tcc_raw_value,
+        int unsigned ecc_raw_value);
+      int unsigned   selected_raw;
+      int unsigned   decoded_value;
+      uvm_hdl_data_t gts_value;
+      uvm_hdl_data_t ov_base_value;
+      uvm_hdl_data_t lookback_value;
+      uvm_hdl_data_t padding_upper_value;
+      longint unsigned white_1n6;
+      longint unsigned true_ts_8n;
+
+      // Ready-low protocol and explicitly directed future-timestamp tests own
+      // their timing.  Ordinary accepted production hits must never be driven
+      // with a true timestamp ahead of the live GTS.
+      if (hit0_vif.ready !== 1'b1 ||
+          bypass_source_epoch_alignment ||
+          m_env.m_scb.frame_aligned_arrival ||
+          m_env.m_scb.allow_negative_physical_diagnostic)
+        return;
+
+      selected_raw = m_env.m_scb.delay_ts_field_use_t ?
+        tcc_raw_value[14:0] : ecc_raw_value[14:0];
+      load_raw_decode_map();
+      if (!decoded_by_raw.exists(selected_raw))
+        `uvm_fatal("MTSP_ROM",
+          $sformatf("No decoded timestamp for raw symbol 0x%04h", selected_raw))
+      decoded_value = decoded_by_raw[selected_raw];
+
+      repeat (7000) begin
+        if (!uvm_hdl_read("/tb_top/dut/counter_gts_8n", gts_value) ||
+            !uvm_hdl_read("/tb_top/dut/counter_ov_base_1n6", ov_base_value) ||
+            !uvm_hdl_read("/tb_top/dut/fpga_overflow_lookback_cnt", lookback_value) ||
+            !uvm_hdl_read("/tb_top/dut/padding_upper", padding_upper_value))
+          `uvm_fatal("MTSP_HDL",
+            "Could not read DUT epoch state for physical hit alignment")
+
+        if (m_env.m_scb.bypass_lapse) begin
+          true_ts_8n = decoded_value / 5;
+        end else begin
+          white_1n6 = ov_base_value[49:0] + decoded_value;
+          if (lookback_value[31:0] != 0 &&
+              decoded_value > padding_upper_value[14:0])
+            white_1n6 -= 32767;
+          true_ts_8n = white_1n6 / 5;
+        end
+        if (gts_value[47:0] >= true_ts_8n)
+          return;
+        @(posedge hit0_vif.clk);
+      end
+      `uvm_fatal("MTSP_LATENCY48",
+        $sformatf("Timed out aligning selected raw symbol 0x%04h decoded=%0d to the live physical epoch",
+          selected_raw, decoded_value))
     endtask
 
     task automatic set_hit1_ready(bit ready_value);
@@ -1492,6 +1631,8 @@ package mtsp_env_pkg;
       mtsp_hit0_seq seq;
       bit [44:0]    hit_word;
 
+      align_selected_hit_to_physical_epoch(tcc_raw_value, ecc_raw_value);
+
       hit_word             = '0;
       hit_word[44:41]      = asic_value[3:0];
       hit_word[40:36]      = channel_value[4:0];
@@ -1522,7 +1663,11 @@ package mtsp_env_pkg;
                                  bit [2:0] error_value = '0,
                                  bit wait_for_ready = 1'b1,
                                  int unsigned tfine_value = 0);
-      send_hit_beat_with_sideband({2'b00, asic_value[3:0]},
+      // The DUT derives the Type1 ASIC from AVST channel[5:4], not from the
+      // legacy ASIC field inside the payload. Encode the requested local ASIC
+      // in those source-channel bits for ordinary stimulus; mapping-specific
+      // cases use send_hit_beat_with_sideband() directly.
+      send_hit_beat_with_sideband({asic_value[1:0], 4'b0000},
         asic_value, channel_value, tcc_raw_value, ecc_raw_value,
         eflag_value, sop_value, eop_value, error_value, wait_for_ready,
         tfine_value);

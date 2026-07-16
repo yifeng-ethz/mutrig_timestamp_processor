@@ -25,8 +25,8 @@
 |:---:|---|---|
 | ✅ | observed_txn | `32` |
 | ℹ️ | implementation_mode | `explicit_uvm_handler` |
-| ℹ️ | log | [`uvm/logs/STRESS_MTS_019_toggle_bypass_between_packets_after_s1.log`](../../uvm/logs/STRESS_MTS_019_toggle_bypass_between_packets_after_s1.log) |
-| ℹ️ | ucdb | [`uvm/cov_after/STRESS_MTS_019_toggle_bypass_between_packets_s1.ucdb`](../../uvm/cov_after/STRESS_MTS_019_toggle_bypass_between_packets_s1.ucdb) |
+| ℹ️ | log | `uvm/logs/STRESS_MTS_019_toggle_bypass_between_packets_after_s1.log` — local generated artifact; intentionally not published |
+| ℹ️ | ucdb | `uvm/cov_after/STRESS_MTS_019_toggle_bypass_between_packets_s1.ucdb` — local generated artifact; intentionally not published |
 | ℹ️ | log.beats | `32` |
 | ℹ️ | log.csr | `10` |
 | ℹ️ | log.debug_burst | `32` |
@@ -37,6 +37,8 @@
 | ℹ️ | log.eops | `0` |
 | ℹ️ | log.hit_error_traces | `16` |
 | ℹ️ | log.inputs | `32` |
+| ℹ️ | log.latency48_identity | `32` |
+| ℹ️ | log.latency48_negative_diagnostics | `0` |
 | ℹ️ | log.math_error_traces | `16` |
 | ℹ️ | log.payloads | `32` |
 | ℹ️ | log.ready_x | `0` |
@@ -51,13 +53,13 @@
 
 | metric | standalone | isolated_per_txn | bucket_gain | bucket_merged_after | bucket_gain_per_txn |
 |---|---|---|---|---|---|
-| stmt | 82.29 | 2.57 | 0.00 | 87.57 | 0.00 |
-| branch | 68.11 | 2.13 | 0.00 | 79.13 | 0.00 |
-| cond | 41.37 | 1.29 | 0.00 | 61.20 | 0.00 |
-| expr | 50.00 | 1.56 | 0.00 | 50.00 | 0.00 |
+| stmt | 81.12 | 2.54 | 0.00 | 84.72 | 0.00 |
+| branch | 65.25 | 2.04 | 0.00 | 74.35 | 0.00 |
+| cond | 39.51 | 1.23 | 0.00 | 60.48 | 0.00 |
+| expr | 50.00 | 1.56 | 0.00 | 83.33 | 0.00 |
 | fsm_state | 75.00 | 2.34 | 0.00 | 100.00 | 0.00 |
 | fsm_trans | 22.22 | 0.69 | 0.00 | 33.33 | 0.00 |
-| toggle | 28.80 | 0.90 | 0.18 | 39.67 | 0.01 |
+| toggle | 28.45 | 0.89 | 0.31 | 36.52 | 0.01 |
 
 ---
 _Back to [bucket](../buckets/PROF.md) &middot; [dashboard](../../DV_REPORT.md)_
